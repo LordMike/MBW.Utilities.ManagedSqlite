@@ -8,7 +8,7 @@ namespace Sqlite3RoLib.Objects
     {
         protected internal uint Page { get; }
         protected internal ReaderBase Reader { get; }
-        protected BTreeHeader Header { get; }
+        protected internal BTreeHeader Header { get; }
 
         protected internal ushort[] CellOffsets { get; }
 

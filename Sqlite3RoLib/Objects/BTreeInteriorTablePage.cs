@@ -1,4 +1,5 @@
-﻿using Sqlite3RoLib.Objects.Headers;
+﻿using System;
+using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib.Objects
 {

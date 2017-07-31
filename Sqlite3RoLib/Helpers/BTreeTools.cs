@@ -46,6 +46,15 @@ namespace Sqlite3RoLib.Helpers
                 foreach (BTreeCellData data in WalkTableBTree(subPage))
                     yield return data;
             }
+
+            if (interior.Header.RightMostPointer > 0)
+            {
+                // Process sibling page
+                BTreePage subPage = BTreePage.Parse(interior.Reader, interior.Header.RightMostPointer);
+
+                foreach (BTreeCellData data in WalkTableBTree(subPage))
+                    yield return data;
+            }
         }
 
         private static IEnumerable<BTreeCellData> WalkTableBTree(BTreeLeafTablePage leaf)
