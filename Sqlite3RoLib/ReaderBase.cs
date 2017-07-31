@@ -2,21 +2,21 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using Sqlite3RoLib.Helpers;
 
-namespace Sqlite3RoLib.Helpers
+namespace Sqlite3RoLib
 {
     internal class ReaderBase : IDisposable
     {
         private readonly long _length;
         private readonly Stream _stream;
-        internal BinaryReader Reader { get; }
+        private readonly BinaryReader _binaryReader;
 
         public ReaderBase(Stream stream)
         {
             _stream = stream;
             _length = _stream.Length;
-
-            Reader = new BinaryReader(_stream);
+            _binaryReader = new BinaryReader(stream);
         }
 
         public void Dispose()
@@ -34,7 +34,7 @@ namespace Sqlite3RoLib.Helpers
             Debug.Assert(toRead >= comparison.Length);
             CheckSize(toRead);
 
-            byte[] data = Reader.ReadBytes((int)toRead);
+            byte[] data = StreamHelper.ReadFully(_stream, (int)toRead);
 
             bool res = data.SequenceEqual(comparison);
             if (!res && throwException)
@@ -93,7 +93,62 @@ namespace Sqlite3RoLib.Helpers
 
         internal void Skip(uint bytes)
         {
-            Reader.BaseStream.Seek(bytes, SeekOrigin.Current);
+            _stream.Seek(bytes, SeekOrigin.Current);
+        }
+
+        public byte ReadByte()
+        {
+            return _binaryReader.ReadByte();
+        }
+
+        public ushort ReadUInt16()
+        {
+            ushort res = _binaryReader.ReadByte();
+            res <<= 8;
+            res += _binaryReader.ReadByte();
+
+            return res;
+        }
+
+        public uint ReadUInt32()
+        {
+            uint res = _binaryReader.ReadByte();
+            res <<= 8;
+
+            res += _binaryReader.ReadByte();
+            res <<= 8;
+
+            res += _binaryReader.ReadByte();
+            res <<= 8;
+
+            res += _binaryReader.ReadByte();
+
+            return res;
+        }
+
+        public short ReadInt16()
+        {
+            short res = _binaryReader.ReadByte();
+            res <<= 8;
+            res += _binaryReader.ReadByte();
+
+            return res;
+        }
+
+        public int ReadInt32()
+        {
+            int res = _binaryReader.ReadByte();
+            res <<= 8;
+
+            res += _binaryReader.ReadByte();
+            res <<= 8;
+
+            res += _binaryReader.ReadByte();
+            res <<= 8;
+
+            res += _binaryReader.ReadByte();
+
+            return res;
         }
     }
 }
