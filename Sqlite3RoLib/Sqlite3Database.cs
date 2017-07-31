@@ -13,6 +13,7 @@ namespace Sqlite3RoLib
         private uint _sizeInPages;
 
         private DatabaseHeader _header;
+        private BTreePage _rootBtree;
 
         public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
         {
@@ -20,6 +21,8 @@ namespace Sqlite3RoLib
             _reader = new ReaderBase(file);
 
             Initialize();
+
+            InitializeRootTree();
         }
 
         private void Initialize()
@@ -29,10 +32,17 @@ namespace Sqlite3RoLib
             // Database Size in pages adjustment
             // https://www.sqlite.org/fileformat.html#in_header_database_size
 
-            uint expectedPages = (uint) (_reader.Length / _header.PageSize);
+            uint expectedPages = (uint)(_reader.Length / _header.PageSize);
 
             // TODO: Warn on mismatch
             _sizeInPages = Math.Max(expectedPages, _header.DatabaseSizeInPages);
+
+            _reader.ApplySqliteDatabaseHeader(_header);
+        }
+
+        private void InitializeRootTree()
+        {
+            _rootBtree = new BTreePage(_reader, 1);
         }
 
         public void Dispose()

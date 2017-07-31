@@ -5,6 +5,8 @@ namespace Sqlite3RoLib.Objects
 {
     internal class DatabaseHeader
     {
+        public const int HeaderSize = 100;
+
         private static byte[] _expectedHeader = new byte[]
         {
             (byte) 'S', (byte) 'Q', (byte) 'L', (byte) 'i', (byte) 't', (byte) 'e', (byte) ' ', (byte) 'f',

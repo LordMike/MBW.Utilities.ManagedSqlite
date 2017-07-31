@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using Sqlite3RoLib.Helpers;
+using Sqlite3RoLib.Objects;
 
 namespace Sqlite3RoLib
 {
@@ -13,11 +14,18 @@ namespace Sqlite3RoLib
         private readonly Stream _stream;
         private readonly BinaryReader _binaryReader;
 
+        public ushort PageSize { get; private set; }
+
         public ReaderBase(Stream stream)
         {
             _stream = stream;
             Length = _stream.Length;
             _binaryReader = new BinaryReader(stream);
+        }
+
+        public void ApplySqliteDatabaseHeader(DatabaseHeader header)
+        {
+            PageSize = header.PageSize;
         }
 
         public void Dispose()
@@ -35,7 +43,7 @@ namespace Sqlite3RoLib
             Debug.Assert(toRead >= comparison.Length);
             CheckSize(toRead);
 
-            byte[] data = StreamHelper.ReadFully(_stream, (int)toRead);
+            byte[] data = _stream.ReadFully((int)toRead);
 
             bool res = data.SequenceEqual(comparison);
             if (!res && throwException)
@@ -90,6 +98,17 @@ namespace Sqlite3RoLib
                 {
                     Data = { { nameof(position), position } }
                 };
+        }
+
+        internal void SeekPage(uint page)
+        {
+            if (page == 0)
+                throw new ArgumentOutOfRangeException(nameof(page));
+
+            // Note: Pages are 1-indexed
+            ulong position = (page - 1) * PageSize;
+
+            SetPositionAndCheckSize(position, PageSize);
         }
 
         internal void Skip(uint bytes)
@@ -148,6 +167,44 @@ namespace Sqlite3RoLib
             res <<= 8;
 
             res += _binaryReader.ReadByte();
+
+            return res;
+        }
+
+        public long ReadVarInt()
+        {
+            return ReadVarInt(out byte _);
+        }
+
+        public long ReadVarInt(out byte readBytes)
+        {
+            long res = 0;
+
+            // Decode huffman encoding
+            //  xyyy yyyy       x = if this is the last byte
+            //                  y = data
+            // Each byte provides 7 bits of the final data, and one bit to indicate followup bytes
+            // The first 8 bytes are like this, the potential 9th byte is all data (8 bits data)
+
+            for (readBytes = 0; readBytes < 8; readBytes++)
+            {
+                byte tmp = ReadByte();
+
+                res <<= 7;
+                res += tmp & 0x7F;
+
+                if ((tmp & 0x80) == 0x00)
+                {
+                    // Last byte
+                    return res;
+                }
+            }
+
+            // Read final byte
+            res <<= 8;
+            res += ReadByte();
+
+            readBytes++;
 
             return res;
         }
