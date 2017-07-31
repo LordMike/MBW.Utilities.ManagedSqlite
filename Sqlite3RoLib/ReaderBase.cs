@@ -2,8 +2,10 @@ using System;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text;
 using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
+using Sqlite3RoLib.Objects.Enums;
 using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib
@@ -12,8 +14,14 @@ namespace Sqlite3RoLib
     {
         public long Length { get; }
 
+        public long Position => _stream.Position;
+
         private readonly Stream _stream;
         private readonly BinaryReader _binaryReader;
+
+        public SqliteEncoding TextEncoding { get; private set; }
+
+        private Encoding _encoding;
 
         public ushort PageSize { get; private set; }
 
@@ -34,6 +42,22 @@ namespace Sqlite3RoLib
         {
             PageSize = header.PageSize;
             ReservedSpace = header.ReservedSpaceAtEndOfPage;
+            TextEncoding = header.TextEncoding;
+
+            switch (TextEncoding)
+            {
+                case SqliteEncoding.UTF8:
+                    _encoding = Encoding.UTF8;
+                    break;
+                case SqliteEncoding.UTF16LE:
+                    _encoding = Encoding.Unicode;
+                    break;
+                case SqliteEncoding.UTF16BE:
+                    _encoding = Encoding.BigEndianUnicode;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
+            }
         }
 
         public void Dispose()
@@ -216,6 +240,60 @@ namespace Sqlite3RoLib
             readBytes++;
 
             return res;
+        }
+
+        public void SkipVarInt()
+        {
+            // Decode huffman encoding
+            //  xyyy yyyy       x = if this is the last byte
+            //                  y = data
+            // Each byte provides 7 bits of the final data, and one bit to indicate followup bytes
+            // The first 8 bytes are like this, the potential 9th byte is all data (8 bits data)
+
+            for (byte readBytes = 1; readBytes < 9; readBytes++)
+            {
+                byte tmp = ReadByte();
+
+                if ((tmp & 0x80) == 0x00)
+                {
+                    // Last byte
+                    return;
+                }
+            }
+
+            // Skip final byte
+            ReadByte();
+        }
+
+        public byte[] Read(int count)
+        {
+            return _stream.ReadFully(count);
+        }
+
+        public int Read(byte[] buffer, int offset, int count)
+        {
+            return _stream.ReadFully(buffer, offset, count);
+        }
+
+        public long ReadInteger(byte bytes)
+        {
+            long res = 0;
+
+            for (int i = 0; i < bytes; i++)
+            {
+                byte tmp = ReadByte();
+
+                res <<= 8;
+                res += tmp;
+            }
+
+            return res;
+        }
+
+        public string ReadString(ushort bytes)
+        {
+            byte[] data = Read(bytes);
+            return _encoding.GetString(data, 0, data.Length);
         }
     }
 }

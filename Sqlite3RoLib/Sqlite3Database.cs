@@ -1,5 +1,7 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
+using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
 using Sqlite3RoLib.Objects.Headers;
 
@@ -44,8 +46,10 @@ namespace Sqlite3RoLib
         {
             _rootBtree = BTreePage.Parse(_reader, 1);
 
-            var tree1 = BTreePage.Parse(_reader, 11);
-            var tree2 = BTreePage.Parse(_reader, 13);
+            var table = new Sqlite3Table(_reader, _rootBtree);
+            var rows = table.EnumerateRows().ToList();
+
+            var names = rows.Select(s => s.ColumnData[2]).OrderBy(s => s).ToList();
         }
 
         public void Dispose()

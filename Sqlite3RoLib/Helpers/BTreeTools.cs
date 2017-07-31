@@ -6,14 +6,29 @@ namespace Sqlite3RoLib.Helpers
 {
     internal static class BTreeTools
     {
+        public static byte[] ReadCellData(ReaderBase reader, BTreeCellData data)
+        {
+            reader.SeekPage(data.Page, data.CellOffset);
+            reader.SkipVarInt();
+            reader.SkipVarInt();
+
+            // Read data
+            if (data.Cell.FirstOverflowPage > 0)
+                throw new NotImplementedException("We don't support overflow yet");
+
+            byte[] bytes = reader.Read(data.Cell.DataSizeInCell);
+
+            return bytes;
+        }
+
         public static IEnumerable<BTreeCellData> WalkTableBTree(BTreePage node)
         {
-            var asInterior = node as BTreeInteriorTablePage;
+            BTreeInteriorTablePage asInterior = node as BTreeInteriorTablePage;
 
             if (asInterior != null)
                 return WalkTableBTree(asInterior);
 
-            var asLeaf = node as BTreeLeafTablePage;
+            BTreeLeafTablePage asLeaf = node as BTreeLeafTablePage;
 
             if (asLeaf != null)
                 return WalkTableBTree(asLeaf);
@@ -24,7 +39,7 @@ namespace Sqlite3RoLib.Helpers
         private static IEnumerable<BTreeCellData> WalkTableBTree(BTreeInteriorTablePage interior)
         {
             // Walk sub-pages and yield their data
-            foreach (var cell in interior.Cells)
+            foreach (BTreeInteriorTablePage.Cell cell in interior.Cells)
             {
                 BTreePage subPage = BTreePage.Parse(interior.Reader, cell.LeftPagePointer);
 
@@ -36,12 +51,15 @@ namespace Sqlite3RoLib.Helpers
         private static IEnumerable<BTreeCellData> WalkTableBTree(BTreeLeafTablePage leaf)
         {
             // Walk cells and yield their data
-            foreach (var cell in leaf.Cells)
+            for (var i = 0; i < leaf.Cells.Length; i++)
             {
+                BTreeLeafTablePage.Cell cell = leaf.Cells[i];
+
                 BTreeCellData res = new BTreeCellData();
 
-                res.DataSize = cell.DataSize;
-                res.RowId = cell.RowId;
+                res.Cell = cell;
+                res.CellOffset = leaf.CellOffsets[i];
+                res.Page = leaf.Page;
 
                 yield return res;
             }
