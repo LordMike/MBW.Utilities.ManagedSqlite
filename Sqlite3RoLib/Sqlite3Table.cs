@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.IO;
 using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
-using Sqlite3RoLib.Objects.Enums;
 using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib
@@ -23,6 +22,44 @@ namespace Sqlite3RoLib
     {
         public ushort Length;
         public SqliteDataType Type;
+    }
+
+    internal class Sqlite3MasterTable
+    {
+        public List<Sqlite3SchemaRow> Tables { get; }
+
+        public Sqlite3MasterTable(Sqlite3Table table)
+        {
+            Tables = new List<Sqlite3SchemaRow>();
+
+            IEnumerable<Sqlite3Row> rows = table.EnumerateRows();
+
+            foreach (Sqlite3Row row in rows)
+            {
+                Sqlite3SchemaRow other = new Sqlite3SchemaRow();
+
+                other.Type = (string)row.ColumnData[0];
+                other.Name = (string)row.ColumnData[1];
+                other.TableName = (string)row.ColumnData[2];
+                other.RootPage = (uint)(long)row.ColumnData[3];
+                other.Sql = (string)row.ColumnData[4];
+
+                Tables.Add(other);
+            }
+        }
+    }
+
+    public class Sqlite3SchemaRow
+    {
+        public string Type { get; set; }
+
+        public string Name { get; set; }
+
+        public string TableName { get; set; }
+
+        public uint RootPage { get; set; }
+
+        public string Sql { get; set; }
     }
 
     internal class Sqlite3Table
@@ -128,7 +165,7 @@ namespace Sqlite3RoLib
                     }
 
                     object[] rowData = new object[metaInfos.Count];
-                    for (var i = 0; i < metaInfos.Count; i++)
+                    for (int i = 0; i < metaInfos.Count; i++)
                     {
                         ColumnDataMeta meta = metaInfos[i];
                         switch (meta.Type)

@@ -1,6 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
 using Sqlite3RoLib.Objects.Headers;
@@ -15,7 +17,7 @@ namespace Sqlite3RoLib
         private uint _sizeInPages;
 
         private DatabaseHeader _header;
-        private BTreePage _rootBtree;
+        private Sqlite3MasterTable masterTable;
 
         public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
         {
@@ -23,8 +25,7 @@ namespace Sqlite3RoLib
             _reader = new ReaderBase(file);
 
             Initialize();
-
-            InitializeRootTree();
+            InitializeMasterTable();
         }
 
         private void Initialize()
@@ -42,15 +43,16 @@ namespace Sqlite3RoLib
             _reader.ApplySqliteDatabaseHeader(_header);
         }
 
-        private void InitializeRootTree()
+        private void InitializeMasterTable()
         {
-            _rootBtree = BTreePage.Parse(_reader, 1);
+            // Parse table on Page 1, the sqlite_master table
+            BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
-            var table = new Sqlite3Table(_reader, _rootBtree);
-            var rows = table.EnumerateRows().ToList();
-
-            var names = rows.Select(s => s.ColumnData[2]).OrderBy(s => s).ToList();
+            Sqlite3Table table = new Sqlite3Table(_reader, rootBtree);
+            masterTable = new Sqlite3MasterTable(table);
         }
+
+        public IEnumerable<Sqlite3SchemaRow> GetTables() => masterTable.Tables;
 
         public void Dispose()
         {
