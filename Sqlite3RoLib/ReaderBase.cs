@@ -8,14 +8,15 @@ namespace Sqlite3RoLib
 {
     internal class ReaderBase : IDisposable
     {
-        private readonly long _length;
+        public long Length { get; }
+
         private readonly Stream _stream;
         private readonly BinaryReader _binaryReader;
 
         public ReaderBase(Stream stream)
         {
             _stream = stream;
-            _length = _stream.Length;
+            Length = _stream.Length;
             _binaryReader = new BinaryReader(stream);
         }
 
@@ -58,7 +59,7 @@ namespace Sqlite3RoLib
             if (!throwException)
                 return;
 
-            long dataLeft = _length - _stream.Position;
+            long dataLeft = Length - _stream.Position;
             if (dataLeft < sizeWanted)
             {
                 throw new ArgumentException("Source stream does not have enough data")
@@ -67,7 +68,7 @@ namespace Sqlite3RoLib
                     {
                         { nameof(Stream.Position), _stream.Position },
                         { nameof(sizeWanted), sizeWanted },
-                        { "SourceLength", _length }
+                        { "SourceLength", Length }
                     }
                 };
             }

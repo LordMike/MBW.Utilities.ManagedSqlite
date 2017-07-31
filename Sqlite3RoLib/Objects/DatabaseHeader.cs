@@ -89,6 +89,8 @@ namespace Sqlite3RoLib.Objects
             res.VersionValidFor = reader.ReadUInt32();
             res.Version = reader.ReadUInt32();
 
+            // TODO: Warn/err on mismatch with expected values
+
             return res;
         }
     }

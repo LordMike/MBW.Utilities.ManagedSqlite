@@ -10,6 +10,8 @@ namespace Sqlite3RoLib
         private readonly Sqlite3Settings _settings;
         private readonly ReaderBase _reader;
 
+        private uint _sizeInPages;
+
         private DatabaseHeader _header;
 
         public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
@@ -23,6 +25,14 @@ namespace Sqlite3RoLib
         private void Initialize()
         {
             _header = DatabaseHeader.Parse(_reader);
+
+            // Database Size in pages adjustment
+            // https://www.sqlite.org/fileformat.html#in_header_database_size
+
+            uint expectedPages = (uint) (_reader.Length / _header.PageSize);
+
+            // TODO: Warn on mismatch
+            _sizeInPages = Math.Max(expectedPages, _header.DatabaseSizeInPages);
         }
 
         public void Dispose()
