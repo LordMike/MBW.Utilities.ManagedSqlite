@@ -7,7 +7,7 @@ namespace Sqlite3Reader
     {
         static void Main(string[] args)
         {
-            using (FileStream fs = File.OpenRead("Db1.db"))
+            using (FileStream fs = File.OpenRead("Db2.db"))
             using (Sqlite3Database db = new Sqlite3Database(fs))
             {
 
