@@ -1,9 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
-using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
 using Sqlite3RoLib.Objects.Headers;
 using Sqlite3RoLib.Tables;

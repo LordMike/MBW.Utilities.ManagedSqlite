@@ -1,5 +1,4 @@
-﻿using System;
-using Sqlite3RoLib.Objects.Headers;
+﻿using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib.Objects
 {
@@ -15,12 +14,7 @@ namespace Sqlite3RoLib.Objects
         {
 
         }
-
-        private void ReadInteriorTableBtreeCell(ReaderBase reader)
-        {
-
-        }
-
+        
         protected override void ParseInternal()
         {
             Cells = new Cell[CellOffsets.Length];

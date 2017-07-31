@@ -1,4 +1,4 @@
-namespace Sqlite3RoLib
+namespace Sqlite3RoLib.Tables
 {
     internal class Sqlite3Row
     {

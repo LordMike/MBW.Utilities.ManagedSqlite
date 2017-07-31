@@ -4,7 +4,6 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using Sqlite3RoLib.Helpers;
-using Sqlite3RoLib.Objects;
 using Sqlite3RoLib.Objects.Enums;
 using Sqlite3RoLib.Objects.Headers;
 
