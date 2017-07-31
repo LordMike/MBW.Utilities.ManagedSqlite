@@ -74,7 +74,7 @@ namespace Sqlite3RoLib.Objects
 
                 Cells[i] = new Cell
                 {
-                    DataSize = (ushort)bytes,
+                    DataSize = bytes,
                     DataSizeInCell = bytesInCell,
                     RowId = rowId,
                     FirstOverflowPage = overflowPage
@@ -84,8 +84,8 @@ namespace Sqlite3RoLib.Objects
         
         public struct Cell
         {
+            public long DataSize;
             // Maximum cell size slightly less than one page, which is 65K
-            public ushort DataSize;
             public ushort DataSizeInCell;
             public long RowId;
             public uint FirstOverflowPage;

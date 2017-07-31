@@ -7,7 +7,7 @@ namespace Sqlite3RoLib.Objects
     internal abstract class BTreePage
     {
         protected uint Page { get; private set; }
-        protected ReaderBase Reader { get; private set; }
+        protected internal ReaderBase Reader { get; private set; }
         protected BTreeHeader Header { get; private set; }
 
         protected ushort[] CellOffsets { get; private set; }

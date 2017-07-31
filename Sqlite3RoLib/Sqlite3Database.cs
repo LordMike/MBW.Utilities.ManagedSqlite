@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using Sqlite3RoLib.Objects;
+using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib
 {

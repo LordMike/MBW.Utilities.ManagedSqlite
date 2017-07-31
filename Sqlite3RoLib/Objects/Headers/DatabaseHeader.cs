@@ -1,14 +1,12 @@
-﻿using System;
-using Sqlite3RoLib.Objects.Enums;
+﻿using Sqlite3RoLib.Objects.Enums;
 
-namespace Sqlite3RoLib.Objects
+namespace Sqlite3RoLib.Objects.Headers
 {
     internal class DatabaseHeader
     {
         public const int HeaderSize = 100;
 
-        private static byte[] _expectedHeader = new byte[]
-        {
+        private static readonly byte[] _expectedHeader = {
             (byte) 'S', (byte) 'Q', (byte) 'L', (byte) 'i', (byte) 't', (byte) 'e', (byte) ' ', (byte) 'f',
             (byte) 'o',(byte) 'r', (byte) 'm', (byte) 'a', (byte) 't', (byte) ' ', (byte) '3', 0
         };

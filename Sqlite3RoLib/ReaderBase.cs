@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
+using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib
 {
