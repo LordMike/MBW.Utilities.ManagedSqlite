@@ -3,65 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
+using Sqlite3RoLib.Objects.Enums;
 using Sqlite3RoLib.Objects.Headers;
 
-namespace Sqlite3RoLib
+namespace Sqlite3RoLib.Tables
 {
-    internal enum SqliteDataType : byte
-    {
-        Null = 0,
-        Integer = 1,
-        Float = 7,
-        Boolean0 = 8,
-        Boolean1 = 9,
-        Blob = 12,
-        Text = 13
-    }
-
-    internal struct ColumnDataMeta
-    {
-        public ushort Length;
-        public SqliteDataType Type;
-    }
-
-    internal class Sqlite3MasterTable
-    {
-        public List<Sqlite3SchemaRow> Tables { get; }
-
-        public Sqlite3MasterTable(Sqlite3Table table)
-        {
-            Tables = new List<Sqlite3SchemaRow>();
-
-            IEnumerable<Sqlite3Row> rows = table.EnumerateRows();
-
-            foreach (Sqlite3Row row in rows)
-            {
-                Sqlite3SchemaRow other = new Sqlite3SchemaRow();
-
-                other.Type = (string)row.ColumnData[0];
-                other.Name = (string)row.ColumnData[1];
-                other.TableName = (string)row.ColumnData[2];
-                other.RootPage = (uint)(long)row.ColumnData[3];
-                other.Sql = (string)row.ColumnData[4];
-
-                Tables.Add(other);
-            }
-        }
-    }
-
-    public class Sqlite3SchemaRow
-    {
-        public string Type { get; set; }
-
-        public string Name { get; set; }
-
-        public string TableName { get; set; }
-
-        public uint RootPage { get; set; }
-
-        public string Sql { get; set; }
-    }
-
     internal class Sqlite3Table
     {
         private readonly ReaderBase _reader;
@@ -203,16 +149,6 @@ namespace Sqlite3RoLib
             }
 
             yield break;
-        }
-    }
-
-    internal class Sqlite3Row
-    {
-        public object[] ColumnData { get; }
-
-        public Sqlite3Row(object[] columnData)
-        {
-            ColumnData = columnData;
         }
     }
 }

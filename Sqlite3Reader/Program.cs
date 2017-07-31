@@ -1,6 +1,7 @@
 ﻿using System;
 using System.IO;
 using Sqlite3RoLib;
+using Sqlite3RoLib.Tables;
 
 namespace Sqlite3Reader
 {
