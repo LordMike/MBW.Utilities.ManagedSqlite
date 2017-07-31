@@ -16,16 +16,23 @@ namespace Sqlite3RoLib
 
         public ushort PageSize { get; private set; }
 
+        /// <summary>
+        /// Reserved space at the end of every page
+        /// </summary>
+        public byte ReservedSpace { get; private set; }
+
         public ReaderBase(Stream stream)
         {
             _stream = stream;
             Length = _stream.Length;
+
             _binaryReader = new BinaryReader(stream);
         }
 
         public void ApplySqliteDatabaseHeader(DatabaseHeader header)
         {
             PageSize = header.PageSize;
+            ReservedSpace = header.ReservedSpaceAtEndOfPage;
         }
 
         public void Dispose()
@@ -100,15 +107,16 @@ namespace Sqlite3RoLib
                 };
         }
 
-        internal void SeekPage(uint page)
+        internal void SeekPage(uint page, ushort offset = 0)
         {
             if (page == 0)
                 throw new ArgumentOutOfRangeException(nameof(page));
 
             // Note: Pages are 1-indexed
             ulong position = (page - 1) * PageSize;
+            position += offset;
 
-            SetPositionAndCheckSize(position, PageSize);
+            SetPositionAndCheckSize(position, (uint)(PageSize - offset));
         }
 
         internal void Skip(uint bytes)
@@ -186,7 +194,7 @@ namespace Sqlite3RoLib
             // Each byte provides 7 bits of the final data, and one bit to indicate followup bytes
             // The first 8 bytes are like this, the potential 9th byte is all data (8 bits data)
 
-            for (readBytes = 0; readBytes < 8; readBytes++)
+            for (readBytes = 1; readBytes < 9; readBytes++)
             {
                 byte tmp = ReadByte();
 

@@ -1,6 +1,5 @@
 ﻿using System;
 using System.IO;
-using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
 
 namespace Sqlite3RoLib
@@ -42,7 +41,10 @@ namespace Sqlite3RoLib
 
         private void InitializeRootTree()
         {
-            _rootBtree = new BTreePage(_reader, 1);
+            _rootBtree = BTreePage.Parse(_reader, 1);
+
+            var tree1 = BTreePage.Parse(_reader, 11);
+            var tree2 = BTreePage.Parse(_reader, 13);
         }
 
         public void Dispose()
