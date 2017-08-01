@@ -286,6 +286,15 @@ namespace Sqlite3RoLib
                 res += tmp;
             }
 
+            if (((1L << (bytes * 8 - 1)) & res) > 0)
+            {
+                // Number was negative
+                long extra = -1L;       // 0xFFFF FFFF FFFF FFFF in binary
+                extra <<= bytes * 8;
+
+                res |= extra;
+            }
+
             return res;
         }
 
