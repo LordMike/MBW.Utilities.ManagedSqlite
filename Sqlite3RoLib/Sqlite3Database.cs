@@ -49,14 +49,24 @@ namespace Sqlite3RoLib
 
             Sqlite3Table table = new Sqlite3Table(_reader, rootBtree);
             masterTable = new Sqlite3MasterTable(table);
+        }
 
+        public Sqlite3Table GetTable(string name)
+        {
+            IEnumerable<Sqlite3SchemaRow> tables = GetTables();
 
+            foreach (Sqlite3SchemaRow table in tables)
+            {
+                if (table.TableName == name && table.Type == "table")
+                {
+                    // Found it
+                    BTreePage root = BTreePage.Parse(_reader, 2);
+                    Sqlite3Table tbl = new Sqlite3Table(_reader, root);
+                    return tbl;
+                }
+            }
 
-
-            BTreePage rootBtree2 = BTreePage.Parse(_reader, 2);
-
-            Sqlite3Table table2 = new Sqlite3Table(_reader, rootBtree2);
-            var rows = table2.EnumerateRows().ToList();
+            throw new Exception("Unable to find table named " + name);
         }
 
         public IEnumerable<Sqlite3SchemaRow> GetTables() => masterTable.Tables;
