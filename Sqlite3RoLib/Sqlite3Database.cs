@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Sqlite3RoLib.Objects;
 using Sqlite3RoLib.Objects.Headers;
 using Sqlite3RoLib.Tables;
@@ -48,6 +49,14 @@ namespace Sqlite3RoLib
 
             Sqlite3Table table = new Sqlite3Table(_reader, rootBtree);
             masterTable = new Sqlite3MasterTable(table);
+
+
+
+
+            BTreePage rootBtree2 = BTreePage.Parse(_reader, 2);
+
+            Sqlite3Table table2 = new Sqlite3Table(_reader, rootBtree2);
+            var rows = table2.EnumerateRows().ToList();
         }
 
         public IEnumerable<Sqlite3SchemaRow> GetTables() => masterTable.Tables;

@@ -144,7 +144,7 @@ namespace Sqlite3RoLib.Tables
                         }
                     }
 
-                    yield return new Sqlite3Row(rowData);
+                    yield return new Sqlite3Row(cell.Cell.RowId, rowData);
                 }
             }
 
