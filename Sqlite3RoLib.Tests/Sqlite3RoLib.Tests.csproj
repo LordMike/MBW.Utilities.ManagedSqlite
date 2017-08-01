@@ -5,6 +5,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Data\Db1.db" />
+    <None Remove="Data\Db2.db" />
+    <None Remove="Data\IntegerData.db" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\Db1.db" />
+    <EmbeddedResource Include="Data\Db2.db" />
+    <EmbeddedResource Include="Data\IntegerData.db" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.0.0" />
     <PackageReference Include="xunit" Version="2.2.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.2.0" />

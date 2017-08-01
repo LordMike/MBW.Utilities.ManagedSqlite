@@ -8,12 +8,12 @@ using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib.Tables
 {
-    internal class Sqlite3Table
+    public class Sqlite3Table
     {
         private readonly ReaderBase _reader;
         private readonly BTreePage _rootPage;
 
-        public Sqlite3Table(ReaderBase reader, BTreePage rootPage)
+        internal Sqlite3Table(ReaderBase reader, BTreePage rootPage)
         {
             _reader = reader;
             _rootPage = rootPage;
@@ -147,8 +147,6 @@ namespace Sqlite3RoLib.Tables
                     yield return new Sqlite3Row(cell.Cell.RowId, rowData);
                 }
             }
-
-            yield break;
         }
     }
 }
