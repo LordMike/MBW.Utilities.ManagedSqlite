@@ -6,14 +6,15 @@
 
   <ItemGroup>
     <None Remove="Data\Db1.db" />
-    <None Remove="Data\Db2.db" />
     <None Remove="Data\IntegerData.db" />
+    <None Remove="Data\RealData.db" />
   </ItemGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Data\Db1.db" />
-    <EmbeddedResource Include="Data\Db2.db" />
+    <EmbeddedResource Include="Data\MediumDb.db" />
     <EmbeddedResource Include="Data\IntegerData.db" />
+    <EmbeddedResource Include="Data\RealData.db" />
   </ItemGroup>
 
   <ItemGroup>

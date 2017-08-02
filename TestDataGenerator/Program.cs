@@ -9,25 +9,83 @@ namespace TestDataGenerator
     {
         static void Main(string[] args)
         {
-            const string dir = "data";
+            string dir = "Data-MediumDb";
 
+            //PrepDirectory(dir);
+            //GenerateMediumDb(dir);
+
+            dir = "Data-RealData";
+
+            PrepDirectory(dir);
+            GenerateRealDataDb(dir);
+        }
+
+        private static void PrepDirectory(string dir)
+        {
             if (!Directory.Exists(dir))
                 Directory.CreateDirectory(dir);
             else
             {
-                foreach (var file in Directory.GetFiles(dir))
+                foreach (string file in Directory.GetFiles(dir))
                 {
                     File.Delete(file);
                 }
             }
-
-            GenerateDb2(dir);
         }
 
-        private static void GenerateDb2(string dir)
+        private static void GenerateRealDataDb(string dir)
         {
-            // Generate a db with 50 tables.
-            using (FileStream fsCreate = File.Open(Path.Combine(dir, "Db2_Create.sql"), FileMode.Create, FileAccess.ReadWrite))
+            using (FileStream fsCreate = File.Open(Path.Combine(dir, "RealData_Create.sql"), FileMode.Create, FileAccess.ReadWrite))
+            using (StreamWriter swCreate = new StreamWriter(fsCreate))
+            using (FileStream fsData = File.Open(Path.Combine(dir, $"RealData.csv"), FileMode.Create))
+            using (StreamWriter swData = new StreamWriter(fsData))
+            {
+                CultureInfo enUs = new CultureInfo("en-US");
+
+                swCreate.WriteLine("CREATE TABLE RealTable (Id INTEGER PRIMARY KEY, Value REAL);");
+
+                int idCounter = 0;
+                void Emit(double value)
+                {
+                    swCreate.WriteLine("INSERT INTO RealTable VALUES (" + idCounter + ", " + value.ToString("R", enUs) + ");");
+                    swData.WriteLine(idCounter + "\t" + BitConverter.DoubleToInt64Bits(value));
+
+                    idCounter++;
+                };
+
+                // Generate 0
+                Emit(0);
+
+                // Other key values
+                Emit(-1);
+                Emit(1);
+                Emit(double.MinValue);
+                Emit(double.MaxValue);
+
+                Emit(-1000);
+                Emit(1000);
+
+                // Generate key values
+                for (int i = 0; i < 63; i++)
+                {
+                    double val = BitConverter.Int64BitsToDouble(1L << i);
+                    if (!double.IsNaN(val))
+                        Emit(val);
+                }
+
+                for (int i = 0; i < 62; i++)
+                {
+                    double val = BitConverter.Int64BitsToDouble(0xFF << i);
+                    if (!double.IsNaN(val))
+                        Emit(val);
+                }
+            }
+        }
+
+        private static void GenerateMediumDb(string dir)
+        {
+            // Generate a db with 50 tables, each with 500 rows
+            using (FileStream fsCreate = File.Open(Path.Combine(dir, "MediumDb_Create.sql"), FileMode.Create, FileAccess.ReadWrite))
             using (StreamWriter swCreate = new StreamWriter(fsCreate))
             {
                 CultureInfo enUs = new CultureInfo("en-US");
@@ -43,7 +101,7 @@ namespace TestDataGenerator
                 for (int tbl = 0; tbl < 10; tbl++)
                 {
                     swCreate.WriteLine($"create table Table{tbl:00} (MyInt INTEGER, MyReal REAL, MyText TEXT, MyBlob BLOB);");
-                    
+
                     using (FileStream fsData = File.Open(Path.Combine(dir, $"Data-{tbl:00}.csv"), FileMode.Create))
                     using (StreamWriter swData = new StreamWriter(fsData))
                     {
@@ -178,7 +236,7 @@ namespace TestDataGenerator
                         }
                     }
                 }
-                
+
                 swCreate.WriteLine();
                 swCreate.WriteLine(".separator ';'");
 

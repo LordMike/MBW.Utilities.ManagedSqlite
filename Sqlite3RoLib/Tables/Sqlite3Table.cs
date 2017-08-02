@@ -124,8 +124,7 @@ namespace Sqlite3RoLib.Tables
                                 rowData[i] = reader.ReadInteger((byte)meta.Length);
                                 break;
                             case SqliteDataType.Float:
-                                // TODO: Handle floating points
-                                rowData[i] = reader.ReadInteger((byte)meta.Length);
+                                rowData[i] = BitConverter.Int64BitsToDouble(reader.ReadInteger((byte)meta.Length));
                                 break;
                             case SqliteDataType.Boolean0:
                                 rowData[i] = false;
