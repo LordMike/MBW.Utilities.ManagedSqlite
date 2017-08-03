@@ -1,6 +1,6 @@
 namespace Sqlite3RoLib.Objects.Enums
 {
-    internal enum SqliteEncoding : uint
+    public enum SqliteEncoding : uint
     {
         // ReSharper disable once InconsistentNaming
         UTF8 = 1,

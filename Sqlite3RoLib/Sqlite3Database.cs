@@ -15,8 +15,8 @@ namespace Sqlite3RoLib
 
         private uint _sizeInPages;
 
-        private DatabaseHeader _header;
-        private Sqlite3MasterTable masterTable;
+        public DatabaseHeader Header { get; private set; }
+        private Sqlite3MasterTable _masterTable;
 
         public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
         {
@@ -29,17 +29,17 @@ namespace Sqlite3RoLib
 
         private void Initialize()
         {
-            _header = DatabaseHeader.Parse(_reader);
+            Header = DatabaseHeader.Parse(_reader);
 
             // Database Size in pages adjustment
             // https://www.sqlite.org/fileformat.html#in_header_database_size
 
-            uint expectedPages = (uint)(_reader.Length / _header.PageSize);
+            uint expectedPages = (uint)(_reader.Length / Header.PageSize);
 
             // TODO: Warn on mismatch
-            _sizeInPages = Math.Max(expectedPages, _header.DatabaseSizeInPages);
+            _sizeInPages = Math.Max(expectedPages, Header.DatabaseSizeInPages);
 
-            _reader.ApplySqliteDatabaseHeader(_header);
+            _reader.ApplySqliteDatabaseHeader(Header);
         }
 
         private void InitializeMasterTable()
@@ -48,7 +48,7 @@ namespace Sqlite3RoLib
             BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
             Sqlite3Table table = new Sqlite3Table(_reader, rootBtree);
-            masterTable = new Sqlite3MasterTable(table);
+            _masterTable = new Sqlite3MasterTable(table);
         }
 
         public Sqlite3Table GetTable(string name)
@@ -69,7 +69,7 @@ namespace Sqlite3RoLib
             throw new Exception("Unable to find table named " + name);
         }
 
-        public IEnumerable<Sqlite3SchemaRow> GetTables() => masterTable.Tables;
+        public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
 
         public void Dispose()
         {

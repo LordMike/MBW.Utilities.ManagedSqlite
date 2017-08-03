@@ -1,6 +1,6 @@
 namespace Sqlite3RoLib.Objects.Enums
 {
-    internal enum FileReadVersion : byte
+    public enum FileReadVersion : byte
     {
         Legacy = 1,
         // ReSharper disable once InconsistentNaming

@@ -2,7 +2,7 @@
 
 namespace Sqlite3RoLib.Objects.Headers
 {
-    internal class DatabaseHeader
+    public class DatabaseHeader
     {
         public const int HeaderSize = 100;
 
@@ -11,49 +11,49 @@ namespace Sqlite3RoLib.Objects.Headers
             (byte) 'o',(byte) 'r', (byte) 'm', (byte) 'a', (byte) 't', (byte) ' ', (byte) '3', 0
         };
 
-        public ushort PageSize { get; set; }
+        public ushort PageSize { get; private set; }
 
-        public FileWriteVersion WriteVersion { get; set; }
+        public FileWriteVersion WriteVersion { get; private set; }
 
-        public FileReadVersion ReadVersion { get; set; }
+        public FileReadVersion ReadVersion { get; private set; }
 
-        public byte ReservedSpaceAtEndOfPage { get; set; }
+        public byte ReservedSpaceAtEndOfPage { get; private set; }
 
-        public byte MaximumEmbeddedPayloadFraction { get; set; }
+        public byte MaximumEmbeddedPayloadFraction { get; private set; }
 
-        public byte MinimumEmbeddedPayloadFraction { get; set; }
+        public byte MinimumEmbeddedPayloadFraction { get; private set; }
 
-        public byte LeafPayloadFraction { get; set; }
+        public byte LeafPayloadFraction { get; private set; }
 
-        public uint ChangeCounter { get; set; }
+        public uint ChangeCounter { get; private set; }
 
-        public uint DatabaseSizeInPages { get; set; }
+        public uint DatabaseSizeInPages { get; private set; }
 
-        public uint FirstFreelistTrunkPage { get; set; }
+        public uint FirstFreelistTrunkPage { get; private set; }
 
-        public uint FreeListPages { get; set; }
+        public uint FreeListPages { get; private set; }
 
-        public uint SchemaCookie { get; set; }
+        public uint SchemaCookie { get; private set; }
 
-        public uint SchemaFormat { get; set; }
+        public uint SchemaFormat { get; private set; }
 
-        public uint DefaultPageCacheSize { get; set; }
+        public uint DefaultPageCacheSize { get; private set; }
 
-        public uint Value7 { get; set; }
+        public uint Value7 { get; private set; }
 
-        public SqliteEncoding TextEncoding { get; set; }
+        public SqliteEncoding TextEncoding { get; private set; }
 
-        public uint UserVersion { get; set; }
+        public uint UserVersion { get; private set; }
 
-        public uint IncrementalVacuumMode { get; set; }
+        public uint IncrementalVacuumMode { get; private set; }
 
-        public uint ApplicationId { get; set; }
+        public uint ApplicationId { get; private set; }
 
-        public uint VersionValidFor { get; set; }
+        public uint VersionValidFor { get; private set; }
 
-        public uint Version { get; set; }
+        public uint Version { get; private set; }
 
-        public static DatabaseHeader Parse(ReaderBase reader)
+        internal static DatabaseHeader Parse(ReaderBase reader)
         {
             // The header is 100 bytes
             reader.CheckSize(100);
