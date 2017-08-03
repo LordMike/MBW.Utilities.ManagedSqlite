@@ -11,13 +11,13 @@ namespace Sqlite3RoLib.Objects.Headers
             (byte) 'o',(byte) 'r', (byte) 'm', (byte) 'a', (byte) 't', (byte) ' ', (byte) '3', 0
         };
 
-        public ushort PageSize { get; private set; }
+        public ushort PageSize { get; internal set; }
 
         public FileWriteVersion WriteVersion { get; private set; }
 
         public FileReadVersion ReadVersion { get; private set; }
 
-        public byte ReservedSpaceAtEndOfPage { get; private set; }
+        public byte ReservedSpaceAtEndOfPage { get; internal set; }
 
         public byte MaximumEmbeddedPayloadFraction { get; private set; }
 
@@ -41,7 +41,7 @@ namespace Sqlite3RoLib.Objects.Headers
 
         public uint Value7 { get; private set; }
 
-        public SqliteEncoding TextEncoding { get; private set; }
+        public SqliteEncoding TextEncoding { get; internal set; }
 
         public uint UserVersion { get; private set; }
 
