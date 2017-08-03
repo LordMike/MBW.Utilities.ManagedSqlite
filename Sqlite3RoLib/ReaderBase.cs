@@ -37,7 +37,15 @@ namespace Sqlite3RoLib
             _binaryReader = new BinaryReader(stream);
         }
 
-        public void ApplySqliteDatabaseHeader(DatabaseHeader header)
+        internal ReaderBase(Stream stream, ReaderBase origin) 
+            : this(stream)
+        {
+            PageSize = origin.PageSize;
+            ReservedSpace = origin.ReservedSpace;
+            TextEncoding = origin.TextEncoding;
+        }
+
+        internal void ApplySqliteDatabaseHeader(DatabaseHeader header)
         {
             PageSize = header.PageSize;
             ReservedSpace = header.ReservedSpaceAtEndOfPage;

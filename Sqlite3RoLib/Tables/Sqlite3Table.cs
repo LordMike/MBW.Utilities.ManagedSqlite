@@ -33,13 +33,7 @@ namespace Sqlite3RoLib.Tables
 
                 using (MemoryStream ms = new MemoryStream(data))
                 {
-                    ReaderBase reader = new ReaderBase(ms);
-                    reader.ApplySqliteDatabaseHeader(new DatabaseHeader
-                    {
-                        TextEncoding = _reader.TextEncoding,
-                        PageSize = _reader.PageSize,
-                        ReservedSpaceAtEndOfPage = _reader.ReservedSpace
-                    });
+                    ReaderBase reader = new ReaderBase(ms, _reader);
 
                     byte bytesRead;
                     long headerSize = reader.ReadVarInt(out bytesRead);
