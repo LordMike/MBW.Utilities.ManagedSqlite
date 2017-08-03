@@ -60,7 +60,7 @@ namespace Sqlite3RoLib
                 if (table.TableName == name && table.Type == "table")
                 {
                     // Found it
-                    BTreePage root = BTreePage.Parse(_reader, 2);
+                    BTreePage root = BTreePage.Parse(_reader, table.RootPage);
                     Sqlite3Table tbl = new Sqlite3Table(_reader, root);
                     return tbl;
                 }
