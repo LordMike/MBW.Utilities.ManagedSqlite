@@ -57,7 +57,7 @@ namespace Sqlite3RoLib.Objects
                     // All data is in cell
                     bytesInCell = (ushort)P;
                 }
-                else if (P > X && K == X)
+                else if (P > X && K <= X)
                 {
                     bytesInCell = (ushort)K;
                 }
@@ -70,7 +70,12 @@ namespace Sqlite3RoLib.Objects
                     throw new InvalidOperationException("We're not supposed to be here");
                 }
 
-                Debug.Assert(bytes <= ushort.MaxValue);
+                if (bytes > bytesInCell)
+                {
+                    // We have overflow
+                    Reader.Skip(bytesInCell);
+                    overflowPage = Reader.ReadUInt32();
+                }
 
                 Cells[i] = new Cell
                 {
@@ -81,7 +86,7 @@ namespace Sqlite3RoLib.Objects
                 };
             }
         }
-        
+
         public struct Cell
         {
             public long DataSize;
