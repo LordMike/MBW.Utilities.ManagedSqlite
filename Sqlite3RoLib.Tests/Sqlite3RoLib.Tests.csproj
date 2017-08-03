@@ -5,12 +5,18 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Data\DB-UTF16BE.db" />
+    <None Remove="Data\DB-UTF16LE.db" />
+    <None Remove="Data\DB-UTF8.db" />
     <None Remove="Data\Db1.db" />
     <None Remove="Data\IntegerData.db" />
     <None Remove="Data\RealData.db" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Data\DB-UTF16BE.db" />
+    <EmbeddedResource Include="Data\DB-UTF16LE.db" />
+    <EmbeddedResource Include="Data\DB-UTF8.db" />
     <EmbeddedResource Include="Data\Db1.db" />
     <EmbeddedResource Include="Data\MediumDb.db" />
     <EmbeddedResource Include="Data\IntegerData.db" />
