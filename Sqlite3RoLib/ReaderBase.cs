@@ -43,6 +43,7 @@ namespace Sqlite3RoLib
             PageSize = origin.PageSize;
             ReservedSpace = origin.ReservedSpace;
             TextEncoding = origin.TextEncoding;
+            _encoding = origin._encoding;
         }
 
         internal void ApplySqliteDatabaseHeader(DatabaseHeader header)
