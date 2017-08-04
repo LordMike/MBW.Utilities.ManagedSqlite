@@ -1,10 +1,8 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using Sqlite3RoLib.Helpers;
 using Sqlite3RoLib.Objects;
 using Sqlite3RoLib.Objects.Enums;
-using Sqlite3RoLib.Objects.Headers;
 
 namespace Sqlite3RoLib.Tables
 {
@@ -28,12 +26,12 @@ namespace Sqlite3RoLib.Tables
             {
                 metaInfos.Clear();
 
-                // TODO: Make a new reader based on a virtual stream of the (potentially) fragmented data
-                byte[] data = BTreeTools.ReadCellData(_reader, cell);
-
-                using (MemoryStream ms = new MemoryStream(data))
+                // Create a new stream to cover any fragmentation that might occur
+                // The stream is started in the current cells "resident" data, and will overflow to any other pages as needed
+                using (SqliteDataStream dataStream = new SqliteDataStream(_reader, cell.Page, (ushort)(cell.CellOffset + cell.Cell.CellHeaderSize),
+                    cell.Cell.DataSizeInCell, cell.Cell.FirstOverflowPage, cell.Cell.DataSize))
                 {
-                    ReaderBase reader = new ReaderBase(ms, _reader);
+                    ReaderBase reader = new ReaderBase(dataStream, _reader);
 
                     byte bytesRead;
                     long headerSize = reader.ReadVarInt(out bytesRead);

@@ -25,8 +25,8 @@ namespace Sqlite3RoLib.Objects
             {
                 Reader.SeekPage(Page, CellOffsets[i]);
 
-                long bytes = Reader.ReadVarInt();
-                long rowId = Reader.ReadVarInt();
+                long bytes = Reader.ReadVarInt(out byte bytesSize);
+                long rowId = Reader.ReadVarInt(out byte rowIdSize);
 
                 uint overflowPage = 0;
 
@@ -79,6 +79,7 @@ namespace Sqlite3RoLib.Objects
 
                 Cells[i] = new Cell
                 {
+                    CellHeaderSize = (byte) (bytesSize + rowIdSize),
                     DataSize = bytes,
                     DataSizeInCell = bytesInCell,
                     RowId = rowId,
@@ -89,11 +90,24 @@ namespace Sqlite3RoLib.Objects
 
         public struct Cell
         {
+            /// <summary>
+            /// The size of the data in the cell (including data in overflow), excluding the header and overfow page pointers
+            /// </summary>
             public long DataSize;
+
+            /// <summary>
+            /// The size of the data in the cell (in the first page only), excluding the header and overfow page pointers
+            /// </summary>
             // Maximum cell size slightly less than one page, which is 65K
             public ushort DataSizeInCell;
+
             public long RowId;
             public uint FirstOverflowPage;
+
+            /// <summary>
+            /// The size of the two VarInts in the beginning of the cell
+            /// </summary>
+            public byte CellHeaderSize;
         }
     }
 }

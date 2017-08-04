@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using Sqlite3RoLib.Objects.Enums;
 using Sqlite3RoLib.Tables;
 using Xunit;
 
@@ -12,14 +11,14 @@ namespace Sqlite3RoLib.Tests
     {
         private readonly Stream _stream;
 
-        private byte[] _expected;
+        private readonly byte[] _expected;
 
         public BigBlob_Tests()
         {
             _stream = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.BigBlobDb.db");
 
-            using (var fsIn = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.BigBlobDb.bin"))
-            using (var ms = new MemoryStream())
+            using (Stream fsIn = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.BigBlobDb.bin"))
+            using (MemoryStream ms = new MemoryStream())
             {
                 fsIn.CopyTo(ms);
                 _expected = ms.ToArray();

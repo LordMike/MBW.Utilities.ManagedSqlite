@@ -10,11 +10,6 @@ namespace Sqlite3RoLib.Helpers
             throw new NotImplementedException();
         }
 
-        public override int Read(byte[] buffer, int offset, int count)
-        {
-            throw new NotImplementedException();
-        }
-
         public override void SetLength(long value)
         {
             throw new NotImplementedException();
