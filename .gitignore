@@ -3,3 +3,7 @@
 obj/
 bin/
 .vs/
+
+# Auto generated stuff
+TestDataGenerator/Data-MediumDb/
+TestDataGenerator/Data-RealData/
