@@ -184,15 +184,6 @@ namespace TestDataGenerator
                     {
                         for (int i = 0; i < 500; i++)
                         {
-                            swData.Write(rnd.NextDouble().ToString(enUs));
-                            swData.Write(";");
-                            swData.Write(rnd.NextDouble().ToString(enUs));
-                            swData.Write(";");
-                            swData.Write(rnd.NextDouble().ToString(enUs));
-                            swData.Write(";");
-                            swData.Write(rnd.NextDouble().ToString(enUs));
-                            swData.WriteLine();
-
                             for (int u = 0; u < 4; u++)
                             {
                                 if (u > 0)
