@@ -11,8 +11,8 @@ namespace TestDataGenerator
         {
             string dir = "Data-MediumDb";
 
-            //PrepDirectory(dir);
-            //GenerateMediumDb(dir);
+            PrepDirectory(dir);
+            GenerateMediumDb(dir);
 
             dir = "Data-RealData";
 
@@ -89,6 +89,9 @@ namespace TestDataGenerator
             using (StreamWriter swCreate = new StreamWriter(fsCreate))
             {
                 CultureInfo enUs = new CultureInfo("en-US");
+
+                swCreate.WriteLine("-- sqlite3 MediumDb.db \".read MediumDb_Create.sql\"");
+                swCreate.WriteLine();
 
                 Random rnd = new Random();
                 List<string> data = new List<string>
@@ -231,9 +234,10 @@ namespace TestDataGenerator
                 swCreate.WriteLine();
                 swCreate.WriteLine(".separator ';'");
 
-                for (int tbl = 0; tbl < 50; tbl++)
+                int count = 50;
+                for (int tbl = 0; tbl < count; tbl++)
                 {
-                    swCreate.WriteLine($".print Table{tbl:00}");
+                    swCreate.WriteLine($".print {tbl + 1:00} of {count:00}, {tbl * 1f / count:P0}");
                     swCreate.WriteLine($".import Data-{tbl:00}.csv Table{tbl:00}");
                 }
             }
