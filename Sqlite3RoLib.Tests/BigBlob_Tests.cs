@@ -39,7 +39,7 @@ namespace Sqlite3RoLib.Tests
 
                 Assert.Equal(1, row.RowId);
 
-                byte[] actual = row.GetOrdinal<byte[]>(1);
+                Assert.True(row.TryGetOrdinal(1, out byte[] actual));
 
                 Assert.Equal(_expected, actual);
             }

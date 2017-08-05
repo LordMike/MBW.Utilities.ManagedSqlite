@@ -1,4 +1,4 @@
-# sqlite3 Db3.db
+-- sqlite3 IntegerData.db ".read IntegerData_Create.sql"
 
 create table IntegerTable (Id INTEGER PRIMARY KEY, MyInt INTEGER);
 insert into IntegerTable values(0, 0);          			-- 0x                 00

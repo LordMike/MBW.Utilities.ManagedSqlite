@@ -65,8 +65,8 @@ namespace Sqlite3RoLib.Tests
 
                 foreach (Sqlite3Row row in rows)
                 {
-                    string actualLang = row.GetOrdinal<string>(1);
-                    string actualText = row.GetOrdinal<string>(2);
+                    Assert.True(row.TryGetOrdinal(1, out string actualLang));
+                    Assert.True(row.TryGetOrdinal(2, out string actualText));
 
                     if (row.RowId == id)
                     {

@@ -175,7 +175,7 @@ namespace Sqlite3RoLib.Tests
 
                 foreach (Sqlite3Row row in rows)
                 {
-                    double actual = row.GetOrdinal<double>(1);
+                    Assert.True(row.TryGetOrdinal(1, out double actual));
 
                     if (row.RowId == id)
                     {

@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="Data\AlterTable.db" />
     <None Remove="Data\BigBlobDb.bin" />
     <None Remove="Data\BigBlobDb.db" />
     <None Remove="Data\DB-UTF16BE.db" />
@@ -16,6 +17,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Data\AlterTable.db" />
     <EmbeddedResource Include="Data\BigBlobDb.bin" />
     <EmbeddedResource Include="Data\BigBlobDb.db" />
     <EmbeddedResource Include="Data\DB-UTF16BE.db" />

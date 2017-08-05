@@ -13,11 +13,19 @@ namespace Sqlite3RoLib.Tables
             ColumnData = columnData;
         }
 
-        public T GetOrdinal<T>(ushort index)
+        public bool TryGetOrdinal<T>(ushort index, out T value)
         {
-            object value = ColumnData[index];
+            value = default(T);
 
-            return (T)Convert.ChangeType(value, typeof(T));
+            if (ColumnData.Length > index)
+            {
+                object tmp = ColumnData[index];
+
+                value = (T)Convert.ChangeType(tmp, typeof(T));
+                return true;
+            }
+
+            return false;
         }
     }
 }

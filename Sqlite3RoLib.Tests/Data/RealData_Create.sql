@@ -1,3 +1,5 @@
+-- sqlite3 RealData.db ".read RealData_Create.sql"
+
 CREATE TABLE RealTable (Id INTEGER PRIMARY KEY, Value REAL);
 INSERT INTO RealTable VALUES (0, 0);
 INSERT INTO RealTable VALUES (1, -1);
