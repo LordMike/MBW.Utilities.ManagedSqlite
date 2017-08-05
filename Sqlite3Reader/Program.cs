@@ -10,7 +10,7 @@ namespace Sqlite3Reader
     {
         static void Main(string[] args)
         {
-            using (FileStream fs = File.OpenRead("Db3.db"))
+            using (FileStream fs = File.OpenRead("BigBlobDb.db"))
             using (Sqlite3Database db = new Sqlite3Database(fs))
             {
                 IEnumerable<Sqlite3SchemaRow> tables = db.GetTables();
@@ -22,7 +22,7 @@ namespace Sqlite3Reader
                     if (table.Type == "table")
                     {
                         Sqlite3Table tableData = db.GetTable(table.Name);
-
+                         
                         foreach (Sqlite3Row row in tableData.EnumerateRows())
                         {
                             Console.Write(row.RowId);
