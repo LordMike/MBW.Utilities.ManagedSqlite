@@ -36,9 +36,9 @@ namespace TestDataGenerator
         private static void GenerateRealDataDb(string dir)
         {
             using (FileStream fsCreate = File.Open(Path.Combine(dir, "RealData_Create.sql"), FileMode.Create, FileAccess.ReadWrite))
-            using (StreamWriter swCreate = new StreamWriter(fsCreate))
+            using (StreamWriter swCreate = new StreamWriter(fsCreate, new UTF8Encoding(false)))
             using (FileStream fsData = File.Open(Path.Combine(dir, $"RealData.csv"), FileMode.Create))
-            using (StreamWriter swData = new StreamWriter(fsData))
+            using (StreamWriter swData = new StreamWriter(fsData, new UTF8Encoding(false)))
             {
                 CultureInfo enUs = new CultureInfo("en-US");
 
@@ -47,7 +47,16 @@ namespace TestDataGenerator
                 int idCounter = 0;
                 void Emit(double value)
                 {
-                    swCreate.WriteLine("INSERT INTO RealTable VALUES (" + idCounter + ", " + value.ToString("R", enUs) + ");");
+                    string valueString;
+
+                    if (double.IsNegativeInfinity(value))
+                        valueString = "-Inf";
+                    else if (double.IsPositiveInfinity(value))
+                        valueString = "Inf";
+                    else
+                        valueString = value.ToString("R", enUs);
+
+                    swCreate.WriteLine("INSERT INTO RealTable VALUES (" + idCounter + ", " + valueString + ");");
                     swData.WriteLine(idCounter + "\t" + BitConverter.DoubleToInt64Bits(value));
 
                     idCounter++;
@@ -61,6 +70,8 @@ namespace TestDataGenerator
                 Emit(1);
                 Emit(double.MinValue);
                 Emit(double.MaxValue);
+                Emit(double.NegativeInfinity);
+                Emit(double.PositiveInfinity);
 
                 Emit(-1000);
                 Emit(1000);
@@ -75,7 +86,7 @@ namespace TestDataGenerator
 
                 for (int i = 0; i < 62; i++)
                 {
-                    double val = BitConverter.Int64BitsToDouble(0xFF << i);
+                    double val = BitConverter.Int64BitsToDouble((long)0xFF << i);
                     if (!double.IsNaN(val))
                         Emit(val);
                 }
