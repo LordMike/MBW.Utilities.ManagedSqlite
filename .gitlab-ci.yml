@@ -1,0 +1,38 @@
+image: scm.agileresponse.com:3500/chronos/chronos-dockerimages:prod
+
+stages:
+- build
+- tests
+- pack
+
+build-Sqlite3Ro:
+  stage: build
+  script:
+    - dotnet restore
+    - dotnet build -c Debug -f netstandard1.6
+  artifacts:
+    untracked: true
+    expire_in: 6 hours
+
+test-Sqlite3Ro:
+  stage: tests
+  script:
+    - dotnet restore "Sqlite3RoLib.Tests"
+    - (cd "Sqlite3RoLib.Tests"; dotnet xunit -c Debug -f netcoreapp1.1)
+  artifacts:
+    untracked: true
+    expire_in: 6 hours
+  dependencies:
+  - build-Sqlite3Ro
+
+pack:
+  stage: pack
+  script:
+    - dotnet restore Sqlite3RoLib
+    - dotnet pack "Sqlite3RoLib" -c Debug --include-source --no-build --include-symbols -o ../Build
+  artifacts:
+    expire_in: 1 week
+    paths:
+    - Build/*.nupkg
+  dependencies:
+  - build-Sqlite3Ro
