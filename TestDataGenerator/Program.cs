@@ -19,6 +19,11 @@ namespace TestDataGenerator
 
             PrepDirectory(dir);
             GenerateRealDataDb(dir);
+
+            dir = "Data-Corrupt";
+
+            PrepDirectory(dir);
+            GenerateCorruptDatabases(dir);
         }
 
         private static void PrepDirectory(string dir)
@@ -244,6 +249,35 @@ namespace TestDataGenerator
                     swCreate.WriteLine($".print {tbl + 1:00} of {count:00}, {tbl * 1f / count:P0}");
                     swCreate.WriteLine($".import Data-{tbl:00}.csv Table{tbl:00}");
                 }
+            }
+        }
+
+        private static void GenerateCorruptDatabases(string dir)
+        {
+            byte[] original;
+            using (Stream fs = ResourceHelper.OpenResource("TestDataGenerator.InitialForCorruption.db"))
+            {
+                original = new byte[fs.Length];
+                fs.Read(original, 0, original.Length);
+            }
+
+            byte[] tmp = new byte[original.Length];
+            int bits = original.Length * 8;
+            for (int i = 0; i < bits; i++)
+            {
+                // Reset
+                Array.Copy(original, tmp, tmp.Length);
+
+                // Change 1 bit
+                int byteIdx = i / 8;
+                byte mask = (byte)(0x80 >> (i % 8));
+
+                byte origByte = tmp[byteIdx];
+                tmp[byteIdx] = (byte)(origByte ^ mask);
+
+                // Output
+                string outFile = Path.Combine(dir, "db-" + i + ".db");
+                File.WriteAllBytes(outFile, tmp);
             }
         }
     }

@@ -5,4 +5,16 @@
     <TargetFramework>netcoreapp1.1</TargetFramework>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="Data-Corrupt\Initial.db" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="InitialForCorruption.db" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="Data-Corrupt\" />
+  </ItemGroup>
+
 </Project>
