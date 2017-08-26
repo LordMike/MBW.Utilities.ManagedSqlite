@@ -1,13 +1,12 @@
 image: microsoft/dotnet:1.1-sdk
 
 stages:
-- build-1
-- build-2
+- build
 - tests
 - pack
 
 build-Sqlite3RoLib:
-  stage: build-1
+  stage: build
   script:
     - dotnet restore Sqlite3RoLib
     - dotnet build -c Debug Sqlite3RoLib
@@ -16,7 +15,7 @@ build-Sqlite3RoLib:
     expire_in: 6 hours
 
 build-Sqlite3Reader:
-  stage: build-2
+  stage: build
   script:
     - dotnet restore Sqlite3Reader
     - dotnet build -c Debug Sqlite3Reader
