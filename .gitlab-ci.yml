@@ -1,15 +1,25 @@
 image: microsoft/dotnet:1.1-sdk
 
 stages:
-- build
+- build-1
+- build-2
 - tests
 - pack
 
-build-Sqlite3Ro:
-  stage: build
+build-Sqlite3RoLib:
+  stage: build-1
   script:
-    - dotnet restore
-    - dotnet build -c Debug -f netstandard1.6
+    - dotnet restore Sqlite3RoLib
+    - dotnet build -c Debug Sqlite3RoLib
+  artifacts:
+    untracked: true
+    expire_in: 6 hours
+
+build-Sqlite3Reader:
+  stage: build-2
+  script:
+    - dotnet restore Sqlite3Reader
+    - dotnet build -c Debug Sqlite3Reader
   artifacts:
     untracked: true
     expire_in: 6 hours
@@ -17,22 +27,22 @@ build-Sqlite3Ro:
 test-Sqlite3Ro:
   stage: tests
   script:
-    - dotnet restore "Sqlite3RoLib.Tests"
-    - (cd "Sqlite3RoLib.Tests"; dotnet xunit -c Debug -f netcoreapp1.1)
+    - dotnet restore Sqlite3RoLib.Tests
+    - (cd Sqlite3RoLib.Tests; dotnet xunit -c Debug)
   artifacts:
     untracked: true
     expire_in: 6 hours
   dependencies:
-  - build-Sqlite3Ro
+  - build-Sqlite3RoLib
 
 pack:
   stage: pack
   script:
     - dotnet restore Sqlite3RoLib
-    - dotnet pack "Sqlite3RoLib" -c Debug --include-source --no-build --include-symbols -o ../Build
+    - dotnet pack Sqlite3RoLib -c Debug --include-source --no-build --include-symbols -o ../Build
   artifacts:
     expire_in: 1 week
     paths:
     - Build/*.nupkg
   dependencies:
-  - build-Sqlite3Ro
+  - build-Sqlite3RoLib
