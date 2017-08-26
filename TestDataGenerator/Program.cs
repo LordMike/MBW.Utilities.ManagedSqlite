@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Text;
 
 namespace TestDataGenerator
 {
@@ -42,21 +43,15 @@ namespace TestDataGenerator
             {
                 CultureInfo enUs = new CultureInfo("en-US");
 
+                swCreate.WriteLine("-- sqlite3 RealData.db \".read RealData_Create.sql\"");
+                swCreate.WriteLine();
+
                 swCreate.WriteLine("CREATE TABLE RealTable (Id INTEGER PRIMARY KEY, Value REAL);");
 
                 int idCounter = 0;
                 void Emit(double value)
                 {
-                    string valueString;
-
-                    if (double.IsNegativeInfinity(value))
-                        valueString = "-Inf";
-                    else if (double.IsPositiveInfinity(value))
-                        valueString = "Inf";
-                    else
-                        valueString = value.ToString("R", enUs);
-
-                    swCreate.WriteLine("INSERT INTO RealTable VALUES (" + idCounter + ", " + valueString + ");");
+                    swCreate.WriteLine("INSERT INTO RealTable VALUES (" + idCounter + ", " + value.ToString("R", enUs) + ");");
                     swData.WriteLine(idCounter + "\t" + BitConverter.DoubleToInt64Bits(value));
 
                     idCounter++;
@@ -70,8 +65,6 @@ namespace TestDataGenerator
                 Emit(1);
                 Emit(double.MinValue);
                 Emit(double.MaxValue);
-                Emit(double.NegativeInfinity);
-                Emit(double.PositiveInfinity);
 
                 Emit(-1000);
                 Emit(1000);
