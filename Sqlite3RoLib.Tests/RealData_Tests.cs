@@ -191,11 +191,14 @@ namespace Sqlite3RoLib.Tests
                 {
                     Assert.True(row.TryGetOrdinal(1, out double actual));
 
-                    if (row.RowId == id)
-                    {
-                        Assert.Equal(expected, actual);
-                        return;
-                    }
+                    if (row.RowId != id)
+                        continue;
+
+                    long actualLong = BitConverter.DoubleToInt64Bits(actual);
+
+                    // Note: Floating points are weird.
+                    Assert.True(Math.Abs(expectedLong - actualLong) <= 2);
+                    return;
                 }
 
                 Assert.True(false, "Number is missing");
