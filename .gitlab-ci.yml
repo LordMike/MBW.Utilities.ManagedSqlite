@@ -1,47 +1,36 @@
-image: microsoft/dotnet:1.1-sdk
+image: microsoft/dotnet:2.1-sdk
 
 stages:
 - build
-- tests
+- test
 - pack
 
-build-Sqlite3RoLib:
+build:
   stage: build
   script:
-    - dotnet restore Sqlite3RoLib
-    - dotnet build -c Debug Sqlite3RoLib
+    - dotnet restore
+    - dotnet build --no-restore -c Debug
   artifacts:
     untracked: true
     expire_in: 6 hours
 
-build-Sqlite3Reader:
-  stage: build
+test:
+  stage: test
   script:
-    - dotnet restore Sqlite3Reader
-    - dotnet build -c Debug Sqlite3Reader
-  artifacts:
-    untracked: true
-    expire_in: 6 hours
-
-test-Sqlite3Ro:
-  stage: tests
-  script:
-    - dotnet restore Sqlite3RoLib.Tests
     - (cd Sqlite3RoLib.Tests; dotnet xunit -c Debug)
   artifacts:
     untracked: true
     expire_in: 6 hours
   dependencies:
-  - build-Sqlite3RoLib
+  - build
 
 pack:
   stage: pack
   script:
-    - dotnet restore Sqlite3RoLib
-    - dotnet pack Sqlite3RoLib -c Debug --include-source --no-build --include-symbols -o ../Build
+    - dotnet pack Sqlite3RoLib -c Debug --include-source --no-build --no-restore --include-symbols -o ../Build
   artifacts:
     expire_in: 1 week
     paths:
     - Build/*.nupkg
   dependencies:
-  - build-Sqlite3RoLib
+  - build

@@ -3,13 +3,19 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.26228.9
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sqlite3Reader", "Sqlite3Reader\Sqlite3Reader.csproj", "{9F86891C-A5AC-4337-9120-5228B31AAC28}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sqlite3Reader", "Sqlite3Reader\Sqlite3Reader.csproj", "{9F86891C-A5AC-4337-9120-5228B31AAC28}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sqlite3RoLib", "Sqlite3RoLib\Sqlite3RoLib.csproj", "{33B7D315-CB4D-4911-8510-C43CE3F27D98}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sqlite3RoLib", "Sqlite3RoLib\Sqlite3RoLib.csproj", "{33B7D315-CB4D-4911-8510-C43CE3F27D98}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TestDataGenerator", "TestDataGenerator\TestDataGenerator.csproj", "{1C6EBD3E-9A21-4B07-A782-CC5087887492}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestDataGenerator", "TestDataGenerator\TestDataGenerator.csproj", "{1C6EBD3E-9A21-4B07-A782-CC5087887492}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sqlite3RoLib.Tests", "Sqlite3RoLib.Tests\Sqlite3RoLib.Tests.csproj", "{0CFD186F-2CE5-4CF1-BACA-23076A59C4B5}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Sqlite3RoLib.Tests", "Sqlite3RoLib.Tests\Sqlite3RoLib.Tests.csproj", "{0CFD186F-2CE5-4CF1-BACA-23076A59C4B5}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{5A21CA7B-C932-4454-A9DB-5A341A46AE66}"
+	ProjectSection(SolutionItems) = preProject
+		.gitlab-ci.yml = .gitlab-ci.yml
+		README.md = README.md
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -36,5 +42,8 @@ Global
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {74AACA01-FA22-4FF7-834F-9B5B6E76EBB1}
 	EndGlobalSection
 EndGlobal
