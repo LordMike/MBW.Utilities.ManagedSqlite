@@ -17,7 +17,7 @@ build:
 test:
   stage: test
   script:
-    - (cd Sqlite3RoLib.Tests; dotnet xunit -c Debug)
+    - (cd Sqlite3RoLib.Tests; dotnet test -c Debug)
   artifacts:
     untracked: true
     expire_in: 6 hours
