@@ -1,8 +1,7 @@
-using System;
 using System.IO;
 using System.Reflection;
 
-namespace Sqlite3RoLib.Tests
+namespace Sqlite3RoLib.Tests.Helpers
 {
     public static class ResourceHelper
     {

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Sqlite3RoLib.Tables;
+using Sqlite3RoLib.Tests.Helpers;
 using Xunit;
 
 namespace Sqlite3RoLib.Tests
@@ -47,31 +48,22 @@ namespace Sqlite3RoLib.Tests
             using (Sqlite3Database db = new Sqlite3Database(_stream))
             {
                 Sqlite3Table tbl = db.GetTable("MyTable");
-                IEnumerable<Sqlite3Row> rows = tbl.EnumerateRows();
 
-                foreach (Sqlite3Row row in rows)
+                Sqlite3Row row = tbl.GetRowById(id);
+                Assert.NotNull(row);
+
+                Assert.True(row.TryGetOrdinal(1, out long actual));
+                Assert.Equal(expectedInteger, actual);
+
+                if (expectedNewInteger.HasValue)
                 {
-                    Assert.True(row.TryGetOrdinal(1, out long actual));
-
-                    if (row.RowId == id)
-                    {
-                        Assert.Equal(expectedInteger, actual);
-
-                        if (expectedNewInteger.HasValue)
-                        {
-                            Assert.True(row.TryGetOrdinal(2, out long actualOther));
-                            Assert.Equal(expectedNewInteger.Value, actualOther);
-                        }
-                        else
-                        {
-                            Assert.False(row.TryGetOrdinal(2, out long _));
-                        }
-
-                        return;
-                    }
+                    Assert.True(row.TryGetOrdinal(2, out long actualOther));
+                    Assert.Equal(expectedNewInteger.Value, actualOther);
                 }
-
-                Assert.True(false, "Number is missing");
+                else
+                {
+                    Assert.False(row.TryGetOrdinal(2, out long _));
+                }
             }
         }
 

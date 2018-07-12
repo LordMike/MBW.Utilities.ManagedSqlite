@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using Sqlite3RoLib.Objects.Enums;
 using Sqlite3RoLib.Tables;
+using Sqlite3RoLib.Tests.Helpers;
 using Xunit;
 
 namespace Sqlite3RoLib.Tests
@@ -25,7 +26,7 @@ namespace Sqlite3RoLib.Tests
 
         public static IEnumerable<object[]> TestDataEmitter()
         {
-            foreach (var row in TestData)
+            foreach (Tuple<int, string, string> row in TestData)
             {
                 yield return new object[] { row.Item1, row.Item2, row.Item3 };
             }
@@ -61,22 +62,14 @@ namespace Sqlite3RoLib.Tests
             using (Sqlite3Database db = new Sqlite3Database(Get(encoding)))
             {
                 Sqlite3Table tbl = db.GetTable("EncodingTable" + encoding);
-                IEnumerable<Sqlite3Row> rows = tbl.EnumerateRows();
+                Sqlite3Row row = tbl.GetRowById(id);
 
-                foreach (Sqlite3Row row in rows)
-                {
-                    Assert.True(row.TryGetOrdinal(1, out string actualLang));
-                    Assert.True(row.TryGetOrdinal(2, out string actualText));
+                Assert.NotNull(row);
 
-                    if (row.RowId == id)
-                    {
-                        Assert.Equal(expectedLanguage, actualLang);
-                        Assert.Equal(expectedString, actualText);
-                        return;
-                    }
-                }
-
-                Assert.True(false, "Text is missing");
+                Assert.True(row.TryGetOrdinal(1, out string actualLang));
+                Assert.True(row.TryGetOrdinal(2, out string actualText));
+                Assert.Equal(expectedLanguage, actualLang);
+                Assert.Equal(expectedString, actualText);
             }
         }
     }

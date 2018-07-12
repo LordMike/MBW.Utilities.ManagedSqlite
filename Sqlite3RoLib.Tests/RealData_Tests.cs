@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Sqlite3RoLib.Tables;
+using Sqlite3RoLib.Tests.Helpers;
 using Xunit;
 
 namespace Sqlite3RoLib.Tests
@@ -180,28 +181,20 @@ namespace Sqlite3RoLib.Tests
         [MemberData(nameof(TestDataEmitter))]
         public void TestRealData(int id, long expectedLong)
         {
-            double expected = BitConverter.Int64BitsToDouble(expectedLong);
-
             using (Sqlite3Database db = new Sqlite3Database(_stream))
             {
                 Sqlite3Table tbl = db.GetTable("RealTable");
-                IEnumerable<Sqlite3Row> rows = tbl.EnumerateRows();
 
-                foreach (Sqlite3Row row in rows)
-                {
-                    Assert.True(row.TryGetOrdinal(1, out double actual));
+                Sqlite3Row row = tbl.GetRowById(id);
+                Assert.NotNull(row);
 
-                    if (row.RowId != id)
-                        continue;
+                Assert.True(row.TryGetOrdinal(1, out double actual));
 
-                    long actualLong = BitConverter.DoubleToInt64Bits(actual);
+                long actualLong = BitConverter.DoubleToInt64Bits(actual);
 
-                    // Note: Floating points are weird.
-                    Assert.True(Math.Abs(expectedLong - actualLong) <= 2);
-                    return;
-                }
-
-                Assert.True(false, "Number is missing");
+                // Note: There is a loss of precision in the sqlite3 cli when generating the test database
+                // This, and the similar loss of precision in C# / floating points here leads to the code below
+                Assert.True(Math.Abs(expectedLong - actualLong) <= 2);
             }
         }
 

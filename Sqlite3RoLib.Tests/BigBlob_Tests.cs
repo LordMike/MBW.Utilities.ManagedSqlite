@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Sqlite3RoLib.Tables;
+using Sqlite3RoLib.Tests.Helpers;
 using Xunit;
 
 namespace Sqlite3RoLib.Tests

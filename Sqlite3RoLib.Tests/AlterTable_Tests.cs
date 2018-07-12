@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Reflection.Metadata;
 using Sqlite3RoLib.Tables;
+using Sqlite3RoLib.Tests.Helpers;
 using Xunit;
 
 namespace Sqlite3RoLib.Tests

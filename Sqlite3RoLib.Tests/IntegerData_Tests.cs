@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Sqlite3RoLib.Tables;
+using Sqlite3RoLib.Tests.Helpers;
 using Xunit;
 
 namespace Sqlite3RoLib.Tests
@@ -87,20 +88,12 @@ namespace Sqlite3RoLib.Tests
             using (Sqlite3Database db = new Sqlite3Database(_stream))
             {
                 Sqlite3Table tbl = db.GetTable("IntegerTable");
-                IEnumerable<Sqlite3Row> rows = tbl.EnumerateRows();
+                Sqlite3Row row = tbl.GetRowById(id);
 
-                foreach (Sqlite3Row row in rows)
-                {
-                    Assert.True(row.TryGetOrdinal(1, out long actual));
+                Assert.NotNull(row);
 
-                    if (row.RowId == id)
-                    {
-                        Assert.Equal(expected, actual);
-                        return;
-                    }
-                }
-
-                Assert.True(false, "Number is missing");
+                Assert.True(row.TryGetOrdinal(1, out long actual));
+                Assert.Equal(expected, actual);
             }
         }
 
