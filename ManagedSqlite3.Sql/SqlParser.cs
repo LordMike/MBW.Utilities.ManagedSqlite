@@ -39,16 +39,18 @@ namespace ManagedSqlite3.Sql
                 string[] typeStrings = first.Skip(1).ToArray();
 
                 Type identifiedType = typeof(byte[]);
+                string[] identifiedTypeStrings = typeStrings;
                 foreach ((string[] words, Type type) candidate in SqlKeywords.TypeKeywords)
                 {
                     if (!typeStrings.Take(candidate.words.Length).SequenceEqual(candidate.words))
                         continue;
 
                     identifiedType = candidate.type;
+                    identifiedTypeStrings = candidate.words;
                     break;
                 }
 
-                tableDefinition.Columns.Add((name, identifiedType));
+                tableDefinition.Columns.Add(new SqlTableColumn(name, string.Join(" ", identifiedTypeStrings), identifiedType));
             }
 
             return true;
