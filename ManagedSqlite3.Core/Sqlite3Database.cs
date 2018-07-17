@@ -46,7 +46,16 @@ namespace ManagedSqlite3.Core
             // Parse table on Page 1, the sqlite_master table
             BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
-            Sqlite3Table table = new Sqlite3Table(_reader, rootBtree);
+            Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow
+            {
+                Type = "table",
+                Name = "sqlite_master",
+                TableName = "sqlite_master",
+                RootPage = rootBtree.Page,
+                Sql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);"
+            };
+
+            Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
             _masterTable = new Sqlite3MasterTable(table);
         }
 
@@ -56,13 +65,13 @@ namespace ManagedSqlite3.Core
 
             foreach (Sqlite3SchemaRow table in tables)
             {
-                if (table.TableName == name && table.Type == "table")
-                {
-                    // Found it
-                    BTreePage root = BTreePage.Parse(_reader, table.RootPage);
-                    Sqlite3Table tbl = new Sqlite3Table(_reader, root);
-                    return tbl;
-                }
+                if (table.TableName != name || table.Type != "table")
+                    continue;
+
+                // Found it
+                BTreePage root = BTreePage.Parse(_reader, table.RootPage);
+                Sqlite3Table tbl = new Sqlite3Table(_reader, root, table);
+                return tbl;
             }
 
             throw new Exception("Unable to find table named " + name);

@@ -11,8 +11,11 @@ namespace ManagedSqlite3.Core.Tables
         private readonly ReaderBase _reader;
         private readonly BTreePage _rootPage;
 
-        internal Sqlite3Table(ReaderBase reader, BTreePage rootPage)
+        public Sqlite3SchemaRow SchemaDefinition { get; }
+
+        internal Sqlite3Table(ReaderBase reader, BTreePage rootPage, Sqlite3SchemaRow table)
         {
+            SchemaDefinition = table;
             _reader = reader;
             _rootPage = rootPage;
         }

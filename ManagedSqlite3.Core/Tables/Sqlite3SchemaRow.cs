@@ -2,14 +2,14 @@ namespace ManagedSqlite3.Core.Tables
 {
     public class Sqlite3SchemaRow
     {
-        public string Type { get; set; }
+        public string Type { get; internal set; }
 
-        public string Name { get; set; }
+        public string Name { get; internal set; }
 
-        public string TableName { get; set; }
+        public string TableName { get; internal set; }
 
-        public uint RootPage { get; set; }
+        public uint RootPage { get; internal set; }
 
-        public string Sql { get; set; }
+        public string Sql { get; internal set; }
     }
 }
