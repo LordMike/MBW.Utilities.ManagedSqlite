@@ -42,7 +42,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Sqlite3RoLib\Sqlite3RoLib.csproj" />
+    <ProjectReference Include="..\ManagedSqlite3.Core\ManagedSqlite3.Core.csproj" />
   </ItemGroup>
 
   <ItemGroup>

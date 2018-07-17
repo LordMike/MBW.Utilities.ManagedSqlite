@@ -17,7 +17,7 @@ build:
 test:
   stage: test
   script:
-    - (cd Sqlite3RoLib.Tests; dotnet test -c Debug)
+    - (cd ManagedSqlite3.Core.Tests; dotnet test -c Debug)
   artifacts:
     untracked: true
     expire_in: 6 hours
@@ -27,7 +27,7 @@ test:
 pack:
   stage: pack
   script:
-    - dotnet pack Sqlite3RoLib -c Debug --include-source --no-build --no-restore --include-symbols -o ../Build
+    - dotnet pack ManagedSqlite3.Core -c Debug --include-source --no-build --no-restore --include-symbols -o ../Build
   artifacts:
     expire_in: 1 week
     paths:
