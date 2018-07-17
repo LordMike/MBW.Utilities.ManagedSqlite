@@ -1,47 +1,161 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
+using CommandLine;
 using ManagedSqlite3.Core;
 using ManagedSqlite3.Core.Tables;
+using ManagedSqlite3.Sql;
 
 namespace ManagedSqlite3.Reader
 {
+    class CommandBase
+    {
+        [Option('d', "DatabaseFile", Required = true, HelpText = "Database File")]
+        public string DatabaseFile { get; set; }
+    }
+
+    [Verb("describe", HelpText = "Dumps the schema of an Sqlite3 database file.")]
+    class DescribeCommand : CommandBase
+    {
+        [Option('s', "SizeStatistics", HelpText = "Calculate sizes of tables and indexes")]
+        public bool DoSizeStatistics { get; set; }
+    }
+
+    [Verb("dump", HelpText = "Dumps the contents of an Sqlite3 database file.")]
+    class DumpCommand : CommandBase
+    {
+
+    }
+
     class Program
     {
-        static void Main(string[] args)
+        static int Main(string[] args)
         {
-            using (FileStream fs = File.OpenRead("BigBlobDb.db"))
-            using (Sqlite3Database db = new Sqlite3Database(fs))
+            return Parser.Default.ParseArguments<DescribeCommand, DumpCommand>(args)
+                .MapResult(
+                    (DescribeCommand opts) => RunDescribe(opts),
+                    (DumpCommand opts) => RunDump(opts),
+                    errs => 1);
+        }
+
+        private static bool TryReadFile(string path, out Stream stream, out Sqlite3Database db, out List<Sqlite3SchemaRow> tables)
+        {
+            stream = null;
+            db = null;
+            tables = null;
+
+            try
             {
-                IEnumerable<Sqlite3SchemaRow> tables = db.GetTables();
+                stream = File.OpenRead(path);
+                db = new Sqlite3Database(stream);
 
-                foreach (Sqlite3SchemaRow table in tables)
+                tables = db.GetTables().ToList();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+                return false;
+            }
+
+            return true;
+        }
+
+        private static string InlineSql(string sql)
+        {
+            return sql.Replace("\r", "").Replace("\n", "").Replace("  ", "");
+        }
+
+        private static int RunDescribe(DescribeCommand opts)
+        {
+            if (!TryReadFile(opts.DatabaseFile, out Stream stream, out Sqlite3Database db,
+                out List<Sqlite3SchemaRow> tables))
+                return 1;
+
+            foreach (Sqlite3SchemaRow row in tables)
+            {
+                if (row.Type != "table")
+                    continue;
+
+                Console.WriteLine($"{row.Type} {row.Name}");
+                Console.WriteLine($"  Schema: {InlineSql(row.Sql)}");
+                Console.WriteLine($"  Root Page: {row.RootPage}");
+
+                try
                 {
-                    Console.WriteLine($"{table.Type} \"{table.Name}\", [{table.TableName}] (RP: {table.RootPage}): {table.Sql}; ");
+                    SqlTableDefinition definition = row.GetTableDefinition();
 
-                    if (table.Type == "table")
+                    Console.WriteLine($"  Columns ({definition.Columns.Count})");
+                    foreach (SqlTableColumn column in definition.Columns)
                     {
-                        Sqlite3Table tableData = db.GetTable(table.Name);
-                         
-                        foreach (Sqlite3Row row in tableData.EnumerateRows())
-                        {
-                            Console.Write(row.RowId);
-
-                            foreach (object obj in row.ColumnData)
-                            {
-                                Console.Write(" | ");
-
-                                if (obj == null)
-                                    Console.Write(" <null> ");
-                                else
-                                    Console.Write(obj);
-                            }
-
-                            Console.WriteLine();
-                        }
+                        Console.WriteLine($"    {column.Name} ({column.TypeName}) => {column.DetectedType.Name}");
                     }
                 }
+                catch (Exception)
+                {
+                    Console.WriteLine("  Error: Unable to parse SQL");
+                }
+
+                List<Sqlite3SchemaRow> indexes = tables.Where(s => s.Type == "index" && s.TableName == row.TableName).ToList();
+
+                Console.WriteLine($"  Indexes ({indexes.Count})");
+                foreach (Sqlite3SchemaRow index in indexes)
+                {
+                    Console.WriteLine($"    {index.Name}");
+                    Console.WriteLine($"      Schema: {InlineSql(index.Sql)}");
+                }
+
+                if (opts.DoSizeStatistics)
+                {
+                    Sqlite3Table table = db.GetTable(row.TableName);
+
+                }
             }
+
+            return 0;
         }
+
+        private static int RunDump(DumpCommand opts)
+        {
+            if (!TryReadFile(opts.DatabaseFile, out Stream stream, out Sqlite3Database db,
+                out List<Sqlite3SchemaRow> tables))
+                return 1;
+
+            throw new System.NotImplementedException();
+        }
+
+        //using (FileStream fs = File.OpenRead("BigBlobDb.db"))
+        //using (Sqlite3Database db = new Sqlite3Database(fs))
+        //{
+        //    IEnumerable<Sqlite3SchemaRow> tables = db.GetTables();
+
+        //    foreach (Sqlite3SchemaRow table in tables)
+        //    {
+        //        Console.WriteLine($"{table.Type} \"{table.Name}\", [{table.TableName}] (RP: {table.RootPage}): {table.Sql}; ");
+
+        //        if (table.Type == "table")
+        //        {
+        //            Sqlite3Table tableData = db.GetTable(table.Name);
+
+        //            foreach (Sqlite3Row row in tableData.EnumerateRows())
+        //            {
+        //                Console.Write(row.RowId);
+
+        //                foreach (object obj in row.ColumnData)
+        //                {
+        //                    Console.Write(" | ");
+
+        //                    if (obj == null)
+        //                        Console.Write(" <null> ");
+        //                    else
+        //                        Console.Write(obj);
+        //                }
+
+        //                Console.WriteLine();
+        //            }
+        //        }
+        //    }
+        //}
+
     }
 }

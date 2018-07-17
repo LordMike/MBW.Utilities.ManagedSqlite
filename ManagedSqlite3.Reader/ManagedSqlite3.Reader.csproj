@@ -7,11 +7,12 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="BigBlobDb.db" />
+    <PackageReference Include="CommandLineParser" Version="2.2.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\ManagedSqlite3.Core\ManagedSqlite3.Core.csproj" />
+    <ProjectReference Include="..\ManagedSqlite3.Sql\ManagedSqlite3.Sql.csproj" />
   </ItemGroup>
 
 </Project>
