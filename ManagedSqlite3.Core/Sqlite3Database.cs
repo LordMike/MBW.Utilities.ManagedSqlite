@@ -1,12 +1,11 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using Sqlite3RoLib.Objects;
-using Sqlite3RoLib.Objects.Headers;
-using Sqlite3RoLib.Tables;
+using ManagedSqlite3.Core.Objects;
+using ManagedSqlite3.Core.Objects.Headers;
+using ManagedSqlite3.Core.Tables;
 
-namespace Sqlite3RoLib
+namespace ManagedSqlite3.Core
 {
     public class Sqlite3Database : IDisposable
     {

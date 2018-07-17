@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 
-namespace Sqlite3RoLib.Tables
+namespace ManagedSqlite3.Core.Tables
 {
     internal class Sqlite3MasterTable
     {

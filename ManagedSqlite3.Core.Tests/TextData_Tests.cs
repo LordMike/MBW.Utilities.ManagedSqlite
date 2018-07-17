@@ -1,12 +1,12 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using Sqlite3RoLib.Objects.Enums;
-using Sqlite3RoLib.Tables;
-using Sqlite3RoLib.Tests.Helpers;
+using ManagedSqlite3.Core.Objects.Enums;
+using ManagedSqlite3.Core.Tables;
+using ManagedSqlite3.Core.Tests.Helpers;
 using Xunit;
 
-namespace Sqlite3RoLib.Tests
+namespace ManagedSqlite3.Core.Tests
 {
     public class TextData_Tests
     {

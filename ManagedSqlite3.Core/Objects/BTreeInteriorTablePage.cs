@@ -1,6 +1,6 @@
-﻿using Sqlite3RoLib.Objects.Headers;
+﻿using ManagedSqlite3.Core.Objects.Headers;
 
-namespace Sqlite3RoLib.Objects
+namespace ManagedSqlite3.Core.Objects
 {
     /// <summary>
     /// SQLite B-Tree datastructure that contains other Interior / Leaf pages

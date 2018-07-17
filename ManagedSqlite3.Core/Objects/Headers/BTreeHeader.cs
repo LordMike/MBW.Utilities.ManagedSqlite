@@ -1,6 +1,6 @@
-﻿using Sqlite3RoLib.Objects.Enums;
+﻿using ManagedSqlite3.Core.Objects.Enums;
 
-namespace Sqlite3RoLib.Objects.Headers
+namespace ManagedSqlite3.Core.Objects.Headers
 {
     internal struct BTreeHeader
     {

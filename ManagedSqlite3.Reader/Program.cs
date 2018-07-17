@@ -1,10 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
-using Sqlite3RoLib;
-using Sqlite3RoLib.Tables;
+using ManagedSqlite3.Core;
+using ManagedSqlite3.Core.Tables;
 
-namespace Sqlite3Reader
+namespace ManagedSqlite3.Reader
 {
     class Program
     {

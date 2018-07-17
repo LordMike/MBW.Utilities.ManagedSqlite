@@ -1,6 +1,6 @@
-﻿using Sqlite3RoLib.Tables;
+﻿using ManagedSqlite3.Core.Tables;
 
-namespace Sqlite3RoLib.Tests.Helpers
+namespace ManagedSqlite3.Core.Tests.Helpers
 {
     internal static class DbHelpers
     {

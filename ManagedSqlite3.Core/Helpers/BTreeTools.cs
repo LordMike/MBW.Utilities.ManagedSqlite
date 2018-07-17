@@ -1,8 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
-using Sqlite3RoLib.Objects;
+using ManagedSqlite3.Core.Objects;
 
-namespace Sqlite3RoLib.Helpers
+namespace ManagedSqlite3.Core.Helpers
 {
     internal static class BTreeTools
     {

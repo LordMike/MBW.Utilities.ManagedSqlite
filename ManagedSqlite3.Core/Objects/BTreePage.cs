@@ -1,8 +1,8 @@
 ﻿using System;
-using Sqlite3RoLib.Objects.Enums;
-using Sqlite3RoLib.Objects.Headers;
+using ManagedSqlite3.Core.Objects.Enums;
+using ManagedSqlite3.Core.Objects.Headers;
 
-namespace Sqlite3RoLib.Objects
+namespace ManagedSqlite3.Core.Objects
 {
     internal abstract class BTreePage
     {

@@ -1,6 +1,6 @@
 using System;
 
-namespace Sqlite3RoLib.Tables
+namespace ManagedSqlite3.Core.Tables
 {
     public class Sqlite3Row
     {

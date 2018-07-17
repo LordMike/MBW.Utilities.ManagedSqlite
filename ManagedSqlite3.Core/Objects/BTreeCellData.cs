@@ -1,6 +1,6 @@
 ﻿using System.Diagnostics;
 
-namespace Sqlite3RoLib.Objects
+namespace ManagedSqlite3.Core.Objects
 {
     [DebuggerDisplay("Page {Page}, Size {Cell.DataSizeInCell} / {Cell.DataSize}")]
     internal class BTreeCellData

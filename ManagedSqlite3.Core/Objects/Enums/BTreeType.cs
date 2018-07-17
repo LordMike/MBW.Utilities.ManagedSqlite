@@ -1,4 +1,4 @@
-namespace Sqlite3RoLib.Objects.Enums
+namespace ManagedSqlite3.Core.Objects.Enums
 {
     internal enum BTreeType : byte
     {

@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace Sqlite3RoLib.Helpers
+namespace ManagedSqlite3.Core.Helpers
 {
     internal class SqliteDataStream : ReadonlyStream
     {

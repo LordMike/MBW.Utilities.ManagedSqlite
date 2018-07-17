@@ -1,4 +1,4 @@
-﻿namespace Sqlite3RoLib
+﻿namespace ManagedSqlite3.Core
 {
     public class Sqlite3Settings
     {

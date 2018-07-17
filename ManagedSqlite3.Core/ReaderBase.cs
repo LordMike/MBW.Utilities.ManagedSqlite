@@ -3,11 +3,11 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Sqlite3RoLib.Helpers;
-using Sqlite3RoLib.Objects.Enums;
-using Sqlite3RoLib.Objects.Headers;
+using ManagedSqlite3.Core.Helpers;
+using ManagedSqlite3.Core.Objects.Enums;
+using ManagedSqlite3.Core.Objects.Headers;
 
-namespace Sqlite3RoLib
+namespace ManagedSqlite3.Core
 {
     internal class ReaderBase : IDisposable
     {

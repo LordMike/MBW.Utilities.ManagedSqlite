@@ -1,10 +1,10 @@
 using System;
 using System.Collections.Generic;
-using Sqlite3RoLib.Helpers;
-using Sqlite3RoLib.Objects;
-using Sqlite3RoLib.Objects.Enums;
+using ManagedSqlite3.Core.Helpers;
+using ManagedSqlite3.Core.Objects;
+using ManagedSqlite3.Core.Objects.Enums;
 
-namespace Sqlite3RoLib.Tables
+namespace ManagedSqlite3.Core.Tables
 {
     public class Sqlite3Table
     {

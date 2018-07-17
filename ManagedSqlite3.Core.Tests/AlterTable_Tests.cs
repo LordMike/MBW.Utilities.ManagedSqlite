@@ -2,12 +2,11 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Reflection.Metadata;
-using Sqlite3RoLib.Tables;
-using Sqlite3RoLib.Tests.Helpers;
+using ManagedSqlite3.Core.Tables;
+using ManagedSqlite3.Core.Tests.Helpers;
 using Xunit;
 
-namespace Sqlite3RoLib.Tests
+namespace ManagedSqlite3.Core.Tests
 {
     public class AlterTable_Tests : IDisposable
     {
