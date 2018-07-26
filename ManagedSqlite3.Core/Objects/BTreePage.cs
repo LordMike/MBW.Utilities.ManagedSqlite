@@ -1,4 +1,5 @@
 ﻿using System;
+using ManagedSqlite3.Core.Internal;
 using ManagedSqlite3.Core.Objects.Enums;
 using ManagedSqlite3.Core.Objects.Headers;
 
@@ -6,7 +7,8 @@ namespace ManagedSqlite3.Core.Objects
 {
     internal abstract class BTreePage
     {
-        protected internal uint Page { get; }
+        public uint Page { get; }
+
         protected internal ReaderBase Reader { get; }
         protected internal BTreeHeader Header { get; }
 
@@ -20,7 +22,7 @@ namespace ManagedSqlite3.Core.Objects
             CellOffsets = cellOffsets;
         }
 
-        public static BTreePage Parse(ReaderBase reader, uint page)
+        internal static BTreePage Parse(ReaderBase reader, uint page)
         {
             // Read header
             reader.SeekPage(page);
@@ -48,13 +50,11 @@ namespace ManagedSqlite3.Core.Objects
             {
                 case BTreeType.InteriorIndexBtreePage:
                     throw new ArgumentOutOfRangeException();
-                    break;
                 case BTreeType.InteriorTableBtreePage:
                     res = new BTreeInteriorTablePage(reader, page, header, cellOffsets);
                     break;
                 case BTreeType.LeafIndexBtreePage:
                     throw new ArgumentOutOfRangeException();
-                    break;
                 case BTreeType.LeafTableBtreePage:
                     res = new BTreeLeafTablePage(reader, page, header, cellOffsets);
                     break;

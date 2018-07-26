@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "ManagedSqlite3.Reader": {
+      "commandName": "Project",
+      "commandLineArgs": "describe Test.db"
+    }
+  }
+}

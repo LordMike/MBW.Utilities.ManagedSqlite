@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using ManagedSqlite3.Core.Internal;
 
 namespace ManagedSqlite3.Core.Helpers
 {

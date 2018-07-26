@@ -1,4 +1,5 @@
-﻿using ManagedSqlite3.Core.Objects.Enums;
+﻿using ManagedSqlite3.Core.Internal;
+using ManagedSqlite3.Core.Objects.Enums;
 
 namespace ManagedSqlite3.Core.Objects.Headers
 {

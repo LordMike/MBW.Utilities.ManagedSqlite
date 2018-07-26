@@ -7,9 +7,9 @@ using ManagedSqlite3.Core.Helpers;
 using ManagedSqlite3.Core.Objects.Enums;
 using ManagedSqlite3.Core.Objects.Headers;
 
-namespace ManagedSqlite3.Core
+namespace ManagedSqlite3.Core.Internal
 {
-    internal class ReaderBase : IDisposable
+    public class ReaderBase : IDisposable
     {
         public long Length { get; }
 

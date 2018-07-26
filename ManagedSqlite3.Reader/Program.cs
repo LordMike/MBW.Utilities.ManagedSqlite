@@ -4,6 +4,8 @@ using System.IO;
 using System.Linq;
 using CommandLine;
 using ManagedSqlite3.Core;
+using ManagedSqlite3.Core.Helpers;
+using ManagedSqlite3.Core.Objects;
 using ManagedSqlite3.Core.Tables;
 using ManagedSqlite3.Sql;
 
@@ -11,7 +13,7 @@ namespace ManagedSqlite3.Reader
 {
     class CommandBase
     {
-        [Option('d', "DatabaseFile", Required = true, HelpText = "Database File")]
+        [Value(0, Required = true, HelpText = "Database file")]
         public string DatabaseFile { get; set; }
     }
 
@@ -72,6 +74,10 @@ namespace ManagedSqlite3.Reader
                 out List<Sqlite3SchemaRow> tables))
                 return 1;
 
+            Console.WriteLine($"Database: pagesize {db.Header.PageSize:N0}B, encoding {db.Header.TextEncoding}");
+            Console.WriteLine($"          size {db.Header.DatabaseSizeInPages:N0} pages/{db.Header.DatabaseSizeInPages * db.Header.PageSize:N0}B - actual size: {stream.Length:N0}B");
+            Console.WriteLine();
+
             foreach (Sqlite3SchemaRow row in tables)
             {
                 if (row.Type != "table")
@@ -105,11 +111,12 @@ namespace ManagedSqlite3.Reader
                     Console.WriteLine($"      Schema: {InlineSql(index.Sql)}");
                 }
 
-                if (opts.DoSizeStatistics)
+                if (!opts.DoSizeStatistics)
                 {
-                    Sqlite3Table table = db.GetTable(row.TableName);
-
+                    Console.WriteLine("Unable to do statistics");
                 }
+
+                Console.WriteLine();
             }
 
             return 0;

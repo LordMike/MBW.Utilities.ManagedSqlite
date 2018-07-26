@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using ManagedSqlite3.Core.Internal;
 using ManagedSqlite3.Core.Objects;
 using ManagedSqlite3.Core.Objects.Headers;
 using ManagedSqlite3.Core.Tables;
@@ -46,6 +47,7 @@ namespace ManagedSqlite3.Core
             // Parse table on Page 1, the sqlite_master table
             BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
+            // Fake the schema for the sqlite_master table
             Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow
             {
                 Type = "table",

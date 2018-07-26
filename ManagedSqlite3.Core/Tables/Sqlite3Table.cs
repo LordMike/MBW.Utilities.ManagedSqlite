@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using ManagedSqlite3.Core.Helpers;
+using ManagedSqlite3.Core.Internal;
 using ManagedSqlite3.Core.Objects;
 using ManagedSqlite3.Core.Objects.Enums;
 
@@ -9,20 +10,20 @@ namespace ManagedSqlite3.Core.Tables
     public class Sqlite3Table
     {
         private readonly ReaderBase _reader;
-        private readonly BTreePage _rootPage;
 
+        private BTreePage RootPage { get; }
         public Sqlite3SchemaRow SchemaDefinition { get; }
 
         internal Sqlite3Table(ReaderBase reader, BTreePage rootPage, Sqlite3SchemaRow table)
         {
             SchemaDefinition = table;
             _reader = reader;
-            _rootPage = rootPage;
+            RootPage = rootPage;
         }
 
         public IEnumerable<Sqlite3Row> EnumerateRows()
         {
-            IEnumerable<BTreeCellData> cells = BTreeTools.WalkTableBTree(_rootPage);
+            IEnumerable<BTreeCellData> cells = BTreeTools.WalkTableBTree(RootPage);
 
             List<ColumnDataMeta> metaInfos = new List<ColumnDataMeta>();
             foreach (BTreeCellData cell in cells)
@@ -36,12 +37,11 @@ namespace ManagedSqlite3.Core.Tables
                 {
                     ReaderBase reader = new ReaderBase(dataStream, _reader);
 
-                    byte bytesRead;
-                    long headerSize = reader.ReadVarInt(out bytesRead);
+                    long headerSize = reader.ReadVarInt(out _);
 
                     while (reader.Position < headerSize)
                     {
-                        long columnInfo = reader.ReadVarInt(out bytesRead);
+                        long columnInfo = reader.ReadVarInt(out _);
 
                         ColumnDataMeta meta = new ColumnDataMeta();
                         if (columnInfo == 0)

@@ -15,4 +15,10 @@
     <ProjectReference Include="..\ManagedSqlite3.Sql\ManagedSqlite3.Sql.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Test.db">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

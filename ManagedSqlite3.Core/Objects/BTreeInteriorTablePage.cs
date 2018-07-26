@@ -1,4 +1,5 @@
-﻿using ManagedSqlite3.Core.Objects.Headers;
+﻿using ManagedSqlite3.Core.Internal;
+using ManagedSqlite3.Core.Objects.Headers;
 
 namespace ManagedSqlite3.Core.Objects
 {
