@@ -38,7 +38,12 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
 * Provides close-to-raw access to the structured data
 * An SQL package exists to help parse the SQLite3 schemas
 
-## Docs
+## Known issues
+
+* All of the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
+* The library has limited support for handling cases where the primary key of a table is the [row-id](https://www.sqlite.org/lang_createtable.html#rowid). 
+
+## SQLite3 Docs
 * Format changes: https://www.sqlite.org/formatchng.html
 * File format: https://www.sqlite.org/fileformat.html
 

@@ -138,7 +138,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
                         }
                     }
 
-                    yield return new Sqlite3Row(cell.Cell.RowId, rowData);
+                    yield return new Sqlite3Row(this, cell.Cell.RowId, rowData);
                 }
             }
         }
