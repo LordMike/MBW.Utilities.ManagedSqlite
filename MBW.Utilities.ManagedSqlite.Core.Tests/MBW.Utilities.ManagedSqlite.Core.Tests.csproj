@@ -1,0 +1,53 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\Imports.targets" />
+
+  <PropertyGroup>    
+    <TargetFramework>netcoreapp2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="Data\AlterTable.db" />
+    <None Remove="Data\AlterTableWithDefault.db" />
+    <None Remove="Data\BigBlobDb.bin" />
+    <None Remove="Data\BigBlobDb.db" />
+    <None Remove="Data\CorruptResults.txt" />
+    <None Remove="Data\DB-UTF16BE.db" />
+    <None Remove="Data\DB-UTF16LE.db" />
+    <None Remove="Data\DB-UTF8.db" />
+    <None Remove="Data\Db1.db" />
+    <None Remove="Data\IntegerData.db" />
+    <None Remove="Data\RealData.db" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Data\AlterTable.db" />
+    <EmbeddedResource Include="Data\AlterTableWithDefault.db" />
+    <EmbeddedResource Include="Data\BigBlobDb.bin" />
+    <EmbeddedResource Include="Data\BigBlobDb.db" />
+    <EmbeddedResource Include="Data\CorruptResults.txt" />
+    <EmbeddedResource Include="Data\DB-UTF16BE.db" />
+    <EmbeddedResource Include="Data\DB-UTF16LE.db" />
+    <EmbeddedResource Include="Data\DB-UTF8.db" />
+    <EmbeddedResource Include="Data\Db1.db" />
+    <EmbeddedResource Include="Data\CorruptInitial.db" />
+    <EmbeddedResource Include="Data\MediumDb.db" />
+    <EmbeddedResource Include="Data\IntegerData.db" />
+    <EmbeddedResource Include="Data\RealData.db" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="15.7.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.3.1" />
+    <PackageReference Include="xunit" Version="2.3.1" />
+    <DotNetCliToolReference Include="dotnet-xunit" Version="2.3.0-beta4-build3742" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Core\MBW.Utilities.ManagedSqlite.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Service Include="{82a7f48d-3b50-4b1e-b82e-3ada8210c358}" />
+  </ItemGroup>
+
+</Project>

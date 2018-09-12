@@ -1,0 +1,24 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+  <Import Project="..\Imports.targets" />
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>netcoreapp2.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommandLineParser" Version="2.2.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Core\MBW.Utilities.ManagedSqlite.Core.csproj" />
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Sql\MBW.Utilities.ManagedSqlite.Sql.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Test.db">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
