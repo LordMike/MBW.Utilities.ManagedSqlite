@@ -114,12 +114,6 @@ namespace MBW.Utilities.ManagedSqlite.Reader
                     Console.WriteLine("Unable to do statistics");
                 }
 
-                foreach (Sqlite3Row sqlite3Row in db.GetTable(row.TableName).EnumerateRows())
-                {
-                    Console.WriteLine(sqlite3Row.TryGetValueByName("Id", out var val));
-                    Console.WriteLine(val);
-                }
-
                 Console.WriteLine();
             }
 
