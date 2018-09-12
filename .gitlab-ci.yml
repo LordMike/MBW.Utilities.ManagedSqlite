@@ -19,7 +19,7 @@ test:
   stage: test
   script:
     - dotnet restore
-    - (cd src/MBW.Utilities.ManagedSqlite.Core.Tests; dotnet test -c Debug)
+    - (cd MBW.Utilities.ManagedSqlite.Core.Tests; dotnet test -c Debug)
   dependencies:
   - build
 
