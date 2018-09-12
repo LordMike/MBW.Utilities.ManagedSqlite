@@ -26,6 +26,7 @@ test:
 pack:
   stage: pack
   script:
+    - dotnet restore
     - dotnet pack -c Release --no-restore -o $CI_PROJECT_DIR/Build
   artifacts:
     paths:
