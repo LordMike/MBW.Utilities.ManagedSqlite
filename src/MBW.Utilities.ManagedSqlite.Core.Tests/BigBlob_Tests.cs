@@ -34,7 +34,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests
                 Sqlite3Table tbl = db.GetTable("DataTable");
                 List<Sqlite3Row> rows = tbl.EnumerateRows().ToList();
 
-                Assert.Equal(1, rows.Count);
+                Assert.Single(rows);
 
                 Sqlite3Row row = rows.Single();
 
