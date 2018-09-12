@@ -4,12 +4,16 @@
   <Import Project="..\..\_Imports\SourceLink.targets" />
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
     <Description>SQLite3 library in managed C# that can read sqlite db files. This package contains SQL statement parsers to read SQLite3 schemas from the database.</Description>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Superpower" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)'=='netstandard1.0'">
+    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
   </ItemGroup>
 
   <ItemGroup>
