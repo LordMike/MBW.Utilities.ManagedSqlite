@@ -5,6 +5,7 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <Description>SQLite3 library in managed C# that can read sqlite db files. This package contains core components used to read the binary databases.</Description>
   </PropertyGroup>
 
 </Project>
