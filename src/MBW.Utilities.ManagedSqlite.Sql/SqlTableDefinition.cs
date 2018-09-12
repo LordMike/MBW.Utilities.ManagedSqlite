@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 namespace MBW.Utilities.ManagedSqlite.Sql
 {
@@ -18,7 +19,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql
             _columns = new List<SqlTableColumn>();
             _columnIndex = new Dictionary<string, SqlTableColumn>(StringComparer.OrdinalIgnoreCase);
 
-            Columns = _columns.AsReadOnly();
+            Columns = new ReadOnlyCollection<SqlTableColumn>(_columns);
         }
 
         internal void AddColumn(SqlTableColumn column)

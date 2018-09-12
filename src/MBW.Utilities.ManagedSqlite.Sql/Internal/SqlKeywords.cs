@@ -135,7 +135,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
 
         public static TokenListParser<SqlToken, Token<SqlToken>> IfNotExists { get; } = If.Then(_ => Not).Then(_ => Exists);
 
-        public static HashSet<string> ColumnKeywords = new HashSet<string>(StringComparer.InvariantCultureIgnoreCase)
+        public static HashSet<string> ColumnKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             // column-constraint
             "CONSTRAINT", "PRIMARY", "NOT", "UNIQUE",
