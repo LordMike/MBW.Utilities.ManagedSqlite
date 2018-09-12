@@ -16,9 +16,9 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests
 
         public BigBlob_Tests()
         {
-            _stream = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.BigBlobDb.db");
+            _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.BigBlobDb.db");
 
-            using (Stream fsIn = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.BigBlobDb.bin"))
+            using (Stream fsIn = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.BigBlobDb.bin"))
             using (MemoryStream ms = new MemoryStream())
             {
                 fsIn.CopyTo(ms);

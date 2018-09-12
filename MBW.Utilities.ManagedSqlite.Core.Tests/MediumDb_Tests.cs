@@ -14,7 +14,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests
 
         public MediumDb_Tests()
         {
-            _stream = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.MediumDb.db");
+            _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.MediumDb.db");
         }
 
         [Fact]

@@ -14,7 +14,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests
 
         public AlterTableWithDefault_Tests()
         {
-            _stream = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.AlterTableWithDefault.db");
+            _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.AlterTableWithDefault.db");
         }
 
         [Fact]

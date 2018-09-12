@@ -21,7 +21,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests
 
         private static Stream Get(SqliteEncoding encoding)
         {
-            return ResourceHelper.OpenResource($"Sqlite3RoLib.Tests.Data.DB-{encoding}.db");
+            return ResourceHelper.OpenResource($"MBW.Utilities.ManagedSqlite.Core.Tests.Data.DB-{encoding}.db");
         }
 
         public static IEnumerable<object[]> TestDataEmitter()

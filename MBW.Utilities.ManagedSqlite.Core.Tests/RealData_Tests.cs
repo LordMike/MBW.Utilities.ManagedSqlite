@@ -150,7 +150,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests
 
         public RealData_Tests()
         {
-            _stream = ResourceHelper.OpenResource("Sqlite3RoLib.Tests.Data.RealData.db");
+            _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.RealData.db");
         }
 
         public static IEnumerable<object[]> TestDataEmitter()
