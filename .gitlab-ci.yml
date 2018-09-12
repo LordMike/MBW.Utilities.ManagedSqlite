@@ -19,7 +19,7 @@ test:
   stage: test
   script:
     - dotnet restore
-    - (cd MBW.Utilities.ManagedSqlite.Core.Tests; dotnet test -c Debug)
+    - (cd src/MBW.Utilities.ManagedSqlite.Core.Tests; dotnet test -c Debug)
   dependencies:
   - build
 
@@ -37,7 +37,8 @@ pack:
 nuget:
   stage: nuget
   script:
-    - dotnet nuget push Build/*.nupkg -s https://api.nuget.org/v3/index.json -k $NUGET_KEY
+    - dotnet nuget push Build/MBW.Utilities.ManagedSqlite.Core.*.nupkg -s https://api.nuget.org/v3/index.json -k $NUGET_KEY
+    - dotnet nuget push Build/MBW.Utilities.ManagedSqlite.Sql.*.nupkg -s https://api.nuget.org/v3/index.json -k $NUGET_KEY
   dependencies:
   - pack
   only:

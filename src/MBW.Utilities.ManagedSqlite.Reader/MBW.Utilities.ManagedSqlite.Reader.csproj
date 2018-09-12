@@ -1,5 +1,6 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
-  <Import Project="..\Imports.targets" />
+  <Import Project="..\..\_Imports\Common.targets" />
+  <Import Project="..\..\_Imports\Properties.targets" />
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
