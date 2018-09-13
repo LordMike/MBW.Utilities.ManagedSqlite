@@ -20,4 +20,8 @@
     <Folder Include="Data-Corrupt\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Sql\MBW.Utilities.ManagedSqlite.Sql.csproj" />
+  </ItemGroup>
+
 </Project>

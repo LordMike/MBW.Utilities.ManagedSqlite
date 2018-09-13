@@ -2,7 +2,9 @@
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text;
+using MBW.Utilities.ManagedSqlite.Sql.Internal;
 
 namespace TestDataGenerator
 {
@@ -10,20 +12,105 @@ namespace TestDataGenerator
     {
         static void Main(string[] args)
         {
-            string dir = "Data-MediumDb";
+            ConvertCreateTablesForTests("CreateTableStatementsForTests.txt", "out.txt");
 
-            PrepDirectory(dir);
-            GenerateMediumDb(dir);
+            //string dir = "Data-MediumDb";
 
-            dir = "Data-RealData";
+            //PrepDirectory(dir);
+            //GenerateMediumDb(dir);
 
-            PrepDirectory(dir);
-            GenerateRealDataDb(dir);
+            //dir = "Data-RealData";
 
-            dir = "Data-Corrupt";
+            //PrepDirectory(dir);
+            //GenerateRealDataDb(dir);
 
-            PrepDirectory(dir);
-            GenerateCorruptDatabases(dir);
+            //dir = "Data-Corrupt";
+
+            //PrepDirectory(dir);
+            //GenerateCorruptDatabases(dir);
+        }
+
+        private static void ConvertCreateTablesForTests(string source, string destination)
+        {
+            string[] lines = File.ReadAllLines(source);
+
+            string TypeString(Type type)
+            {
+                if (type != null)
+                {
+                    if (type == typeof(long))
+                        return "INTEGER";
+                    if (type == typeof(string))
+                        return "STRING";
+                    if (type == typeof(byte[]))
+                        return "BYTES";
+                }
+
+                return "Unknown";
+            }
+
+            using (StreamWriter sw = new StreamWriter(destination, false))
+            {
+                sw.WriteLine("# SQL");
+                sw.WriteLine("#    Table Name");
+                sw.WriteLine("#    Column1Name");
+                sw.WriteLine("#    Column2Name ClrType(Integer, String, Bytes, Double) SqlType Modifiers(Primary, RowId)");
+                sw.WriteLine("# ");
+
+                foreach (string line in lines)
+                {
+                    sw.WriteLine(line);
+
+                    var spaces = line.Split(new[] { ' ', '(' }, 4, StringSplitOptions.RemoveEmptyEntries);
+                    var name = spaces[2].Trim('"');
+
+                    sw.Write('\t');
+                    sw.WriteLine(name);
+
+                    int idx1 = line.IndexOf('(') + 1;
+                    int idx2 = line.LastIndexOf(')');
+
+                    string colsString = line.Substring(idx1, idx2 - idx1);
+                    string[] cols = colsString.Split(',');
+
+                    foreach (var col in cols)
+                    {
+                        var colNames = col.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                        if (SqlKeywords.NonColumnKeywords.Contains(colNames.First()))
+                            continue;
+
+                        var types = colNames.Where(s => SqlKeywords.TypeKeywords.Any(x => x.words.Contains(s))).ToArray();
+                        Type clrType = SqlKeywords.TypeKeywords.FirstOrDefault(s => s.words.Intersect(colNames).Any()).type;
+
+                        sw.Write('\t');
+
+                        // Name ClrType SqlType Modifier [.. Modifier]
+                        sw.Write(colNames[0]);
+                        sw.Write('\t');
+
+                        var typeString = TypeString(clrType);
+                        sw.Write(typeString);
+                        sw.Write('\t');
+
+                        sw.Write(string.Join(" ", types));
+                        sw.Write('\t');
+
+                        if (colNames.Contains("PRIMARY", StringComparer.OrdinalIgnoreCase))
+                        {
+                            sw.Write("PRIMARY");
+
+                            if (clrType == typeof(long))
+                                sw.Write(" ROWID");
+                        }
+
+                        sw.WriteLine();
+                    }
+
+
+                    sw.WriteLine();
+                }
+            }
         }
 
         private static void PrepDirectory(string dir)

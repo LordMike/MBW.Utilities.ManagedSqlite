@@ -1,0 +1,450 @@
+﻿# SQL
+#    Table Name
+#    Column1Name
+#    Column2Name ClrType(Integer, String, Bytes) SqlType Modifiers(Primary, RowId)
+# 
+CREATE TABLE "keywords" (id INTEGER PRIMARY KEY,short_name VARCHAR NOT NULL,keyword VARCHAR NOT NULL,favicon_url VARCHAR NOT NULL,url VARCHAR NOT NULL,safe_for_autoreplace INTEGER,originating_url VARCHAR,date_created INTEGER DEFAULT 0,usage_count INTEGER DEFAULT 0,input_encodings VARCHAR,suggest_url VARCHAR,prepopulate_id INTEGER DEFAULT 0,created_by_policy INTEGER DEFAULT 0,last_modified INTEGER DEFAULT 0,sync_guid VARCHAR,alternate_urls VARCHAR,image_url VARCHAR,search_url_post_params VARCHAR,suggest_url_post_params VARCHAR,image_url_post_params VARCHAR,new_tab_url VARCHAR,last_visited INTEGER DEFAULT 0);
+	keywords
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	short_name	STRING	VARCHAR	
+	keyword	STRING	VARCHAR	
+	favicon_url	STRING	VARCHAR	
+	url	STRING	VARCHAR	
+	safe_for_autoreplace	INTEGER	INTEGER	
+	originating_url	STRING	VARCHAR	
+	date_created	INTEGER	INTEGER	
+	usage_count	INTEGER	INTEGER	
+	input_encodings	STRING	VARCHAR	
+	suggest_url	STRING	VARCHAR	
+	prepopulate_id	INTEGER	INTEGER	
+	created_by_policy	INTEGER	INTEGER	
+	last_modified	INTEGER	INTEGER	
+	sync_guid	STRING	VARCHAR	
+	alternate_urls	STRING	VARCHAR	
+	image_url	STRING	VARCHAR	
+	search_url_post_params	STRING	VARCHAR	
+	suggest_url_post_params	STRING	VARCHAR	
+	image_url_post_params	STRING	VARCHAR	
+	new_tab_url	STRING	VARCHAR	
+	last_visited	INTEGER	INTEGER	
+
+CREATE TABLE EvictionInfoTable(origin TEXT NOT NULL, type INTEGER NOT NULL, last_eviction_time INTEGER DEFAULT 0, UNIQUE(origin, type));
+	EvictionInfoTable
+	origin	STRING	TEXT	
+	type	INTEGER	INTEGER	
+	last_eviction_time	INTEGER	INTEGER	
+
+CREATE TABLE HostQuotaTable(host TEXT NOT NULL, type INTEGER NOT NULL, quota INTEGER DEFAULT 0, UNIQUE(host, type));
+	HostQuotaTable
+	host	STRING	TEXT	
+	type	INTEGER	INTEGER	
+	quota	INTEGER	INTEGER	
+
+CREATE TABLE OriginInfoTable(origin TEXT NOT NULL, type INTEGER NOT NULL, used_count INTEGER DEFAULT 0, last_access_time INTEGER DEFAULT 0, last_modified_time INTEGER DEFAULT 0, UNIQUE(origin, type));
+	OriginInfoTable
+	origin	STRING	TEXT	
+	type	INTEGER	INTEGER	
+	used_count	INTEGER	INTEGER	
+	last_access_time	INTEGER	INTEGER	
+	last_modified_time	INTEGER	INTEGER	
+
+CREATE TABLE autofill (name VARCHAR, value VARCHAR, value_lower VARCHAR, date_created INTEGER DEFAULT 0, date_last_used INTEGER DEFAULT 0, count INTEGER DEFAULT 1, PRIMARY KEY (name, value));
+	autofill
+	name	STRING	VARCHAR	PRIMARY
+	value	STRING	VARCHAR	PRIMARY
+	value_lower	STRING	VARCHAR	
+	date_created	INTEGER	INTEGER	
+	date_last_used	INTEGER	INTEGER	
+	count	INTEGER	INTEGER	
+
+CREATE TABLE autofill_model_type_state (id INTEGER PRIMARY KEY, value BLOB);
+	autofill_model_type_state
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	value	BYTES	BLOB	
+
+CREATE TABLE autofill_profile_emails ( guid VARCHAR, email VARCHAR);
+	autofill_profile_emails
+	guid	STRING	VARCHAR	
+	email	STRING	VARCHAR	
+
+CREATE TABLE autofill_profile_names ( guid VARCHAR, first_name VARCHAR, middle_name VARCHAR, last_name VARCHAR, full_name VARCHAR);
+	autofill_profile_names
+	guid	STRING	VARCHAR	
+	first_name	STRING	VARCHAR	
+	middle_name	STRING	VARCHAR	
+	last_name	STRING	VARCHAR	
+	full_name	STRING	VARCHAR	
+
+CREATE TABLE autofill_profile_phones ( guid VARCHAR, number VARCHAR);
+	autofill_profile_phones
+	guid	STRING	VARCHAR	
+	number	STRING	VARCHAR	
+
+CREATE TABLE autofill_profiles ( guid VARCHAR PRIMARY KEY, company_name VARCHAR, street_address VARCHAR, dependent_locality VARCHAR, city VARCHAR, state VARCHAR, zipcode VARCHAR, sorting_code VARCHAR, country_code VARCHAR, date_modified INTEGER NOT NULL DEFAULT 0, origin VARCHAR DEFAULT '', language_code VARCHAR, use_count INTEGER NOT NULL DEFAULT 0, use_date INTEGER NOT NULL DEFAULT 0, validity_bitfield UNSIGNED NOT NULL DEFAULT 0);
+	autofill_profiles
+	guid	STRING	VARCHAR	PRIMARY
+	company_name	STRING	VARCHAR	
+	street_address	STRING	VARCHAR	
+	dependent_locality	STRING	VARCHAR	
+	city	STRING	VARCHAR	
+	state	STRING	VARCHAR	
+	zipcode	STRING	VARCHAR	
+	sorting_code	STRING	VARCHAR	
+	country_code	STRING	VARCHAR	
+	date_modified	INTEGER	INTEGER	
+	origin	STRING	VARCHAR	
+	language_code	STRING	VARCHAR	
+	use_count	INTEGER	INTEGER	
+	use_date	INTEGER	INTEGER	
+	validity_bitfield	INTEGER	UNSIGNED	
+
+CREATE TABLE autofill_profiles_trash ( guid VARCHAR);
+	autofill_profiles_trash
+	guid	STRING	VARCHAR	
+
+CREATE TABLE autofill_sync_metadata (storage_key VARCHAR PRIMARY KEY NOT NULL,value BLOB);
+	autofill_sync_metadata
+	storage_key	STRING	VARCHAR	PRIMARY
+	value	BYTES	BLOB	
+
+CREATE TABLE channel_id (host TEXT NOT NULL UNIQUE PRIMARY KEY,private_key BLOB NOT NULL,public_key BLOB NOT NULL,creation_time INTEGER);
+	channel_id
+	host	STRING	TEXT	PRIMARY
+	private_key	BYTES	BLOB	
+	public_key	BYTES	BLOB	
+	creation_time	INTEGER	INTEGER	
+
+CREATE TABLE cookies (creation_utc INTEGER NOT NULL,host_key TEXT NOT NULL,name TEXT NOT NULL,value TEXT NOT NULL,path TEXT NOT NULL,expires_utc INTEGER NOT NULL,is_secure INTEGER NOT NULL,is_httponly INTEGER NOT NULL,last_access_utc INTEGER NOT NULL, has_expires INTEGER NOT NULL DEFAULT 1, is_persistent INTEGER NOT NULL DEFAULT 1,priority INTEGER NOT NULL DEFAULT 1,encrypted_value BLOB DEFAULT '',firstpartyonly INTEGER NOT NULL DEFAULT 0,UNIQUE (host_key, name, path));
+	cookies
+	creation_utc	INTEGER	INTEGER	
+	host_key	STRING	TEXT	
+	name	STRING	TEXT	
+	value	STRING	TEXT	
+	path	STRING	TEXT	
+	expires_utc	INTEGER	INTEGER	
+	is_secure	INTEGER	INTEGER	
+	is_httponly	INTEGER	INTEGER	
+	last_access_utc	INTEGER	INTEGER	
+	has_expires	INTEGER	INTEGER	
+	is_persistent	INTEGER	INTEGER	
+	priority	INTEGER	INTEGER	
+	encrypted_value	BYTES	BLOB	
+	firstpartyonly	INTEGER	INTEGER	
+
+CREATE TABLE credit_cards ( guid VARCHAR PRIMARY KEY, name_on_card VARCHAR, expiration_month INTEGER, expiration_year INTEGER, card_number_encrypted BLOB, date_modified INTEGER NOT NULL DEFAULT 0, origin VARCHAR DEFAULT '', use_count INTEGER NOT NULL DEFAULT 0, use_date INTEGER NOT NULL DEFAULT 0, billing_address_id VARCHAR);
+	credit_cards
+	guid	STRING	VARCHAR	PRIMARY
+	name_on_card	STRING	VARCHAR	
+	expiration_month	INTEGER	INTEGER	
+	expiration_year	INTEGER	INTEGER	
+	card_number_encrypted	BYTES	BLOB	
+	date_modified	INTEGER	INTEGER	
+	origin	STRING	VARCHAR	
+	use_count	INTEGER	INTEGER	
+	use_date	INTEGER	INTEGER	
+	billing_address_id	STRING	VARCHAR	
+
+CREATE TABLE downloads (id INTEGER PRIMARY KEY,guid VARCHAR NOT NULL,current_path LONGVARCHAR NOT NULL,target_path LONGVARCHAR NOT NULL,start_time INTEGER NOT NULL,received_bytes INTEGER NOT NULL,total_bytes INTEGER NOT NULL,state INTEGER NOT NULL,danger_type INTEGER NOT NULL,interrupt_reason INTEGER NOT NULL,hash BLOB NOT NULL,end_time INTEGER NOT NULL,opened INTEGER NOT NULL,last_access_time INTEGER NOT NULL,transient INTEGER NOT NULL,referrer VARCHAR NOT NULL,site_url VARCHAR NOT NULL,tab_url VARCHAR NOT NULL,tab_referrer_url VARCHAR NOT NULL,http_method VARCHAR NOT NULL,by_ext_id VARCHAR NOT NULL,by_ext_name VARCHAR NOT NULL,etag VARCHAR NOT NULL,last_modified VARCHAR NOT NULL,mime_type VARCHAR(255) NOT NULL,original_mime_type VARCHAR(255) NOT NULL);
+	downloads
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	guid	STRING	VARCHAR	
+	current_path	STRING	LONGVARCHAR	
+	target_path	STRING	LONGVARCHAR	
+	start_time	INTEGER	INTEGER	
+	received_bytes	INTEGER	INTEGER	
+	total_bytes	INTEGER	INTEGER	
+	state	INTEGER	INTEGER	
+	danger_type	INTEGER	INTEGER	
+	interrupt_reason	INTEGER	INTEGER	
+	hash	BYTES	BLOB	
+	end_time	INTEGER	INTEGER	
+	opened	INTEGER	INTEGER	
+	last_access_time	INTEGER	INTEGER	
+	transient	INTEGER	INTEGER	
+	referrer	STRING	VARCHAR	
+	site_url	STRING	VARCHAR	
+	tab_url	STRING	VARCHAR	
+	tab_referrer_url	STRING	VARCHAR	
+	http_method	STRING	VARCHAR	
+	by_ext_id	STRING	VARCHAR	
+	by_ext_name	STRING	VARCHAR	
+	etag	STRING	VARCHAR	
+	last_modified	STRING	VARCHAR	
+	mime_type	STRING	VARCHAR	
+	original_mime_type	STRING	VARCHAR	
+
+CREATE TABLE downloads_slices (download_id INTEGER NOT NULL,offset INTEGER NOT NULL,received_bytes INTEGER NOT NULL, finished INTEGER NOT NULL DEFAULT 0,PRIMARY KEY (download_id, offset) );
+	downloads_slices
+	download_id	INTEGER	INTEGER	PRIMARY
+	offset	INTEGER	INTEGER	PRIMARY
+	received_bytes	INTEGER	INTEGER	
+	finished	INTEGER	INTEGER	
+
+CREATE TABLE downloads_url_chains (id INTEGER NOT NULL,chain_index INTEGER NOT NULL,url LONGVARCHAR NOT NULL, PRIMARY KEY (id, chain_index) );
+	downloads_url_chains
+	id	INTEGER	INTEGER	PRIMARY
+	chain_index	INTEGER	INTEGER	PRIMARY
+	url	STRING	LONGVARCHAR	
+
+CREATE TABLE enabled_previews_v1 (type INTEGER NOT NULL, version INTEGER NOT NULL, PRIMARY KEY(type));
+	enabled_previews_v1
+	type	INTEGER	INTEGER	PRIMARY ROWID
+	version	INTEGER	INTEGER	
+
+CREATE TABLE eq_class_members (id INTEGER, facet_uri LONGVARCHAR NOT NULL, set_id INTEGER NOT NULL REFERENCES eq_classes(id) ON DELETE CASCADE, facet_display_name VARCHAR, facet_icon_url VARCHAR, PRIMARY KEY (id), UNIQUE (facet_uri));
+	eq_class_members
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	facet_uri	STRING	LONGVARCHAR	
+	set_id	INTEGER	INTEGER	
+	facet_display_name	STRING	VARCHAR	
+	facet_icon_url	STRING	VARCHAR	
+
+CREATE TABLE eq_classes (id INTEGER, last_update_time INTEGER, PRIMARY KEY (id));
+	eq_classes
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	last_update_time	INTEGER	INTEGER	
+
+CREATE TABLE favicon_bitmaps(id INTEGER PRIMARY KEY,icon_id INTEGER NOT NULL,last_updated INTEGER DEFAULT 0,image_data BLOB,width INTEGER DEFAULT 0,height INTEGER DEFAULT 0,last_requested INTEGER DEFAULT 0);
+	favicon_bitmaps
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	icon_id	INTEGER	INTEGER	
+	last_updated	INTEGER	INTEGER	
+	image_data	BYTES	BLOB	
+	width	INTEGER	INTEGER	
+	height	INTEGER	INTEGER	
+	last_requested	INTEGER	INTEGER	
+
+CREATE TABLE favicons(id INTEGER PRIMARY KEY,url LONGVARCHAR NOT NULL,icon_type INTEGER DEFAULT 1);
+	favicons
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	url	STRING	LONGVARCHAR	
+	icon_type	INTEGER	INTEGER	
+
+CREATE TABLE icon_mapping(id INTEGER PRIMARY KEY,page_url LONGVARCHAR NOT NULL,icon_id INTEGER);
+	icon_mapping
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	page_url	STRING	LONGVARCHAR	
+	icon_id	INTEGER	INTEGER	
+
+CREATE TABLE ie7_logins (url_hash VARCHAR NOT NULL, password_value BLOB, date_created INTEGER NOT NULL,UNIQUE (url_hash));
+	ie7_logins
+	url_hash	STRING	VARCHAR	
+	password_value	BYTES	BLOB	
+	date_created	INTEGER	INTEGER	
+
+CREATE TABLE keyword_search_terms (keyword_id INTEGER NOT NULL,url_id INTEGER NOT NULL,lower_term LONGVARCHAR NOT NULL,term LONGVARCHAR NOT NULL);
+	keyword_search_terms
+	keyword_id	INTEGER	INTEGER	
+	url_id	INTEGER	INTEGER	
+	lower_term	STRING	LONGVARCHAR	
+	term	STRING	LONGVARCHAR	
+
+CREATE TABLE logins (origin_url VARCHAR NOT NULL, action_url VARCHAR, username_element VARCHAR, username_value VARCHAR, password_element VARCHAR, password_value BLOB, submit_element VARCHAR, signon_realm VARCHAR NOT NULL, preferred INTEGER NOT NULL, date_created INTEGER NOT NULL, blacklisted_by_user INTEGER NOT NULL, scheme INTEGER NOT NULL, password_type INTEGER, times_used INTEGER, form_data BLOB, date_synced INTEGER, display_name VARCHAR, icon_url VARCHAR, federation_url VARCHAR, skip_zero_click INTEGER, generation_upload_status INTEGER, possible_username_pairs BLOB, UNIQUE (origin_url, username_element, username_value, password_element, signon_realm));
+	logins
+	origin_url	STRING	VARCHAR	
+	action_url	STRING	VARCHAR	
+	username_element	STRING	VARCHAR	
+	username_value	STRING	VARCHAR	
+	password_element	STRING	VARCHAR	
+	password_value	BYTES	BLOB	
+	submit_element	STRING	VARCHAR	
+	signon_realm	STRING	VARCHAR	
+	preferred	INTEGER	INTEGER	
+	date_created	INTEGER	INTEGER	
+	blacklisted_by_user	INTEGER	INTEGER	
+	scheme	INTEGER	INTEGER	
+	password_type	INTEGER	INTEGER	
+	times_used	INTEGER	INTEGER	
+	form_data	BYTES	BLOB	
+	date_synced	INTEGER	INTEGER	
+	display_name	STRING	VARCHAR	
+	icon_url	STRING	VARCHAR	
+	federation_url	STRING	VARCHAR	
+	skip_zero_click	INTEGER	INTEGER	
+	generation_upload_status	INTEGER	INTEGER	
+	possible_username_pairs	BYTES	BLOB	
+
+CREATE TABLE masked_credit_cards (id VARCHAR,status VARCHAR,name_on_card VARCHAR,network VARCHAR,last_four VARCHAR,exp_month INTEGER DEFAULT 0,exp_year INTEGER DEFAULT 0, bank_name VARCHAR, type INTEGER DEFAULT 0);
+	masked_credit_cards
+	id	STRING	VARCHAR	
+	status	STRING	VARCHAR	
+	name_on_card	STRING	VARCHAR	
+	network	STRING	VARCHAR	
+	last_four	STRING	VARCHAR	
+	exp_month	INTEGER	INTEGER	
+	exp_year	INTEGER	INTEGER	
+	bank_name	STRING	VARCHAR	
+	type	INTEGER	INTEGER	
+
+CREATE TABLE meta(key LONGVARCHAR NOT NULL UNIQUE PRIMARY KEY, value LONGVARCHAR);
+	meta
+	key	STRING	LONGVARCHAR	PRIMARY
+	value	STRING	LONGVARCHAR	
+
+CREATE TABLE network_action_predictor ( id TEXT PRIMARY KEY, user_text TEXT, url TEXT, number_of_hits INTEGER, number_of_misses INTEGER);
+	network_action_predictor
+	id	STRING	TEXT	PRIMARY
+	user_text	STRING	TEXT	
+	url	STRING	TEXT	
+	number_of_hits	INTEGER	INTEGER	
+	number_of_misses	INTEGER	INTEGER	
+
+CREATE TABLE omni_box_shortcuts (id VARCHAR PRIMARY KEY, text VARCHAR, fill_into_edit VARCHAR, url VARCHAR, contents VARCHAR, contents_class VARCHAR, description VARCHAR, description_class VARCHAR, transition INTEGER, type INTEGER, keyword VARCHAR, last_access_time INTEGER, number_of_hits INTEGER);
+	omni_box_shortcuts
+	id	STRING	VARCHAR	PRIMARY
+	text	STRING	VARCHAR	
+	fill_into_edit	STRING	VARCHAR	
+	url	STRING	VARCHAR	
+	contents	STRING	VARCHAR	
+	contents_class	STRING	VARCHAR	
+	description	STRING	VARCHAR	
+	description_class	STRING	VARCHAR	
+	transition	INTEGER	INTEGER	
+	type	INTEGER	INTEGER	
+	keyword	STRING	VARCHAR	
+	last_access_time	INTEGER	INTEGER	
+	number_of_hits	INTEGER	INTEGER	
+
+CREATE TABLE payment_method_manifest ( expire_date INTEGER NOT NULL DEFAULT 0, method_name VARCHAR, web_app_id VARCHAR);
+	payment_method_manifest
+	expire_date	INTEGER	INTEGER	
+	method_name	STRING	VARCHAR	
+	web_app_id	STRING	VARCHAR	
+
+CREATE TABLE previews_v1 (host_name VARCHAR NOT NULL, time INTEGER NOT NULL, opt_out INTEGER NOT NULL, type INTEGER NOT NULL, PRIMARY KEY(host_name, time DESC, opt_out, type));
+	previews_v1
+	host_name	STRING	VARCHAR	PRIMARY
+	time	INTEGER	INTEGER	PRIMARY
+	opt_out	INTEGER	INTEGER	PRIMARY
+	type	INTEGER	INTEGER	PRIMARY
+
+CREATE TABLE resource_prefetch_predictor_host_redirect ( key TEXT, proto BLOB, PRIMARY KEY(key));
+	resource_prefetch_predictor_host_redirect
+	key	STRING	TEXT	PRIMARY
+	proto	BYTES	BLOB	
+
+CREATE TABLE resource_prefetch_predictor_metadata ( key TEXT, value INTEGER, PRIMARY KEY (key));
+	resource_prefetch_predictor_metadata
+	key	STRING	TEXT	PRIMARY
+	value	INTEGER	INTEGER	
+
+CREATE TABLE resource_prefetch_predictor_origin ( key TEXT, proto BLOB, PRIMARY KEY(key));
+	resource_prefetch_predictor_origin
+	key	STRING	TEXT	PRIMARY
+	proto	BYTES	BLOB	
+
+CREATE TABLE segment_usage (id INTEGER PRIMARY KEY,segment_id INTEGER NOT NULL,time_slot INTEGER NOT NULL,visit_count INTEGER DEFAULT 0 NOT NULL);
+	segment_usage
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	segment_id	INTEGER	INTEGER	
+	time_slot	INTEGER	INTEGER	
+	visit_count	INTEGER	INTEGER	
+
+CREATE TABLE segments (id INTEGER PRIMARY KEY,name VARCHAR,url_id INTEGER NON NULL);
+	segments
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	name	STRING	VARCHAR	
+	url_id	INTEGER	INTEGER	
+
+CREATE TABLE server_address_metadata (id VARCHAR NOT NULL,use_count INTEGER NOT NULL DEFAULT 0, use_date INTEGER NOT NULL DEFAULT 0, has_converted BOOL NOT NULL DEFAULT FALSE);
+	server_address_metadata
+	id	STRING	VARCHAR	
+	use_count	INTEGER	INTEGER	
+	use_date	INTEGER	INTEGER	
+	has_converted	INTEGER	BOOL		
+
+CREATE TABLE server_addresses (id VARCHAR,company_name VARCHAR,street_address VARCHAR,address_1 VARCHAR,address_2 VARCHAR,address_3 VARCHAR,address_4 VARCHAR,postal_code VARCHAR,sorting_code VARCHAR,country_code VARCHAR,language_code VARCHAR, recipient_name VARCHAR, phone_number VARCHAR);
+	server_addresses
+	id	STRING	VARCHAR	
+	company_name	STRING	VARCHAR	
+	street_address	STRING	VARCHAR	
+	address_1	STRING	VARCHAR	
+	address_2	STRING	VARCHAR	
+	address_3	STRING	VARCHAR	
+	address_4	STRING	VARCHAR	
+	postal_code	STRING	VARCHAR	
+	sorting_code	STRING	VARCHAR	
+	country_code	STRING	VARCHAR	
+	language_code	STRING	VARCHAR	
+	recipient_name	STRING	VARCHAR	
+	phone_number	STRING	VARCHAR	
+
+CREATE TABLE server_card_metadata (id VARCHAR NOT NULL,use_count INTEGER NOT NULL DEFAULT 0, use_date INTEGER NOT NULL DEFAULT 0, billing_address_id VARCHAR);
+	server_card_metadata
+	id	STRING	VARCHAR	
+	use_count	INTEGER	INTEGER	
+	use_date	INTEGER	INTEGER	
+	billing_address_id	STRING	VARCHAR	
+
+CREATE TABLE stats (origin_domain VARCHAR NOT NULL, username_value VARCHAR, dismissal_count INTEGER, update_time INTEGER NOT NULL, UNIQUE(origin_domain, username_value));
+	stats
+	origin_domain	STRING	VARCHAR	
+	username_value	STRING	VARCHAR	
+	dismissal_count	INTEGER	INTEGER	
+	update_time	INTEGER	INTEGER	
+
+CREATE TABLE thumbnails (url LONGVARCHAR PRIMARY KEY,url_rank INTEGER,title LONGVARCHAR,thumbnail BLOB,redirects LONGVARCHAR,boring_score DOUBLE DEFAULT 1.0,good_clipping INTEGER DEFAULT 0,at_top INTEGER DEFAULT 0,last_updated INTEGER DEFAULT 0,load_completed INTEGER DEFAULT 0,last_forced INTEGER DEFAULT 0);
+	thumbnails
+	url	STRING	LONGVARCHAR	PRIMARY
+	url_rank	INTEGER	INTEGER	
+	title	STRING	LONGVARCHAR	
+	thumbnail	BYTES	BLOB	
+	redirects	STRING	LONGVARCHAR	
+	boring_score	DOUBLE	DOUBLE	
+	good_clipping	INTEGER	INTEGER	
+	at_top	INTEGER	INTEGER	
+	last_updated	INTEGER	INTEGER	
+	load_completed	INTEGER	INTEGER	
+	last_forced	INTEGER	INTEGER	
+
+CREATE TABLE token_service (service VARCHAR PRIMARY KEY NOT NULL,encrypted_token BLOB);
+	token_service
+	service	STRING	VARCHAR	PRIMARY
+	encrypted_token	BYTES	BLOB	
+
+CREATE TABLE typed_url_sync_metadata (storage_key INTEGER PRIMARY KEY NOT NULL,value BLOB);
+	typed_url_sync_metadata
+	storage_key	INTEGER	INTEGER	PRIMARY ROWID
+	value	BYTES	BLOB	
+
+CREATE TABLE unmasked_credit_cards (id VARCHAR,card_number_encrypted VARCHAR, use_count INTEGER NOT NULL DEFAULT 0, use_date INTEGER NOT NULL DEFAULT 0, unmask_date INTEGER NOT NULL DEFAULT 0);
+	unmasked_credit_cards
+	id	STRING	VARCHAR	
+	card_number_encrypted	STRING	VARCHAR	
+	use_count	INTEGER	INTEGER	
+	use_date	INTEGER	INTEGER	
+	unmask_date	INTEGER	INTEGER	
+
+CREATE TABLE urls(id INTEGER PRIMARY KEY AUTOINCREMENT,url LONGVARCHAR,title LONGVARCHAR,visit_count INTEGER DEFAULT 0 NOT NULL,typed_count INTEGER DEFAULT 0 NOT NULL,last_visit_time INTEGER NOT NULL,hidden INTEGER DEFAULT 0 NOT NULL);
+	urls
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	url	STRING	LONGVARCHAR	
+	title	STRING	LONGVARCHAR	
+	visit_count	INTEGER	INTEGER	
+	typed_count	INTEGER	INTEGER	
+	last_visit_time	INTEGER	INTEGER	
+	hidden	INTEGER	INTEGER	
+
+CREATE TABLE visit_source(id INTEGER PRIMARY KEY,source INTEGER NOT NULL);
+	visit_source
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	source	INTEGER	INTEGER	
+
+CREATE TABLE visits(id INTEGER PRIMARY KEY,url INTEGER NOT NULL,visit_time INTEGER NOT NULL,from_visit INTEGER,transition INTEGER DEFAULT 0 NOT NULL,segment_id INTEGER,visit_duration INTEGER DEFAULT 0 NOT NULL, incremented_omnibox_typed_score BOOLEAN DEFAULT FALSE NOT NULL);
+	visits
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	url	INTEGER	INTEGER	
+	visit_time	INTEGER	INTEGER	
+	from_visit	INTEGER	INTEGER	
+	transition	INTEGER	INTEGER	
+	segment_id	INTEGER	INTEGER	
+	visit_duration	INTEGER	INTEGER	
+	incremented_omnibox_typed_score	INTEGER	BOOLEAN	
+
+CREATE TABLE web_app_manifest_section ( expire_date INTEGER NOT NULL DEFAULT 0, id VARCHAR, min_version INTEGER NOT NULL DEFAULT 0, fingerprints BLOB);
+	web_app_manifest_section
+	expire_date	INTEGER	INTEGER	
+	id	STRING	VARCHAR	
+	min_version	INTEGER	INTEGER	
+	fingerprints	BYTES	BLOB	
+
