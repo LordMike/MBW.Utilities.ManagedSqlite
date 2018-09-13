@@ -2,13 +2,70 @@
 using System.Collections.Generic;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Sql.Internal;
-using Superpower;
 using Superpower.Model;
 
 namespace MBW.Utilities.ManagedSqlite.Sql
 {
     public static class SqlParser
     {
+        private static bool TryParseTokenList(TokenList<SqlToken> list, out SqlNode rootNode)
+        {
+            rootNode = null;
+
+            Stack<SqlNode> stack = new Stack<SqlNode>();
+            stack.Push(new SqlNode());
+
+            TokenListParserResult<SqlToken, Token<SqlToken>> tmp;
+            while ((tmp = list.ConsumeToken()).HasValue)
+            {
+                list = tmp.Remainder;
+
+                if (tmp.Value.Kind == SqlToken.Comma)
+                {
+                    if (stack.Count < 1)
+                        return false;
+
+                    stack.Pop();
+
+                    SqlNode newNode = new SqlNode();
+                    stack.Peek().AddChild(newNode);
+                    stack.Push(newNode);
+
+                    continue;
+                }
+
+                if (tmp.Value.Kind == SqlToken.ParenthesisStart)
+                {
+                    SqlNode newNode = new SqlNode();
+                    SqlNode newInnerNode = new SqlNode();
+                    newNode.AddChild(newInnerNode);
+
+                    stack.Peek().AddChild(newNode);
+                    stack.Push(newNode);
+                    stack.Push(newInnerNode);
+                    continue;
+                }
+
+                if (tmp.Value.Kind == SqlToken.ParenthesisEnd)
+                {
+                    if (stack.Count < 2)
+                        return false;
+
+                    stack.Pop();
+                    stack.Pop();
+                    continue;
+                }
+
+                stack.Peek().AddChild(new SqlNode(tmp.Value));
+            }
+
+            if (stack.Count != 1)
+                return false;
+
+            rootNode = stack.Pop();
+            return true;
+        }
+
         public static bool TryParse(string sql, out SqlTableDefinition tableDefinition)
         {
             tableDefinition = null;
@@ -19,36 +76,45 @@ namespace MBW.Utilities.ManagedSqlite.Sql
             if (!tokens.HasValue)
                 return false;
 
-            TokenListParserResult<SqlToken, SqlCreateTableSchema> parseAttempt = SqlTokens.CreateTable.TryParse(tokens.Value);
-
-            if (!parseAttempt.HasValue)
+            if (!TryParseTokenList(tokens.Value, out SqlNode node))
                 return false;
 
-            SqlCreateTableSchema parsed = parseAttempt.Value;
-            tableDefinition = new SqlTableDefinition(parsed.TableName.Name);
+            // Check if this is a create table
+            if (!node.Is(0, "CREATE") || !node.Is(1, "TABLE") || !node.Is(2, SqlToken.String) || !node.IsGroup(3))
+                return false;
 
-            // Each column here is a 2d array of strings. The first dimension represents each "unbroken set of statements", while the second dimension is all those statements.
-            // CREATE TABLE aa (a, b int, c int primary key) => 3 groups: ["a"], ["b", "int"], ["c", "int", "primary", "key"]
+            SqlTableDefinition def = new SqlTableDefinition(node.GetString(2));
+
+            var columns = node.GetGroup(3);
             int primaryKeyComponents = 0;
             SqlTableColumn primaryKeyColumn = null;
 
-            for (int i = 0; i < parsed.Columns.Length; i++)
+            for (var columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
             {
-                List<string>[] column = parsed.Columns[i];
-                List<string> firstSet = column.First();
+                var columnSet = columns.Children[columnIndex];
+                if (!columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
+                    continue;
 
-                bool isConstraint = SqlKeywords.ColumnKeywords.Contains(firstSet.First());
+                var firstToken = columnSet.Children.First().GetString();
+
+                bool isConstraint = SqlKeywords.ColumnKeywords.Contains(firstToken);
+                string name;
                 if (isConstraint)
                 {
-                    if ("PRIMARY".Equals(firstSet.First(), StringComparison.OrdinalIgnoreCase) &&
-                        "KEY".Equals(firstSet.Skip(1).First(), StringComparison.OrdinalIgnoreCase) &&
-                        column.Skip(1).Any())
+                    if (columnSet.Is(0, "PRIMARY") && columnSet.Is(1, "KEY") && columnSet.IsGroup(2))
                     {
-                        List<string> pkColumns = column[1];
+                        SqlNode pkColumns = columnSet.GetGroup(2);
 
-                        foreach (string pkColumn in pkColumns)
+                        foreach (SqlNode pkColumn in pkColumns.Children)
                         {
-                            if (!tableDefinition.TryGetColumn(pkColumn, out SqlTableColumn columnObject))
+                            if (pkColumn.Is(SqlToken.String))
+                                name = pkColumn.GetString();
+                            else if (pkColumn.Is(0, SqlToken.String))
+                                name = pkColumn.GetString(0);
+                            else
+                                return false;
+
+                            if (!def.TryGetColumn(name, out SqlTableColumn columnObject))
                                 continue;
 
                             columnObject.IsPartOfPrimaryKey = true;
@@ -61,8 +127,9 @@ namespace MBW.Utilities.ManagedSqlite.Sql
                     continue;
                 }
 
-                string name = firstSet.First();
-                string[] typeStrings = firstSet.Skip(1).ToArray();
+                name = columnSet.GetString(0);
+                string[] typeStrings = columnSet.Children.Skip(1).Where(s => s.Is(SqlToken.String))
+                    .Select(s => s.GetString()).ToArray();
 
                 Type identifiedType = typeof(byte[]);
                 string[] identifiedTypeStrings = typeStrings;
@@ -76,8 +143,8 @@ namespace MBW.Utilities.ManagedSqlite.Sql
                     break;
                 }
 
-                SqlTableColumn sqlTableColumn = new SqlTableColumn(i, name, string.Join(" ", identifiedTypeStrings), identifiedType);
-                tableDefinition.AddColumn(sqlTableColumn);
+                SqlTableColumn sqlTableColumn = new SqlTableColumn(columnIndex, name, string.Join(" ", identifiedTypeStrings), identifiedType);
+                def.AddColumn(sqlTableColumn);
 
                 // Is this a primary key?
                 if (typeStrings.Contains("PRIMARY", StringComparer.OrdinalIgnoreCase) &&
@@ -92,9 +159,10 @@ namespace MBW.Utilities.ManagedSqlite.Sql
             // Identify row-id substitutes
             if (primaryKeyComponents == 1 && primaryKeyColumn.DetectedType == typeof(long))
             {
-                tableDefinition.ConfigureRowIdColumn(primaryKeyColumn);
+                def.ConfigureRowIdColumn(primaryKeyColumn);
             }
 
+            tableDefinition = def;
             return true;
         }
     }
