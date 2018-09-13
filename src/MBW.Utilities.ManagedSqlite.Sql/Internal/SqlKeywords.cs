@@ -151,7 +151,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
                 (new[] { "INT", "INTEGER", "TINYINT", "SMALLINT", "MEDIUMINT", "BIGINT", "INT2", "INT8", "UNSIGNED BIG INT", "NUMERIC", "DECIMAL", "BOOLEAN", "DATE", "DATETIME" }, typeof(long)),
 
                 // text
-                (new[] { "CHARACTER", "VARCHAR", "VARYING CHARACTER","NCHAR", "NATIVE CHARACTER", "NVARCHAR", "TEXT", "CLOB" }, typeof(string)),
+                (new[] { "CHARACTER", "VARCHAR", "VARYING CHARACTER","NCHAR", "NATIVE CHARACTER", "NVARCHAR", "TEXT", "CLOB", "LONGVARCHAR" }, typeof(string)),
 
                 // blob
                 (new[] { "BLOB" }, typeof(byte[])),
