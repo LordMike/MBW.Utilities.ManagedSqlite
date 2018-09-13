@@ -72,7 +72,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
             if (!Is(index, SqlToken.String))
                 throw new Exception();
 
-            return Children[index].Token.ToStringValue();
+            return Children[index].Token.ToStringValue().Trim('"', '[', ']', '`', '\'');
         }
 
         public SqlNode GetGroup(int index)

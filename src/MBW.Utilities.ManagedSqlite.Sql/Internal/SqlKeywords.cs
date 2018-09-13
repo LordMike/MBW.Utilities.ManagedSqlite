@@ -6,7 +6,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
 {
     internal static class SqlKeywords
     {
-        public static HashSet<string> ColumnKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        public static HashSet<string> NonColumnKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
         {
             // column-constraint
             "CONSTRAINT", "PRIMARY", "NOT", "UNIQUE",
@@ -19,7 +19,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
         public static (string[] words, Type type)[] TypeKeywords =
             new[] {
                 // integer, numeric
-                (new[] { "INT", "INTEGER", "TINYINT", "SMALLINT", "MEDIUMINT", "BIGINT", "INT2", "INT8", "UNSIGNED BIG INT", "NUMERIC", "DECIMAL", "BOOLEAN", "DATE", "DATETIME" }, typeof(long)),
+                (new[] { "INT", "INTEGER", "TINYINT", "SMALLINT", "MEDIUMINT", "BIGINT", "INT2", "INT8", "BIG INT", "NUMERIC", "DECIMAL", "BOOL", "BOOLEAN", "DATE", "DATETIME", "UNSIGNED" }, typeof(long)),
 
                 // text
                 (new[] { "CHARACTER", "VARCHAR", "VARYING CHARACTER","NCHAR", "NATIVE CHARACTER", "NVARCHAR", "TEXT", "CLOB", "LONGVARCHAR" }, typeof(string)),

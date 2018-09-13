@@ -85,19 +85,19 @@ namespace MBW.Utilities.ManagedSqlite.Sql
 
             SqlTableDefinition def = new SqlTableDefinition(node.GetString(2));
 
-            var columns = node.GetGroup(3);
+            SqlNode columns = node.GetGroup(3);
             int primaryKeyComponents = 0;
             SqlTableColumn primaryKeyColumn = null;
 
-            for (var columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
+            for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
             {
-                var columnSet = columns.Children[columnIndex];
+                SqlNode columnSet = columns.Children[columnIndex];
                 if (!columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
                     continue;
 
-                var firstToken = columnSet.Children.First().GetString();
+                string firstToken = columnSet.Children.First().GetString();
 
-                bool isConstraint = SqlKeywords.ColumnKeywords.Contains(firstToken);
+                bool isConstraint = SqlKeywords.NonColumnKeywords.Contains(firstToken);
                 string name;
                 if (isConstraint)
                 {
