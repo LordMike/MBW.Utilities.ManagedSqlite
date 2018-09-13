@@ -16,7 +16,13 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
             from chars in Character.Except(open).Many()
             from close in Character.EqualTo(open)
             select new string(chars);
-        
+
+        private static TextParser<string> NumericLiteral { get; } =
+            from digits in Character.Digit.Many()
+            from @decimal in Character.EqualTo('.').Optional()
+            from decimals in Character.Digit.Many()
+            select new string(digits) + @decimal + new string(decimals);
+
         public static Tokenizer<SqlToken> Tokenizer { get; } = new TokenizerBuilder<SqlToken>()
             .Ignore(Span.WhiteSpace)
             .Match(Character.EqualTo('.'), SqlToken.Dot)
@@ -27,6 +33,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
             .Match(Character.EqualTo(';'), SqlToken.Semicolon)
             .Match(QuotedIdentifier, SqlToken.String)
             .Match(NonquotedIdentifier, SqlToken.String)
+            .Match(NumericLiteral, SqlToken.String)
             .Build();
     }
 }

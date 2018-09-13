@@ -32,6 +32,10 @@ namespace MBW.Utilities.ManagedSqlite.Reader
     {
         static int Main(string[] args)
         {
+            var succ2 = SqlParser.TryParse("CREATE TABLE keyword_search_terms (keyword_id INTEGER NOT NULL,url_id INTEGER NOT NULL,lower_term LONGVARCHAR NOT NULL,term LONGVARCHAR NOT NULL);", out var def2);
+            var succ = SqlParser.TryParse("CREATE TABLE visits(id INTEGER PRIMARY KEY,url INTEGER NOT NULL,visit_time INTEGER NOT NULL,from_visit INTEGER,transition INTEGER DEFAULT 0 NOT NULL,segment_id INTEGER,visit_duration INTEGER DEFAULT 0 NOT NULL, incremented_omnibox_typed_score BOOLEAN DEFAULT FALSE NOT NULL);", out var xx);
+
+
             return Parser.Default.ParseArguments<DescribeCommand, DumpCommand>(args)
                 .MapResult(
                     (DescribeCommand opts) => RunDescribe(opts),
