@@ -40,5 +40,16 @@ namespace MBW.Utilities.ManagedSqlite.Sql
             value = row.ColumnData[column.Ordinal];
             return true;
         }
+
+        public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, out T value)
+        {
+            value = default;
+
+            if (!row.TryGetValueByName(columnName, out object tmp))
+                return false;
+
+            value = (T)Convert.ChangeType(tmp, typeof(T));
+            return true;
+        }
     }
 }

@@ -15,19 +15,28 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
             ColumnData = columnData;
         }
 
-        public bool TryGetOrdinal<T>(ushort index, out T value)
+        public bool TryGetOrdinal(ushort index, out object value)
         {
-            value = default(T);
+            value = default;
 
             if (ColumnData.Length > index)
             {
-                object tmp = ColumnData[index];
-
-                value = (T)Convert.ChangeType(tmp, typeof(T));
+                value = ColumnData[index];
                 return true;
             }
 
             return false;
+        }
+
+        public bool TryGetOrdinal<T>(ushort index, out T value)
+        {
+            value = default;
+
+            if (!TryGetOrdinal(index, out object tmp))
+                return false;
+
+            value = (T)Convert.ChangeType(tmp, typeof(T));
+            return true;
         }
     }
 }
