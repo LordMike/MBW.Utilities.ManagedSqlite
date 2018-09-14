@@ -1,0 +1,115 @@
+﻿# SQL
+#    Table Name
+#    Column1Name
+#    Column2Name ClrType(Integer, String, Bytes, Double) SqlType Modifiers(Primary, RowId)
+# 
+CREATE TABLE moz_places (   id INTEGER PRIMARY KEY, url LONGVARCHAR, title LONGVARCHAR, rev_host LONGVARCHAR, visit_count INTEGER DEFAULT 0, hidden INTEGER DEFAULT 0 NOT NULL, typed INTEGER DEFAULT 0 NOT NULL, frecency INTEGER DEFAULT -1 NOT NULL, last_visit_date INTEGER , guid TEXT, foreign_count INTEGER DEFAULT 0 NOT NULL, url_hash INTEGER DEFAULT 0 NOT NULL , description TEXT, preview_image_url TEXT, origin_id INTEGER REFERENCES moz_origins(id));
+	moz_places
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	url	STRING	LONGVARCHAR	
+	title	STRING	LONGVARCHAR	
+	rev_host	STRING	LONGVARCHAR	
+	visit_count	INTEGER	INTEGER	
+	hidden	INTEGER	INTEGER	
+	typed	INTEGER	INTEGER	
+	frecency	INTEGER	INTEGER	
+	last_visit_date	INTEGER	INTEGER	
+	guid	STRING	TEXT	
+	foreign_count	INTEGER	INTEGER	
+	url_hash	INTEGER	INTEGER	
+	description	STRING	TEXT	
+	preview_image_url	STRING	TEXT	
+	origin_id	INTEGER	INTEGER	
+
+CREATE TABLE moz_historyvisits (  id INTEGER PRIMARY KEY, from_visit INTEGER, place_id INTEGER, visit_date INTEGER, visit_type INTEGER, session INTEGER);
+	moz_historyvisits
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	from_visit	INTEGER	INTEGER	
+	place_id	INTEGER	INTEGER	
+	visit_date	INTEGER	INTEGER	
+	visit_type	INTEGER	INTEGER	
+	session	INTEGER	INTEGER	
+
+CREATE TABLE moz_inputhistory (  place_id INTEGER NOT NULL, input LONGVARCHAR NOT NULL, use_count INTEGER, PRIMARY KEY (place_id, input));
+	moz_inputhistory
+	place_id	INTEGER	INTEGER	PRIMARY
+	input	STRING	LONGVARCHAR	PRIMARY
+	use_count	INTEGER	INTEGER	
+
+CREATE TABLE moz_hosts (  id INTEGER PRIMARY KEY, host TEXT NOT NULL UNIQUE, frecency INTEGER, typed INTEGER NOT NULL DEFAULT 0, prefix TEXT);
+	moz_hosts
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	host	STRING	TEXT	
+	frecency	INTEGER	INTEGER	
+	typed	INTEGER	INTEGER	
+	prefix	STRING	TEXT	
+
+CREATE TABLE moz_bookmarks (  id INTEGER PRIMARY KEY, type INTEGER, fk INTEGER DEFAULT NULL, parent INTEGER, position INTEGER, title LONGVARCHAR, keyword_id INTEGER, folder_type TEXT, dateAdded INTEGER, lastModified INTEGER, guid TEXT, syncStatus INTEGER NOT NULL DEFAULT 0, syncChangeCounter INTEGER NOT NULL DEFAULT 1);
+	moz_bookmarks
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	type	INTEGER	INTEGER	
+	fk	INTEGER	INTEGER	
+	parent	INTEGER	INTEGER	
+	position	INTEGER	INTEGER	
+	title	STRING	LONGVARCHAR	
+	keyword_id	INTEGER	INTEGER	
+	folder_type	STRING	TEXT	
+	dateAdded	INTEGER	INTEGER	
+	lastModified	INTEGER	INTEGER	
+	guid	STRING	TEXT	
+	syncStatus	INTEGER	INTEGER	
+	syncChangeCounter	INTEGER	INTEGER	
+
+CREATE TABLE moz_bookmarks_deleted (  guid TEXT PRIMARY KEY, dateRemoved INTEGER NOT NULL DEFAULT 0);
+	moz_bookmarks_deleted
+	guid	STRING	TEXT	PRIMARY
+	dateRemoved	INTEGER	INTEGER	
+
+CREATE TABLE moz_keywords (  id INTEGER PRIMARY KEY AUTOINCREMENT, keyword TEXT UNIQUE, place_id INTEGER, post_data TEXT);
+	moz_keywords
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	keyword	STRING	TEXT	
+	place_id	INTEGER	INTEGER	
+	post_data	STRING	TEXT	
+
+CREATE TABLE moz_anno_attributes (  id INTEGER PRIMARY KEY, name VARCHAR(32) UNIQUE NOT NULL);
+	moz_anno_attributes
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	name	STRING	VARCHAR	
+
+CREATE TABLE moz_annos (  id INTEGER PRIMARY KEY, place_id INTEGER NOT NULL, anno_attribute_id INTEGER, content LONGVARCHAR, flags INTEGER DEFAULT 0, expiration INTEGER DEFAULT 0, type INTEGER DEFAULT 0, dateAdded INTEGER DEFAULT 0, lastModified INTEGER DEFAULT 0);
+	moz_annos
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	place_id	INTEGER	INTEGER	
+	anno_attribute_id	INTEGER	INTEGER	
+	content	STRING	LONGVARCHAR	
+	flags	INTEGER	INTEGER	
+	expiration	INTEGER	INTEGER	
+	type	INTEGER	INTEGER	
+	dateAdded	INTEGER	INTEGER	
+	lastModified	INTEGER	INTEGER	
+
+CREATE TABLE moz_items_annos (  id INTEGER PRIMARY KEY, item_id INTEGER NOT NULL, anno_attribute_id INTEGER, content LONGVARCHAR, flags INTEGER DEFAULT 0, expiration INTEGER DEFAULT 0, type INTEGER DEFAULT 0, dateAdded INTEGER DEFAULT 0, lastModified INTEGER DEFAULT 0);
+	moz_items_annos
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	item_id	INTEGER	INTEGER	
+	anno_attribute_id	INTEGER	INTEGER	
+	content	STRING	LONGVARCHAR	
+	flags	INTEGER	INTEGER	
+	expiration	INTEGER	INTEGER	
+	type	INTEGER	INTEGER	
+	dateAdded	INTEGER	INTEGER	
+	lastModified	INTEGER	INTEGER	
+
+CREATE TABLE moz_meta (key TEXT PRIMARY KEY, value NOT NULL) WITHOUT ROWID ;
+	moz_meta
+	key	STRING	TEXT	PRIMARY
+	value	BYTES	NOT NULL	
+
+CREATE TABLE moz_origins ( id INTEGER PRIMARY KEY, prefix TEXT NOT NULL, host TEXT NOT NULL, frecency INTEGER NOT NULL, UNIQUE (prefix, host) );
+	moz_origins
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	prefix	STRING	TEXT	
+	host	STRING	TEXT	
+	frecency	INTEGER	INTEGER	
+

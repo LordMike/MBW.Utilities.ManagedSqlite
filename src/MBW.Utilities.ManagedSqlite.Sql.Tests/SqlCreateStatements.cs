@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Sql.Tests
@@ -10,46 +11,55 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests
     {
         public static IEnumerable<object[]> CreateStatementsTestsData()
         {
-            using (Stream fs = typeof(SqlCreateStatements).Assembly.GetManifestResourceStream(typeof(SqlCreateStatements).Assembly.GetName().Name + ".Data.CreateTableStatements.txt"))
-            using (StreamReader sr = new StreamReader(fs))
+            Assembly assembly = typeof(SqlCreateStatements).Assembly;
+            string[] files = {
+                $"{assembly.GetName().Name}.Data.From_Chrome.txt",
+                $"{assembly.GetName().Name}.Data.From_Firefox.txt"
+            };
+
+            foreach (string file in files)
             {
-                // SQL
-                //      TABLE-NAME
-                //      ColumnName    ClrType SqlType Modifiers       <-- Columns
-                //      ColumnName    ClrType SqlType Modifiers       <-- Columns
-                //      ColumnName    ClrType SqlType Modifiers       <-- Columns
-                //      ColumnName    ClrType SqlType Modifiers       <-- Columns
-
-                string line;
-                while ((line = sr.ReadLine()) != null)
+                using (Stream fs = assembly.GetManifestResourceStream(file))
+                using (StreamReader sr = new StreamReader(fs))
                 {
-                    if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
-                        continue;
+                    // SQL
+                    //      TABLE-NAME
+                    //      ColumnName    ClrType SqlType Modifiers       <-- Columns
+                    //      ColumnName    ClrType SqlType Modifiers       <-- Columns
+                    //      ColumnName    ClrType SqlType Modifiers       <-- Columns
+                    //      ColumnName    ClrType SqlType Modifiers       <-- Columns
 
-                    string sql = line;
-                    string name = sr.ReadLine().Trim();
-
-                    List<ExpectedColumn> cols = new List<ExpectedColumn>();
-                    while (!string.IsNullOrWhiteSpace(line = sr.ReadLine()))
+                    string line;
+                    while ((line = sr.ReadLine()) != null)
                     {
-                        string[] parts = line.TrimStart().Split('\t');
+                        if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#"))
+                            continue;
 
-                        string colName = parts[0];
-                        string clrType = parts[1];
-                        string sqlType = parts[2];
-                        string modifiers = parts[3];
+                        string sql = line;
+                        string name = sr.ReadLine().Trim();
 
-                        bool isPrimary = modifiers.Contains("PRIMARY");
-                        bool isRowId = modifiers.Contains("ROWID");
+                        List<ExpectedColumn> cols = new List<ExpectedColumn>();
+                        while (!string.IsNullOrWhiteSpace(line = sr.ReadLine()))
+                        {
+                            string[] parts = line.TrimStart().Split('\t');
 
-                        cols.Add(Column(colName, sqlType, clrType, isPrimary, isRowId));
+                            string colName = parts[0];
+                            string clrType = parts[1];
+                            string sqlType = parts[2];
+                            string modifiers = parts[3];
+
+                            bool isPrimary = modifiers.Contains("PRIMARY");
+                            bool isRowId = modifiers.Contains("ROWID");
+
+                            cols.Add(Column(colName, sqlType, clrType, isPrimary, isRowId));
+                        }
+
+                        yield return new object[]{
+                            sql,
+                            name,
+                            cols
+                        };
                     }
-
-                    yield return new object[]{
-                        sql,
-                        name,
-                        cols
-                    };
                 }
             }
         }
@@ -100,7 +110,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests
                     tp = typeof(double);
                     break;
                 default:
-                    throw new Exception();
+                    throw new Exception($"Unsupported {clrType}");
             }
 
             return new ExpectedColumn(name, sqlType, tp, isPrimaryKey, isRowId);

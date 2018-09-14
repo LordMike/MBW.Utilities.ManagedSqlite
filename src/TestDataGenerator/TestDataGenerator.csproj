@@ -24,4 +24,10 @@
     <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Sql\MBW.Utilities.ManagedSqlite.Sql.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="CreateTableStatementsForTests.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
