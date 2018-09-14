@@ -35,6 +35,10 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
             if (!TryGetOrdinal(index, out object tmp))
                 return false;
 
+            // TODO: Is null a success case?
+            if (tmp == null)
+                return false;
+
             value = (T)Convert.ChangeType(tmp, typeof(T));
             return true;
         }

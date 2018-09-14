@@ -48,6 +48,10 @@ namespace MBW.Utilities.ManagedSqlite.Sql
             if (!row.TryGetValueByName(columnName, out object tmp))
                 return false;
 
+            // TODO: Is null a success case?
+            if (tmp == null)
+                return false;
+
             value = (T)Convert.ChangeType(tmp, typeof(T));
             return true;
         }
