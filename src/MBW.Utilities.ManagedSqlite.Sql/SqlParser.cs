@@ -131,8 +131,10 @@ namespace MBW.Utilities.ManagedSqlite.Sql
                 string[] typeStrings = columnSet.Children.Skip(1).Where(s => s.Is(SqlToken.String))
                     .Select(s => s.GetString()).ToArray();
 
+                // Defaults
                 Type identifiedType = typeof(byte[]);
                 string[] identifiedTypeStrings = typeStrings;
+
                 foreach ((string[] words, Type type) candidate in SqlKeywords.TypeKeywords)
                 {
                     if (!typeStrings.Take(candidate.words.Length).SequenceEqual(candidate.words))

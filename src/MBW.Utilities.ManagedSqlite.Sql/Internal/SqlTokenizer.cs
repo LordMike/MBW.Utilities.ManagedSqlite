@@ -18,10 +18,11 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
             select new string(chars);
 
         private static TextParser<string> NumericLiteral { get; } =
+            from prefix in Character.In('-', '+').Optional()
             from digits in Character.Digit.Many()
             from @decimal in Character.EqualTo('.').Optional()
             from decimals in Character.Digit.Many()
-            select new string(digits) + @decimal + new string(decimals);
+            select prefix + new string(digits) + @decimal + new string(decimals);
 
         public static Tokenizer<SqlToken> Tokenizer { get; } = new TokenizerBuilder<SqlToken>()
             .Ignore(Span.WhiteSpace)
