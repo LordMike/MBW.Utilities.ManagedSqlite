@@ -16,11 +16,20 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
             {
                 Sqlite3SchemaRow other = new Sqlite3SchemaRow();
 
-                other.Type = (string)row.ColumnData[0];
-                other.Name = (string)row.ColumnData[1];
-                other.TableName = (string)row.ColumnData[2];
-                other.RootPage = (uint)(long)row.ColumnData[3];
-                other.Sql = (string)row.ColumnData[4];
+                row.TryGetOrdinal(0, out string str);
+                other.Type = str;
+
+                row.TryGetOrdinal(1, out str);
+                other.Name = str;
+
+                row.TryGetOrdinal(2, out str);
+                other.TableName = str;
+
+                row.TryGetOrdinal(3, out long lng);
+                other.RootPage = (uint)lng;
+
+                row.TryGetOrdinal(4, out str);
+                other.Sql = str;
 
                 Tables.Add(other);
             }
