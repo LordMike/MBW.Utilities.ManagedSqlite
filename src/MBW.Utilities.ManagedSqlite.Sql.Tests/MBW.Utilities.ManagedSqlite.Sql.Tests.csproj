@@ -8,9 +8,11 @@
   <ItemGroup>
     <None Remove="Data\From_Chrome.txt" />
     <None Remove="Data\From_Firefox.txt" />
+    <None Remove="Data\From_WindowsActivity.txt" />
   </ItemGroup>
 
   <ItemGroup>
+    <EmbeddedResource Include="Data\From_WindowsActivity.txt" />
     <EmbeddedResource Include="Data\From_Firefox.txt" />
     <EmbeddedResource Include="Data\From_Chrome.txt" />
   </ItemGroup>

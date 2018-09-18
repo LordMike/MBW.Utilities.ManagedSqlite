@@ -14,7 +14,8 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests
             Assembly assembly = typeof(SqlCreateStatements).Assembly;
             string[] files = {
                 $"{assembly.GetName().Name}.Data.From_Chrome.txt",
-                $"{assembly.GetName().Name}.Data.From_Firefox.txt"
+                $"{assembly.GetName().Name}.Data.From_Firefox.txt",
+                $"{assembly.GetName().Name}.Data.From_WindowsActivity.txt"
             };
 
             foreach (string file in files)
