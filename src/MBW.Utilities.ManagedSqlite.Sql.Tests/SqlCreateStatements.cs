@@ -15,7 +15,8 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests
             string[] files = {
                 $"{assembly.GetName().Name}.Data.From_Chrome.txt",
                 $"{assembly.GetName().Name}.Data.From_Firefox.txt",
-                $"{assembly.GetName().Name}.Data.From_WindowsActivity.txt"
+                $"{assembly.GetName().Name}.Data.From_WindowsActivity.txt",
+                $"{assembly.GetName().Name}.Data.From_WindowsActivityCache.txt"
             };
 
             foreach (string file in files)

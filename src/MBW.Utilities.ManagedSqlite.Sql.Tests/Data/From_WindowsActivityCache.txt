@@ -1,0 +1,106 @@
+# SQL
+#    Table Name
+#    Column1Name
+#    Column2Name ClrType(Integer, String, Bytes, Double) SqlType Modifiers(Primary, RowId)
+# 
+CREATE TABLE [Activity]([Id] GUID PRIMARY KEY NOT NULL, [AppId] TEXT NOT NULL, [PackageIdHash] TEXT, [AppActivityId] TEXT, [ActivityType] INT NOT NULL, [ActivityStatus] INT NOT NULL, [ParentActivityId] GUID, [Tag] TEXT, [Group] TEXT, [MatchId] TEXT, [LastModifiedTime] DATETIME NOT NULL, [ExpirationTime] DATETIME, [Payload] BLOB, [Priority] INT, [IsLocalOnly] INT, [PlatformDeviceId] TEXT, [CreatedInCloud] DATETIME, [StartTime] DATETIME, [EndTime] DATETIME, [LastModifiedOnClient] DATETIME, [GroupAppActivityId] TEXT, [ClipboardPayload] BLOB, [EnterpriseId] TEXT, [OriginalPayload] BLOB, [OriginalLastModifiedOnClient] DATETIME, [ETag] INT NOT NULL);
+	Activity
+	Id	BYTES	GUID	PRIMARY
+	AppId	STRING	TEXT	
+	PackageIdHash	STRING	TEXT	
+	AppActivityId	STRING	TEXT	
+	ActivityType	INTEGER	INT	
+	ActivityStatus	INTEGER	INT	
+	ParentActivityId	BYTES	GUID	
+	Tag	STRING	TEXT	
+	Group	STRING	TEXT	
+	MatchId	STRING	TEXT	
+	LastModifiedTime	INTEGER	DATETIME	
+	ExpirationTime	INTEGER	DATETIME	
+	Payload	BYTES	BLOB	
+	Priority	INTEGER	INT	
+	IsLocalOnly	INTEGER	INT	
+	PlatformDeviceId	STRING	TEXT	
+	CreatedInCloud	INTEGER	DATETIME	
+	StartTime	INTEGER	DATETIME	
+	EndTime	INTEGER	DATETIME	
+	LastModifiedOnClient	INTEGER	DATETIME	
+	GroupAppActivityId	STRING	TEXT	
+	ClipboardPayload	BYTES	BLOB	
+	EnterpriseId	STRING	TEXT	
+	OriginalPayload	BYTES	BLOB	
+	OriginalLastModifiedOnClient	INTEGER	DATETIME	
+	ETag	INTEGER	INT	
+
+CREATE TABLE [ActivityOperation]([OperationOrder] INTEGER PRIMARY KEY ASC NOT NULL, [Id] GUID NOT NULL, [OperationType] INT NOT NULL, [AppId] TEXT NOT NULL, [PackageIdHash] TEXT, [AppActivityId] TEXT, [ActivityType] INT NOT NULL, [ParentActivityId] GUID, [Tag] TEXT, [Group] TEXT, [MatchId] TEXT, [LastModifiedTime] DATETIME NOT NULL, [ExpirationTime] DATETIME, [Payload] BLOB, [Priority] INT, [CreatedTime] DATETIME, [Attachments] TEXT, [PlatformDeviceId] TEXT, [CreatedInCloud] DATETIME, [StartTime] DATETIME NOT NULL, [EndTime] DATETIME, [LastModifiedOnClient] DATETIME NOT NULL, [CorrelationVector] TEXT, [GroupAppActivityId] TEXT, [ClipboardPayload] BLOB, [EnterpriseId] TEXT, [OriginalPayload] BLOB, [OriginalLastModifiedOnClient] DATETIME, [ETag] INT NOT NULL);
+	ActivityOperation
+	OperationOrder	INTEGER	INTEGER	PRIMARY ROWID
+	Id	BYTES	GUID	
+	OperationType	INTEGER	INT	
+	AppId	STRING	TEXT	
+	PackageIdHash	STRING	TEXT	
+	AppActivityId	STRING	TEXT	
+	ActivityType	INTEGER	INT	
+	ParentActivityId	BYTES	GUID	
+	Tag	STRING	TEXT	
+	Group	STRING	TEXT	
+	MatchId	STRING	TEXT	
+	LastModifiedTime	INTEGER	DATETIME	
+	ExpirationTime	INTEGER	DATETIME	
+	Payload	BYTES	BLOB	
+	Priority	INTEGER	INT	
+	CreatedTime	INTEGER	DATETIME	
+	Attachments	STRING	TEXT	
+	PlatformDeviceId	STRING	TEXT	
+	CreatedInCloud	INTEGER	DATETIME	
+	StartTime	INTEGER	DATETIME	
+	EndTime	INTEGER	DATETIME	
+	LastModifiedOnClient	INTEGER	DATETIME	
+	CorrelationVector	STRING	TEXT	
+	GroupAppActivityId	STRING	TEXT	
+	ClipboardPayload	BYTES	BLOB	
+	EnterpriseId	STRING	TEXT	
+	OriginalPayload	BYTES	BLOB	
+	OriginalLastModifiedOnClient	INTEGER	DATETIME	
+	ETag	INTEGER	INT	
+
+CREATE TABLE [AppSettings]([AppId] TEXT PRIMARY KEY NOT NULL, [SettingsPropertyBag] BLOB, [AppTitle] TEXT, [Logo4141] TEXT);
+	AppSettings
+	AppId	STRING	TEXT	PRIMARY
+	SettingsPropertyBag	BYTES	BLOB	
+	AppTitle	STRING	TEXT	
+	Logo4141	STRING	TEXT	
+
+CREATE TABLE [ActivityAssetCache]([ResourceId] INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, [AppId] TEXT NOT NULL, [AssetHash] TEXT NOT NULL, [TimeToLive] DATETIME NOT NULL, [AssetUri] TEXT, [AssetId] TEXT, [AssetKey] TEXT, [Contents] BLOB);
+	ActivityAssetCache
+	ResourceId	INTEGER	INTEGER	PRIMARY ROWID
+	AppId	STRING	TEXT	
+	AssetHash	STRING	TEXT	
+	TimeToLive	INTEGER	DATETIME	
+	AssetUri	STRING	TEXT	
+	AssetId	STRING	TEXT	
+	AssetKey	STRING	TEXT	
+	Contents	BYTES	BLOB	
+
+CREATE TABLE sqlite_sequence(name,seq);
+	sqlite_sequence
+	name	BYTES		
+	seq	BYTES		
+
+CREATE TABLE [Metadata]([Key] TEXT PRIMARY KEY NOT NULL, [Value] TEXT);
+	Metadata
+	Key	STRING	TEXT	PRIMARY
+	Value	STRING	TEXT	
+
+CREATE TABLE [ManualSequence]([Key] TEXT PRIMARY KEY NOT NULL, [Value] INT NOT NULL);
+	ManualSequence
+	Key	STRING	TEXT	PRIMARY
+	Value	INTEGER	INT	
+
+CREATE TABLE [Activity_PackageId]([ActivityId] GUID NOT NULL, [Platform] TEXT NOT NULL, [PackageName] TEXT NOT NULL, [ExpirationTime] DATETIME NOT NULL);
+	Activity_PackageId
+	ActivityId	BYTES	GUID	
+	Platform	STRING	TEXT	
+	PackageName	STRING	TEXT	
+	ExpirationTime	INTEGER	DATETIME	
+
