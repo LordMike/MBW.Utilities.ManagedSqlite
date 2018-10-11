@@ -25,7 +25,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
                 (new[] { "CHARACTER", "VARCHAR", "VARYING CHARACTER","NCHAR", "NATIVE CHARACTER", "NVARCHAR", "TEXT", "CLOB", "LONGVARCHAR" }, typeof(string)),
 
                 // blob
-                (new[] { "BLOB" }, typeof(byte[])),
+                (new[] { "BLOB", "GUID" }, typeof(byte[])),
 
                 // real
                 (new[] { "REAL", "DOUBLE", "DOUBLE PRECISION", "FLOAT" }, typeof(double)),

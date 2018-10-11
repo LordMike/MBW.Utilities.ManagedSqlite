@@ -12,9 +12,15 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
             select open + new string(chars);
 
         private static TextParser<string> QuotedIdentifier { get; } =
-            from open in Character.In('"', '[', '`', '\'')
+            from open in Character.In('"', '`', '\'')
             from chars in Character.Except(open).Many()
             from close in Character.EqualTo(open)
+            select new string(chars);
+
+        private static TextParser<string> BracketedIdentifier { get; } =
+            from open in Character.EqualTo('[')
+            from chars in Character.Except(']').Many()
+            from close in Character.EqualTo(']')
             select new string(chars);
 
         private static TextParser<string> NumericLiteral { get; } =
@@ -33,6 +39,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
             .Match(Character.EqualTo(')'), SqlToken.ParenthesisEnd)
             .Match(Character.EqualTo(';'), SqlToken.Semicolon)
             .Match(QuotedIdentifier, SqlToken.String)
+            .Match(BracketedIdentifier, SqlToken.String)
             .Match(NonquotedIdentifier, SqlToken.String)
             .Match(NumericLiteral, SqlToken.String)
             .Build();
