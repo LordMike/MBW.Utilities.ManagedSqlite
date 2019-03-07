@@ -6,8 +6,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Data\*.txt" />
-    <EmbeddedResource Include="Data\*.txt" />
+    <None Remove="Data\*" />
+    <EmbeddedResource Include="Data\*" />
   </ItemGroup>
 
   <ItemGroup>
