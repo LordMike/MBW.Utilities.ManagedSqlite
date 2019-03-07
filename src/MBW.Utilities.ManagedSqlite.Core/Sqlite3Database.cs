@@ -12,6 +12,7 @@ namespace MBW.Utilities.ManagedSqlite.Core
     {
         private readonly Sqlite3Settings _settings;
         private readonly ReaderBase _reader;
+        private Dictionary<string, object> _annotations;
 
         private uint _sizeInPages;
 
@@ -22,6 +23,7 @@ namespace MBW.Utilities.ManagedSqlite.Core
         {
             _settings = settings ?? new Sqlite3Settings();
             _reader = new ReaderBase(file);
+            _annotations = new Dictionary<string, object>();
 
             Initialize();
             InitializeMasterTable();
@@ -50,6 +52,7 @@ namespace MBW.Utilities.ManagedSqlite.Core
             // Fake the schema for the sqlite_master table
             Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow
             {
+                Database = this,
                 Type = "table",
                 Name = "sqlite_master",
                 TableName = "sqlite_master",
@@ -80,6 +83,14 @@ namespace MBW.Utilities.ManagedSqlite.Core
         }
 
         public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
+
+        internal T GetAnnotation<T>(string key, Func<T> creator) where T : class
+        {
+            if (!_annotations.TryGetValue(key, out var val))
+                _annotations[key] = val = creator();
+
+            return (T)val;
+        }
 
         public void Dispose()
         {
