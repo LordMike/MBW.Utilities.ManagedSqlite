@@ -61,7 +61,7 @@ namespace MBW.Utilities.ManagedSqlite.Core
             };
 
             Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
-            _masterTable = new Sqlite3MasterTable(table);
+            _masterTable = new Sqlite3MasterTable(this, table);
         }
 
         public Sqlite3Table GetTable(string name)

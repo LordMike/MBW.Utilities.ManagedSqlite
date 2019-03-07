@@ -6,7 +6,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
     {
         public List<Sqlite3SchemaRow> Tables { get; }
 
-        public Sqlite3MasterTable(Sqlite3Table table)
+        public Sqlite3MasterTable(Sqlite3Database db, Sqlite3Table table)
         {
             Tables = new List<Sqlite3SchemaRow>();
 
@@ -15,6 +15,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
             foreach (Sqlite3Row row in rows)
             {
                 Sqlite3SchemaRow other = new Sqlite3SchemaRow();
+
+                other.Database = db;
 
                 row.TryGetOrdinal(0, out string str);
                 other.Type = str;
