@@ -1,13 +1,29 @@
 ﻿using System;
+using System.Collections.Generic;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 
 namespace MBW.Utilities.ManagedSqlite.Sql
 {
     public static class SqlExtensions
     {
+        private const string SqlCacheKey = "SqlCache";
+
         public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
         {
-            SqlTableDefinition def = SqlCache.GetOrAdd(schema);
+            Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
+
+            if (!definitionCache.TryGetValue(schema, out SqlTableDefinition definition))
+            {
+                if (!SqlParser.TryParse(schema.Sql, out definition))
+                    definitionCache[schema] = null;
+                else
+                    definitionCache[schema] = definition;
+            }
+
+            if (definition == null)
+                throw new Exception();
+
+            SqlTableDefinition def = definition;
 
             return def;
         }
