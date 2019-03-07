@@ -10,7 +10,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql
 
         public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
         {
-            Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetAnnotation(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
+            Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
 
             if (!definitionCache.TryGetValue(schema, out SqlTableDefinition definition))
             {

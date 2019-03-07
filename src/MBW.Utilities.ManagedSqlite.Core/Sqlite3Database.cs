@@ -12,7 +12,7 @@ namespace MBW.Utilities.ManagedSqlite.Core
     {
         private readonly Sqlite3Settings _settings;
         private readonly ReaderBase _reader;
-        private Dictionary<string, object> _annotations;
+        private Dictionary<string, object> _propertyStore;
 
         private uint _sizeInPages;
 
@@ -23,7 +23,7 @@ namespace MBW.Utilities.ManagedSqlite.Core
         {
             _settings = settings ?? new Sqlite3Settings();
             _reader = new ReaderBase(file);
-            _annotations = new Dictionary<string, object>();
+            _propertyStore = new Dictionary<string, object>();
 
             Initialize();
             InitializeMasterTable();
@@ -84,10 +84,10 @@ namespace MBW.Utilities.ManagedSqlite.Core
 
         public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
 
-        internal T GetAnnotation<T>(string key, Func<T> creator) where T : class
+        internal T GetProperty<T>(string key, Func<T> creator) where T : class
         {
-            if (!_annotations.TryGetValue(key, out var val))
-                _annotations[key] = val = creator();
+            if (!_propertyStore.TryGetValue(key, out var val))
+                _propertyStore[key] = val = creator();
 
             return (T)val;
         }
