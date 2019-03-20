@@ -307,9 +307,9 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal
             return res;
         }
 
-        public string ReadString(ushort bytes)
+        public string ReadString(uint bytes)
         {
-            byte[] data = Read(bytes);
+            byte[] data = Read((int) bytes);
             return _encoding.GetString(data, 0, data.Length);
         }
     }

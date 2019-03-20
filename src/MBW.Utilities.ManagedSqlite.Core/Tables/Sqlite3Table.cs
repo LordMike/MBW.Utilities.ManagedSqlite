@@ -93,13 +93,13 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
                         {
                             // Even number
                             meta.Type = SqliteDataType.Blob;
-                            meta.Length = (ushort)((columnInfo - 12) / 2);
+                            meta.Length = (uint)((columnInfo - 12) / 2);
                         }
                         else
                         {
                             // Odd number
                             meta.Type = SqliteDataType.Text;
-                            meta.Length = (ushort)((columnInfo - 13) / 2);
+                            meta.Length = (uint)((columnInfo - 13) / 2);
                         }
 
                         metaInfos.Add(meta);
@@ -128,7 +128,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables
                                 rowData[i] = true;
                                 break;
                             case SqliteDataType.Blob:
-                                rowData[i] = reader.Read(meta.Length);
+                                rowData[i] = reader.Read((int)meta.Length);
                                 break;
                             case SqliteDataType.Text:
                                 rowData[i] = reader.ReadString(meta.Length);
