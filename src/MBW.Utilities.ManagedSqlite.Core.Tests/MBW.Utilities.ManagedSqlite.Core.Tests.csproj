@@ -19,6 +19,8 @@
     <None Remove="Data\Db1.db" />
     <None Remove="Data\IntegerData.db" />
     <None Remove="Data\RealData.db" />
+    <None Remove="Data\VeryLongText.db" />
+    <None Remove="Data\VeryLongText.txt" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,6 +37,8 @@
     <EmbeddedResource Include="Data\MediumDb.db" />
     <EmbeddedResource Include="Data\IntegerData.db" />
     <EmbeddedResource Include="Data\RealData.db" />
+    <EmbeddedResource Include="Data\VeryLongText.db" />
+    <EmbeddedResource Include="Data\VeryLongText.txt" />
   </ItemGroup>
 
   <ItemGroup>
