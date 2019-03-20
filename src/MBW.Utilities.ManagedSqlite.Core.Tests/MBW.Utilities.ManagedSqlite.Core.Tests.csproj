@@ -8,37 +8,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <None Remove="Data\AlterTable.db" />
-    <None Remove="Data\AlterTableWithDefault.db" />
-    <None Remove="Data\BigBlobDb.bin" />
-    <None Remove="Data\BigBlobDb.db" />
-    <None Remove="Data\CorruptResults.txt" />
-    <None Remove="Data\DB-UTF16BE.db" />
-    <None Remove="Data\DB-UTF16LE.db" />
-    <None Remove="Data\DB-UTF8.db" />
-    <None Remove="Data\Db1.db" />
-    <None Remove="Data\IntegerData.db" />
-    <None Remove="Data\RealData.db" />
-    <None Remove="Data\VeryLongText.db" />
-    <None Remove="Data\VeryLongText.txt" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <EmbeddedResource Include="Data\AlterTable.db" />
-    <EmbeddedResource Include="Data\AlterTableWithDefault.db" />
-    <EmbeddedResource Include="Data\BigBlobDb.bin" />
-    <EmbeddedResource Include="Data\BigBlobDb.db" />
-    <EmbeddedResource Include="Data\CorruptResults.txt" />
-    <EmbeddedResource Include="Data\DB-UTF16BE.db" />
-    <EmbeddedResource Include="Data\DB-UTF16LE.db" />
-    <EmbeddedResource Include="Data\DB-UTF8.db" />
-    <EmbeddedResource Include="Data\Db1.db" />
-    <EmbeddedResource Include="Data\CorruptInitial.db" />
-    <EmbeddedResource Include="Data\MediumDb.db" />
-    <EmbeddedResource Include="Data\IntegerData.db" />
-    <EmbeddedResource Include="Data\RealData.db" />
-    <EmbeddedResource Include="Data\VeryLongText.db" />
-    <EmbeddedResource Include="Data\VeryLongText.txt" />
+    <None Remove="Data\*" />
+    <EmbeddedResource Include="Data\*" />
   </ItemGroup>
 
   <ItemGroup>
