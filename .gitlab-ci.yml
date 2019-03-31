@@ -1,47 +1,26 @@
-image: microsoft/dotnet:2.1-sdk
+image: microsoft/dotnet:2-sdk
 
 stages:
 - build
-- test
-- pack
-- nuget
+- publish
 
 build:
   stage: build
   script:
-    - dotnet restore
-    - dotnet build --no-restore -c Debug
-  artifacts:
-    untracked: true
-    expire_in: 6 hours
-
-test:
-  stage: test
-  script:
-    - dotnet restore
-    - (cd src/MBW.Utilities.ManagedSqlite.Core.Tests; dotnet test -c Debug)
-    - (cd src/MBW.Utilities.ManagedSqlite.Sql.Tests; dotnet test -c Debug)
-  dependencies:
-  - build
-
-pack:
-  stage: pack
-  script:
-    - dotnet restore
-    - dotnet pack -c Release --no-restore -o $CI_PROJECT_DIR/Build
+  - dotnet test
+  - dotnet pack -c Release --include-symbols -o $CI_PROJECT_DIR/Build/
   artifacts:
     paths:
     - Build/*.nupkg
+    - Build/*.snupkg
     expire_in: 1 week
+
+publish:
+  stage: publish
+  only:
+    - nuget
+  script:
+  - cd $CI_PROJECT_DIR/Build/
+  - dotnet nuget push *.nupkg -s https://api.nuget.org/v3/index.json -k $NUGET_KEY
   dependencies:
   - build
-
-nuget:
-  stage: nuget
-  script:
-    - dotnet nuget push Build/MBW.Utilities.ManagedSqlite.Core.*.nupkg -s https://api.nuget.org/v3/index.json -k $NUGET_KEY
-    - dotnet nuget push Build/MBW.Utilities.ManagedSqlite.Sql.*.nupkg -s https://api.nuget.org/v3/index.json -k $NUGET_KEY
-  dependencies:
-  - pack
-  only:
-  - nuget

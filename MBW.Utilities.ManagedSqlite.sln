@@ -21,14 +21,15 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestDataGenerator", "src\TestDataGenerator\TestDataGenerator.csproj", "{901F8D38-6910-47C3-8D9C-44EF487DEF46}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Imports", "_Imports", "{56AAAC48-0222-4C4F-9BC7-E8F243D2B4AB}"
-	ProjectSection(SolutionItems) = preProject
-		_Imports\Common.targets = _Imports\Common.targets
-		_Imports\Properties.targets = _Imports\Properties.targets
-		_Imports\SourceLink.targets = _Imports\SourceLink.targets
-	EndProjectSection
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Sql.Tests", "src\MBW.Utilities.ManagedSqlite.Sql.Tests\MBW.Utilities.ManagedSqlite.Sql.Tests.csproj", "{162FE8EB-FB16-47A6-912A-C018DC4E962A}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MBW.Utilities.ManagedSqlite.Sql.Tests", "src\MBW.Utilities.ManagedSqlite.Sql.Tests\MBW.Utilities.ManagedSqlite.Sql.Tests.csproj", "{162FE8EB-FB16-47A6-912A-C018DC4E962A}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "imports", "imports", "{63529930-D46E-4D5A-989F-29EA708A1261}"
+	ProjectSection(SolutionItems) = preProject
+		imports\_Properties.targets = imports\_Properties.targets
+		imports\_SourceLink.targets = imports\_SourceLink.targets
+		imports\Library.targets = imports\Library.targets
+		imports\Test.targets = imports\Test.targets
+	EndProjectSection
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -71,6 +72,7 @@ Global
 		{3B41163B-8FCB-4569-9843-510DF5D6A91D} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{901F8D38-6910-47C3-8D9C-44EF487DEF46} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{162FE8EB-FB16-47A6-912A-C018DC4E962A} = {7F205CD8-F964-4521-95FF-15A73F05C893}
+		{63529930-D46E-4D5A-989F-29EA708A1261} = {5A21CA7B-C932-4454-A9DB-5A341A46AE66}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {74AACA01-FA22-4FF7-834F-9B5B6E76EBB1}

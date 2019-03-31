@@ -1,8 +1,6 @@
-
-# VS stuff
-obj/
-bin/
 .vs/
+bin/
+obj/
 *.user
 
 # Auto generated stuff
