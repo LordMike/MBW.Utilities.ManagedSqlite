@@ -64,22 +64,32 @@ namespace MBW.Utilities.ManagedSqlite.Core
             _masterTable = new Sqlite3MasterTable(this, table);
         }
 
-        public Sqlite3Table GetTable(string name)
+        public bool TryGetTable(string name, out Sqlite3Table table)
         {
             IEnumerable<Sqlite3SchemaRow> tables = GetTables();
 
-            foreach (Sqlite3SchemaRow table in tables)
+            foreach (Sqlite3SchemaRow tbl in tables)
             {
-                if (table.TableName != name || table.Type != "table")
+                if (tbl.TableName != name || tbl.Type != "table")
                     continue;
 
                 // Found it
-                BTreePage root = BTreePage.Parse(_reader, table.RootPage);
-                Sqlite3Table tbl = new Sqlite3Table(_reader, root, table);
-                return tbl;
+                BTreePage root = BTreePage.Parse(_reader, tbl.RootPage);
+
+                table = new Sqlite3Table(_reader, root, tbl);
+                return true;
             }
 
-            throw new Exception("Unable to find table named " + name);
+            table = null;
+            return false;
+        }
+
+        public Sqlite3Table GetTable(string name)
+        {
+            if (!TryGetTable(name, out var tbl))
+                throw new Exception("Unable to find table named " + name);
+
+            return tbl;
         }
 
         public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
