@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
@@ -37,7 +38,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal
             _binaryReader = new BinaryReader(stream);
         }
 
-        internal ReaderBase(Stream stream, ReaderBase origin) 
+        internal ReaderBase(Stream stream, ReaderBase origin)
             : this(stream)
         {
             PageSize = origin.PageSize;
@@ -46,11 +47,14 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal
             _encoding = origin._encoding;
         }
 
-        internal void ApplySqliteDatabaseHeader(DatabaseHeader header)
+        internal void ApplySqliteDatabaseHeader(DatabaseHeader header, Sqlite3Settings settings)
         {
             PageSize = header.PageSize;
             ReservedSpace = header.ReservedSpaceAtEndOfPage;
             TextEncoding = header.TextEncoding;
+
+            if (!Enum.IsDefined(typeof(SqliteEncoding), TextEncoding) && settings.FallbackEncoding.HasValue)
+                TextEncoding = settings.FallbackEncoding.Value;
 
             switch (TextEncoding)
             {
@@ -64,7 +68,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal
                     _encoding = Encoding.BigEndianUnicode;
                     break;
                 default:
-                    throw new ArgumentOutOfRangeException();
+                    throw new SqliteInvalidEncodingException(TextEncoding);
             }
         }
 
@@ -309,7 +313,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal
 
         public string ReadString(uint bytes)
         {
-            byte[] data = Read((int) bytes);
+            byte[] data = Read((int)bytes);
             return _encoding.GetString(data, 0, data.Length);
         }
     }
