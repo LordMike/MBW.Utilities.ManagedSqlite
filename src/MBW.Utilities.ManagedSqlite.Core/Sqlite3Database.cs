@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects;
+using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 
@@ -18,6 +19,8 @@ namespace MBW.Utilities.ManagedSqlite.Core
 
         public DatabaseHeader Header { get; private set; }
         private Sqlite3MasterTable _masterTable;
+
+        public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
         public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
         {
@@ -41,7 +44,7 @@ namespace MBW.Utilities.ManagedSqlite.Core
             // TODO: Warn on mismatch
             _sizeInPages = Math.Max(expectedPages, Header.DatabaseSizeInPages);
 
-            _reader.ApplySqliteDatabaseHeader(Header);
+            _reader.ApplySqliteDatabaseHeader(Header, _settings);
         }
 
         private void InitializeMasterTable()
