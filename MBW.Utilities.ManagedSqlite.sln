@@ -1,11 +1,11 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio 15
-VisualStudioVersion = 15.0.26228.9
+# Visual Studio Version 16
+VisualStudioVersion = 16.0.31105.61
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{5A21CA7B-C932-4454-A9DB-5A341A46AE66}"
 	ProjectSection(SolutionItems) = preProject
-		.gitlab-ci.yml = .gitlab-ci.yml
+		Directory.Build.props = Directory.Build.props
 		README.md = README.md
 	EndProjectSection
 EndProject
@@ -23,12 +23,10 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestDataGenerator", "src\Te
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Sql.Tests", "src\MBW.Utilities.ManagedSqlite.Sql.Tests\MBW.Utilities.ManagedSqlite.Sql.Tests.csproj", "{162FE8EB-FB16-47A6-912A-C018DC4E962A}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "imports", "imports", "{63529930-D46E-4D5A-989F-29EA708A1261}"
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Imports", "_Imports", "{63529930-D46E-4D5A-989F-29EA708A1261}"
 	ProjectSection(SolutionItems) = preProject
-		imports\_Properties.targets = imports\_Properties.targets
-		imports\_SourceLink.targets = imports\_SourceLink.targets
-		imports\Library.targets = imports\Library.targets
-		imports\Test.targets = imports\Test.targets
+		_Imports\Local.targets = _Imports\Local.targets
+		_Imports\Test.targets = _Imports\Test.targets
 	EndProjectSection
 EndProject
 Global
