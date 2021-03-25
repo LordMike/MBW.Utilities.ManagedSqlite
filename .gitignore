@@ -2,9 +2,4 @@
 bin/
 obj/
 *.user
-
-# Auto generated stuff
-TestDataGenerator/Data-MediumDb/
-TestDataGenerator/Data-RealData/
-TestDataGenerator/Data-Corrupt/
-
+Build/
