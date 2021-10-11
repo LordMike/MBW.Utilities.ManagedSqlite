@@ -12,6 +12,9 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal
             "CONSTRAINT", "PRIMARY", "NOT", "UNIQUE",
             "CHECK", "DEFAULT", "COLLATE",
 
+            // table-constraint
+            "CONSTRAINT", "PRIMARY", "UNIQUE", "CHECK", "FOREIGN",
+
             // foreign-key-clause
             "REFERENCES"
         };

@@ -109,6 +109,51 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests
             }
         }
 
+        public static void AppendActual(StreamWriter sw, string sql, SqlTableDefinition definition)
+        {
+            sw.WriteLine(sql);
+            sw.WriteLine("\t" + definition.TableName);
+
+
+
+            foreach (var sqlTableColumn in definition.Columns)
+            {
+                sw.Write("\t");
+                sw.Write(sqlTableColumn.Name);
+                sw.Write("\t");
+                switch (sqlTableColumn.DetectedType.Name)
+                {
+                    case "Int64":
+                        sw.Write("INTEGER");
+                        break;
+                    case "Byte[]":
+                        sw.Write("BYTES");
+                        break;
+                    case "String":
+                        sw.Write("STRING");
+                        break;
+                    case "Double":
+                        sw.Write("DOUBLE");
+                        break;
+                    default:
+                        throw new Exception();
+                }
+
+                sw.Write("\t");
+                sw.Write(sqlTableColumn.TypeName);
+                sw.Write("\t");
+                if (sqlTableColumn.IsPartOfPrimaryKey)
+                    sw.Write("PRIMARY");
+
+                if (definition.RowIdColumn.Name == sqlTableColumn.Name)
+                    sw.Write(" ROWID");
+
+                sw.WriteLine();
+            }
+
+            sw.WriteLine();
+        }
+
         public class ExpectedTable
         {
             public string Sql { get; set; }

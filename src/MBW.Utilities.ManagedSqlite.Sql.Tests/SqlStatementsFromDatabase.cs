@@ -50,7 +50,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests
                     ms.Seek(0, SeekOrigin.Begin);
                 }
 
-                // Ensuret that the DB matches the expectations
+                // Ensure that the DB matches the expectations
                 using (Sqlite3Database db = new Sqlite3Database(ms))
                 {
                     List<Sqlite3SchemaRow> dbTables = db.GetTables().Where(s => !s.TableName.StartsWith("sqlite_", StringComparison.Ordinal)).Where(s => s.Type == "table").ToList();
