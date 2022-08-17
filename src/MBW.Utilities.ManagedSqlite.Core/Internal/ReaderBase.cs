@@ -32,6 +32,9 @@ public class ReaderBase : IDisposable
 
     public ReaderBase(Stream stream)
     {
+        if (stream == null)
+            throw new ArgumentNullException(nameof(stream));
+
         _stream = stream;
         Length = _stream.Length;
 

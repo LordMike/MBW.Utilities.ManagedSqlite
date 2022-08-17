@@ -24,6 +24,9 @@ public class Sqlite3Database : IDisposable
 
     public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
     {
+        if (file == null)
+            throw new ArgumentNullException(nameof(file));
+
         _settings = settings ?? new Sqlite3Settings();
         _reader = new ReaderBase(file);
         _propertyStore = new Dictionary<string, object>();
