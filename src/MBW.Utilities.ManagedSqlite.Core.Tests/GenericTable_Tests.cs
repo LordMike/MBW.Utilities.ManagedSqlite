@@ -6,58 +6,53 @@ using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests
+namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+
+public class GenericTable_Tests : IDisposable
 {
-    public class GenericTable_Tests : IDisposable
+    private readonly Stream _stream;
+
+    public GenericTable_Tests()
     {
-        private readonly Stream _stream;
+        _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.AlterTable.db");
+    }
 
-        public GenericTable_Tests()
-        {
-            _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.AlterTable.db");
-        }
+    [Fact]
+    public void GettingNonExistentTableShouldFail()
+    {
+        using Sqlite3Database db = new Sqlite3Database(_stream);
 
-        [Fact]
-        public void GettingNonExistentTableShouldFail()
-        {
-            using (Sqlite3Database db = new Sqlite3Database(_stream))
-            {
-                Assert.ThrowsAny<Exception>(() => db.GetTable("BadTable"));
-            }
-        }
+        Assert.ThrowsAny<Exception>(() => db.GetTable("BadTable"));
+    }
 
-        [Fact]
-        public void GettingExistingTableShouldSucceed()
-        {
-            using (Sqlite3Database db = new Sqlite3Database(_stream))
-            {
-                Assert.NotNull(db.GetTable("MyTable"));
-            }
-        }
+    [Fact]
+    public void GettingExistingTableShouldSucceed()
+    {
+        using Sqlite3Database db = new Sqlite3Database(_stream);
 
-        [Fact]
-        public void TryGetTableExistingShouldSucceed()
-        {
-            using (Sqlite3Database db = new Sqlite3Database(_stream))
-            {
-                Assert.True(db.TryGetTable("MyTable", out var tbl));
-                Assert.NotNull(tbl);
-            }
-        }
+        Assert.NotNull(db.GetTable("MyTable"));
+    }
 
-        [Fact]
-        public void TryGetTableNonExistingShouldFail()
-        {
-            using (Sqlite3Database db = new Sqlite3Database(_stream))
-            {
-                Assert.False(db.TryGetTable("BadTable", out var tbl));
-                Assert.Null(tbl);
-            }
-        }
+    [Fact]
+    public void TryGetTableExistingShouldSucceed()
+    {
+        using Sqlite3Database db = new Sqlite3Database(_stream);
 
-        public void Dispose()
-        {
-            _stream?.Dispose();
-        }
+        Assert.True(db.TryGetTable("MyTable", out var tbl));
+        Assert.NotNull(tbl);
+    }
+
+    [Fact]
+    public void TryGetTableNonExistingShouldFail()
+    {
+        using Sqlite3Database db = new Sqlite3Database(_stream);
+
+        Assert.False(db.TryGetTable("BadTable", out var tbl));
+        Assert.Null(tbl);
+    }
+
+    public void Dispose()
+    {
+        _stream?.Dispose();
     }
 }

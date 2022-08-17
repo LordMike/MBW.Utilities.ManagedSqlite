@@ -6,49 +6,44 @@ using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests
+namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+
+public class BigBlob_Tests : IDisposable
 {
-    public class BigBlob_Tests : IDisposable
+    private readonly Stream _stream;
+
+    private readonly byte[] _expected;
+
+    public BigBlob_Tests()
     {
-        private readonly Stream _stream;
+        _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.BigBlobDb.db");
 
-        private readonly byte[] _expected;
+        using Stream fsIn = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.BigBlobDb.bin");
+        using MemoryStream ms = new MemoryStream();
+        fsIn.CopyTo(ms);
+        _expected = ms.ToArray();
+    }
 
-        public BigBlob_Tests()
-        {
-            _stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.BigBlobDb.db");
+    [Fact]
+    public void TestRealData()
+    {
+        using Sqlite3Database db = new Sqlite3Database(_stream);
+        Sqlite3Table tbl = db.GetTable("DataTable");
+        List<Sqlite3Row> rows = tbl.EnumerateRows().ToList();
 
-            using (Stream fsIn = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.BigBlobDb.bin"))
-            using (MemoryStream ms = new MemoryStream())
-            {
-                fsIn.CopyTo(ms);
-                _expected = ms.ToArray();
-            }
-        }
+        Assert.Single(rows);
 
-        [Fact]
-        public void TestRealData()
-        {
-            using (Sqlite3Database db = new Sqlite3Database(_stream))
-            {
-                Sqlite3Table tbl = db.GetTable("DataTable");
-                List<Sqlite3Row> rows = tbl.EnumerateRows().ToList();
+        Sqlite3Row row = rows.Single();
 
-                Assert.Single(rows);
+        Assert.Equal(1, row.RowId);
 
-                Sqlite3Row row = rows.Single();
+        Assert.True(row.TryGetOrdinal(1, out byte[] actual));
 
-                Assert.Equal(1, row.RowId);
+        Assert.Equal(_expected, actual);
+    }
 
-                Assert.True(row.TryGetOrdinal(1, out byte[] actual));
-
-                Assert.Equal(_expected, actual);
-            }
-        }
-
-        public void Dispose()
-        {
-            _stream?.Dispose();
-        }
+    public void Dispose()
+    {
+        _stream?.Dispose();
     }
 }

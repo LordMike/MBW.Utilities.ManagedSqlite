@@ -1,12 +1,11 @@
 using System;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Helpers
+namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
+
+internal static class StringHelper
 {
-    internal static class StringHelper
+    public static string ToHex(this byte[] data)
     {
-        public static string ToHex(this byte[] data)
-        {
-            return BitConverter.ToString(data).Replace("-", "");
-        }
+        return BitConverter.ToString(data).Replace("-", "");
     }
 }

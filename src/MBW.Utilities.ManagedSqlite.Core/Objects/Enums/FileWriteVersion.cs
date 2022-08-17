@@ -1,9 +1,8 @@
-namespace MBW.Utilities.ManagedSqlite.Core.Objects.Enums
+namespace MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
+
+public enum FileWriteVersion : byte
 {
-    public enum FileWriteVersion : byte
-    {
-        Legacy = 1,
-        // ReSharper disable once InconsistentNaming
-        WAL = 2
-    }
+    Legacy = 1,
+    // ReSharper disable once InconsistentNaming
+    WAL = 2
 }

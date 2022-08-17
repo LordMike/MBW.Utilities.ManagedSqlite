@@ -1,14 +1,13 @@
-﻿namespace MBW.Utilities.ManagedSqlite.Sql.Internal
+﻿namespace MBW.Utilities.ManagedSqlite.Sql.Internal;
+
+internal enum SqlToken
 {
-    internal enum SqlToken
-    {
-        None,
-        String,
-        Plus,
-        Comma,
-        ParenthesisStart,
-        ParenthesisEnd,
-        Semicolon,
-        Dot
-    }
+    None,
+    String,
+    Plus,
+    Comma,
+    ParenthesisStart,
+    ParenthesisEnd,
+    Semicolon,
+    Dot
 }
