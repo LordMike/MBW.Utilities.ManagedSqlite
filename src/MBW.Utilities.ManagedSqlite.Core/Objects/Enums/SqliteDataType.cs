@@ -1,13 +1,12 @@
-namespace MBW.Utilities.ManagedSqlite.Core.Objects.Enums
+namespace MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
+
+internal enum SqliteDataType : byte
 {
-    internal enum SqliteDataType : byte
-    {
-        Null = 0,
-        Integer = 1,
-        Float = 7,
-        Boolean0 = 8,
-        Boolean1 = 9,
-        Blob = 12,
-        Text = 13
-    }
+    Null = 0,
+    Integer = 1,
+    Float = 7,
+    Boolean0 = 8,
+    Boolean1 = 9,
+    Blob = 12,
+    Text = 13
 }

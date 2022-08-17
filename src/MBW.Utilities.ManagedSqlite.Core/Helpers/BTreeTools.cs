@@ -2,57 +2,56 @@
 using System.Collections.Generic;
 using MBW.Utilities.ManagedSqlite.Core.Objects;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Helpers
+namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
+
+internal static class BTreeTools
 {
-    internal static class BTreeTools
+    public static IEnumerable<BTreeCellData> WalkTableBTree(BTreePage node)
     {
-        public static IEnumerable<BTreeCellData> WalkTableBTree(BTreePage node)
+        if (node is BTreeInteriorTablePage asInterior)
+            return WalkTableBTree(asInterior);
+
+        if (node is BTreeLeafTablePage asLeaf)
+            return WalkTableBTree(asLeaf);
+
+        throw new ArgumentException("Did not receive a compatible BTreePage", nameof(node));
+    }
+
+    private static IEnumerable<BTreeCellData> WalkTableBTree(BTreeInteriorTablePage interior)
+    {
+        // Walk sub-pages and yield their data
+        foreach (BTreeInteriorTablePage.Cell cell in interior.Cells)
         {
-            if (node is BTreeInteriorTablePage asInterior)
-                return WalkTableBTree(asInterior);
+            BTreePage subPage = BTreePage.Parse(interior.Reader, cell.LeftPagePointer);
 
-            if (node is BTreeLeafTablePage asLeaf)
-                return WalkTableBTree(asLeaf);
-
-            throw new ArgumentException("Did not receive a compatible BTreePage", nameof(node));
+            foreach (BTreeCellData data in WalkTableBTree(subPage))
+                yield return data;
         }
 
-        private static IEnumerable<BTreeCellData> WalkTableBTree(BTreeInteriorTablePage interior)
+        if (interior.Header.RightMostPointer > 0)
         {
-            // Walk sub-pages and yield their data
-            foreach (BTreeInteriorTablePage.Cell cell in interior.Cells)
-            {
-                BTreePage subPage = BTreePage.Parse(interior.Reader, cell.LeftPagePointer);
+            // Process sibling page
+            BTreePage subPage = BTreePage.Parse(interior.Reader, interior.Header.RightMostPointer);
 
-                foreach (BTreeCellData data in WalkTableBTree(subPage))
-                    yield return data;
-            }
-
-            if (interior.Header.RightMostPointer > 0)
-            {
-                // Process sibling page
-                BTreePage subPage = BTreePage.Parse(interior.Reader, interior.Header.RightMostPointer);
-
-                foreach (BTreeCellData data in WalkTableBTree(subPage))
-                    yield return data;
-            }
+            foreach (BTreeCellData data in WalkTableBTree(subPage))
+                yield return data;
         }
+    }
 
-        private static IEnumerable<BTreeCellData> WalkTableBTree(BTreeLeafTablePage leaf)
+    private static IEnumerable<BTreeCellData> WalkTableBTree(BTreeLeafTablePage leaf)
+    {
+        // Walk cells and yield their data
+        for (var i = 0; i < leaf.Cells.Length; i++)
         {
-            // Walk cells and yield their data
-            for (var i = 0; i < leaf.Cells.Length; i++)
-            {
-                BTreeLeafTablePage.Cell cell = leaf.Cells[i];
+            BTreeLeafTablePage.Cell cell = leaf.Cells[i];
 
-                BTreeCellData res = new BTreeCellData();
+            BTreeCellData res = new BTreeCellData();
 
-                res.Cell = cell;
-                res.CellOffset = leaf.CellOffsets[i];
-                res.Page = leaf.Page;
+            res.Cell = cell;
+            res.CellOffset = leaf.CellOffsets[i];
+            res.Page = leaf.Page;
 
-                yield return res;
-            }
+            yield return res;
         }
     }
 }
