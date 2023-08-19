@@ -32,7 +32,7 @@ public class SqlCreateStatements
 
     [Theory]
     [MemberData(nameof(CreateStatementsTestsData))]
-    public void CreateStatementsTests(SqlTestData.ExpectedTable expectedTable)
+    public void CreateStatementsTests(string fileName, string tableName, SqlTestData.ExpectedTable expectedTable)
     {
         Assert.True(SqlParser.TryParse(expectedTable.Sql, out SqlTableDefinition definition));
         Assert.NotNull(definition);
