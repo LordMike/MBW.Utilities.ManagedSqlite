@@ -36,7 +36,7 @@ public class AlterTableWithDefault_Tests : IDisposable
     [InlineData(2, 1000, null)]
     [InlineData(3, 1500, null)]
     [InlineData(4, 2000, null)]
-    [InlineData(5, 2500, 500)]
+    [InlineData(5, 2500, 500L)]
     [InlineData(6, 3000, null)]
     [InlineData(7, 3500, null)]
     [InlineData(8, 4000, null)]
