@@ -1,41 +1,59 @@
 using System;
 using System.Collections.Generic;
-using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
-using MBW.Utilities.ManagedSqlite.Core.Objects;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
+using MBW.Utilities.ManagedSqlite.Core.Internal.Helpers;
+using MBW.Utilities.ManagedSqlite.Core.Internal.Objects;
+using MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Enums;
+using MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Headers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 public class Sqlite3Table
 {
     private readonly ReaderBase _reader;
+    private readonly uint _rootPage;
+    private readonly string _name;
+    private readonly string _tableName;
 
-    private BTreePage RootPage { get; }
-    public Sqlite3SchemaRow SchemaDefinition { get; }
-
-    internal Sqlite3Table(ReaderBase reader, BTreePage rootPage, Sqlite3SchemaRow table)
+    internal Sqlite3Table(ReaderBase reader, uint rootPage, string name, string tableName)
     {
-        SchemaDefinition = table;
         _reader = reader;
-        RootPage = rootPage;
+        _rootPage = rootPage;
+        _name = name;
+        _tableName = tableName;
     }
 
     public IEnumerable<Sqlite3Row> EnumerateRows()
     {
-        IEnumerable<BTreeCellData> cells = BTreeTools.WalkTableBTree(RootPage);
+        // Read header
+        _reader.SeekPage(_rootPage);
+
+        if (_rootPage == 1)
+            _reader.Skip(DatabaseHeader.HeaderSize); // Skip the first 100 bytes
+
+        BTreeHeader header = BTreeHeader.Parse(_reader);
+
+        // Read cells
+        ushort[] cellOffsets = new ushort[header.CellCount];
+
+        for (ushort i = 0; i < header.CellCount; i++)
+            cellOffsets[i] = _reader.ReadUInt16();
+
+        //TODO: needed?
+        Array.Sort(cellOffsets);
 
         List<ColumnDataMeta> metaInfos = new List<ColumnDataMeta>();
-        foreach (BTreeCellData cell in cells)
-        {
-            metaInfos.Clear();
 
-            // Create a new stream to cover any fragmentation that might occur
-            // The stream is started in the current cells "resident" data, and will overflow to any other pages as needed
-            using (SqliteDataStream dataStream = new SqliteDataStream(_reader, cell.Page, (ushort)(cell.CellOffset + cell.Cell.CellHeaderSize),
-                       cell.Cell.DataSizeInCell, cell.Cell.FirstOverflowPage, cell.Cell.DataSize))
+        if (header.Type == BTreeType.InteriorTableBtreePage)
+        {
+            BTreeInteriorTablePage page = new BTreeInteriorTablePage(_reader, _rootPage, cellOffsets);
+
+            foreach (BTreeInteriorTablePage.Cell cell in page.Cells)
             {
-                ReaderBase reader = new ReaderBase(dataStream, _reader);
+                metaInfos.Clear();
+
+                SqliteDataStream dataStream = new SqliteDataStream(_reader, cell.Page, (ushort)(cell.CellOffset + cell.Cell.CellHeaderSize), cell.Cell.DataSizeInCell, cell.Cell.FirstOverflowPage, cell.Cell.DataSize);
+                ReaderBase reader = new ReaderBase(dataStream);
 
                 long headerSize = reader.ReadVarInt(out _);
 
@@ -105,41 +123,33 @@ public class Sqlite3Table
                     metaInfos.Add(meta);
                 }
 
-                object[] rowData = new object[metaInfos.Count];
+                object?[] rowData = new object?[metaInfos.Count];
                 for (int i = 0; i < metaInfos.Count; i++)
                 {
                     ColumnDataMeta meta = metaInfos[i];
-                    switch (meta.Type)
+                    rowData[i] = meta.Type switch
                     {
-                        case SqliteDataType.Null:
-                            rowData[i] = null;
-                            break;
-                        case SqliteDataType.Integer:
-                            // TODO: Do we handle negatives correctly?
-                            rowData[i] = reader.ReadInteger((byte)meta.Length);
-                            break;
-                        case SqliteDataType.Float:
-                            rowData[i] = BitConverter.Int64BitsToDouble(reader.ReadInteger((byte)meta.Length));
-                            break;
-                        case SqliteDataType.Boolean0:
-                            rowData[i] = false;
-                            break;
-                        case SqliteDataType.Boolean1:
-                            rowData[i] = true;
-                            break;
-                        case SqliteDataType.Blob:
-                            rowData[i] = reader.Read((int)meta.Length);
-                            break;
-                        case SqliteDataType.Text:
-                            rowData[i] = reader.ReadString(meta.Length);
-                            break;
-                        default:
-                            throw new ArgumentOutOfRangeException();
-                    }
+                        SqliteDataType.Null => null,
+                        SqliteDataType.Integer => reader.ReadInteger((byte)meta.Length), // TODO: Do we handle negatives correctly?
+                        SqliteDataType.Float => BitConverter.Int64BitsToDouble(reader.ReadInteger((byte)meta.Length)),
+                        SqliteDataType.Boolean0 => 0,
+                        SqliteDataType.Boolean1 => 1,
+                        SqliteDataType.Blob => reader.Read((int)meta.Length),
+                        SqliteDataType.Text => reader.ReadString(meta.Length),
+                        _ => throw new ArgumentOutOfRangeException()
+                    };
                 }
 
-                yield return new Sqlite3Row(this, cell.Cell.RowId, rowData);
+                yield return new Sqlite3Row(this, cell.RowId, rowData);
             }
+        }
+        else if (header.Type == BTreeType.LeafTableBtreePage)
+        {
+            var page = new BTreeLeafTablePage(_reader, _rootPage, cellOffsets);
+        }
+        else
+        {
+            throw new InvalidOperationException("Invalid page type");
         }
     }
 }

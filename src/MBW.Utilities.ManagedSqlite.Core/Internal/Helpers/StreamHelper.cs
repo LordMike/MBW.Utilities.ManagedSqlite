@@ -1,6 +1,6 @@
 using System.IO;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
+namespace MBW.Utilities.ManagedSqlite.Core.Internal.Helpers;
 
 internal static class StreamHelper
 {
@@ -20,9 +20,7 @@ internal static class StreamHelper
         {
             totalRead += numRead;
             if (totalRead == length)
-            {
                 break;
-            }
 
             numRead = stream.Read(buffer, offset + totalRead, length - totalRead);
         }

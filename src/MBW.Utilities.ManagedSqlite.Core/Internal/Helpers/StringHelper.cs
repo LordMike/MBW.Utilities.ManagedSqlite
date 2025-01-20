@@ -1,6 +1,6 @@
 using System;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
+namespace MBW.Utilities.ManagedSqlite.Core.Internal.Helpers;
 
 internal static class StringHelper
 {

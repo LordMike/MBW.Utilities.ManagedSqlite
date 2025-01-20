@@ -1,20 +1,14 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Internal;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
+﻿using MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Enums;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
+namespace MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Headers;
 
 internal struct BTreeHeader
 {
     public BTreeType Type;
-
     public ushort FirstFreeBlock;
-
     public ushort CellCount;
-
     public ushort CellContentBegin;
-
     public byte CellContentFragmentedFreeBytes;
-
     public uint RightMostPointer;
 
     public static BTreeHeader Parse(ReaderBase reader)
@@ -22,7 +16,6 @@ internal struct BTreeHeader
         reader.CheckSize(8);
 
         BTreeHeader res = new BTreeHeader();
-
         res.Type = (BTreeType)reader.ReadByte();
         res.FirstFreeBlock = reader.ReadUInt16();
         res.CellCount = reader.ReadUInt16();
@@ -32,7 +25,6 @@ internal struct BTreeHeader
         if (res.Type == BTreeType.InteriorIndexBtreePage || res.Type == BTreeType.InteriorTableBtreePage)
         {
             reader.CheckSize(sizeof(uint));
-
             res.RightMostPointer = reader.ReadUInt32();
         }
 
