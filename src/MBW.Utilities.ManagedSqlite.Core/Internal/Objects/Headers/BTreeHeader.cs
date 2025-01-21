@@ -1,33 +1,39 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Enums;
+﻿using System;
+using MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Headers;
 
-internal struct BTreeHeader
+internal ref struct BTreeHeader
 {
     public BTreeType Type;
     public ushort FirstFreeBlock;
     public ushort CellCount;
     public ushort CellContentBegin;
     public byte CellContentFragmentedFreeBytes;
-    public uint RightMostPointer;
 
-    public static BTreeHeader Parse(ReaderBase reader)
+    public BTreeHeader(ReadOnlySpan<byte> span)
     {
-        reader.CheckSize(8);
-
-        BTreeHeader res = new BTreeHeader();
-        res.Type = (BTreeType)reader.ReadByte();
-        res.FirstFreeBlock = reader.ReadUInt16();
-        res.CellCount = reader.ReadUInt16();
-        res.CellContentBegin = reader.ReadUInt16();
-        res.CellContentFragmentedFreeBytes = reader.ReadByte();
-
-        if (res.Type == BTreeType.InteriorIndexBtreePage || res.Type == BTreeType.InteriorTableBtreePage)
+        Type = (BTreeType)reader.ReadByte();
+        FirstFreeBlock = reader.ReadUInt16();
+        CellCount = reader.ReadUInt16();
+        CellContentBegin = reader.ReadUInt16();
+        CellContentFragmentedFreeBytes = reader.ReadByte();
+        
+        if (Type == BTreeType.InteriorIndexBtreePage || Type == BTreeType.InteriorTableBtreePage)
         {
-            reader.CheckSize(sizeof(uint));
-            res.RightMostPointer = reader.ReadUInt32();
+            RightMostPointer = reader.ReadUInt32();
         }
+    }
 
-        return res;
+    public ushort[] GetCellOffsets()
+    {
+        // Read cells
+        var cellOffsets = new ushort[CellCount];
+
+        for (ushort i = 0; i < CellCount; i++)
+            cellOffsets[i] = _reader.ReadUInt16();
+
+        //TODO: needed?
+        Array.Sort(cellOffsets);
     }
 }

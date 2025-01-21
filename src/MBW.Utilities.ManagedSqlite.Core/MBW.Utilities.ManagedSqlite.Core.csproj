@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>netstandard2.0</TargetFramework>
+    <TargetFramework>net7.0</TargetFramework>
     <Nullable>enable</Nullable>
     <Description>SQLite3 library in managed C# that can read sqlite db files. This package contains core components used to read the binary databases.</Description>
   </PropertyGroup>

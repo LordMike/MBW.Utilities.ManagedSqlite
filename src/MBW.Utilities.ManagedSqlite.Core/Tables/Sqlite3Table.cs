@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Internal.Helpers;
@@ -8,60 +9,34 @@ using MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Headers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3Table
+public struct RowEnumerator : IEnumerator<Sqlite3Row>
 {
-    private readonly ReaderBase _reader;
-    private readonly uint _rootPage;
-    private readonly string _name;
-    private readonly string _tableName;
-
-    internal Sqlite3Table(ReaderBase reader, uint rootPage, string name, string tableName)
-    {
-        _reader = reader;
-        _rootPage = rootPage;
-        _name = name;
-        _tableName = tableName;
-    }
-
-    public IEnumerable<Sqlite3Row> EnumerateRows()
+    internal RowEnumerator(PagedStream stream)
     {
         // Read header
-        _reader.SeekPage(_rootPage);
+        _stream.SeekPage(_rootPage);
 
         if (_rootPage == 1)
-            _reader.Skip(DatabaseHeader.HeaderSize); // Skip the first 100 bytes
+            _stream.Position += DatabaseHeader.HeaderSize;
 
-        BTreeHeader header = BTreeHeader.Parse(_reader);
-
-        // Read cells
-        ushort[] cellOffsets = new ushort[header.CellCount];
-
-        for (ushort i = 0; i < header.CellCount; i++)
-            cellOffsets[i] = _reader.ReadUInt16();
-
-        //TODO: needed?
-        Array.Sort(cellOffsets);
-
-        List<ColumnDataMeta> metaInfos = new List<ColumnDataMeta>();
+        CellStream cellStream = new CellStream(_stream);
+        BTreeHeader header = new BTreeHeader();
+        Stack<uint> pageStack = new Stack<uint>();
 
         if (header.Type == BTreeType.InteriorTableBtreePage)
         {
-            BTreeInteriorTablePage page = new BTreeInteriorTablePage(_reader, _rootPage, cellOffsets);
+            BTreeInteriorTablePage page = new BTreeInteriorTablePage(_rootPage, header.GetCellOffsets());
 
             foreach (BTreeInteriorTablePage.Cell cell in page.Cells)
             {
-                metaInfos.Clear();
+                cellStream.SetParameters(page, (ushort)(cell.CellOffset + cell.CellHeaderSize), cell.DataSizeInCell, cell.FirstOverflowPage, cell.DataSize);
 
-                SqliteDataStream dataStream = new SqliteDataStream(_reader, cell.Page, (ushort)(cell.CellOffset + cell.Cell.CellHeaderSize), cell.Cell.DataSizeInCell, cell.Cell.FirstOverflowPage, cell.Cell.DataSize);
-                ReaderBase reader = new ReaderBase(dataStream);
+                long headerSize = cellStream.ReadVarInt(out _);
 
-                long headerSize = reader.ReadVarInt(out _);
-
-                while (reader.Position < headerSize)
+                while (cellStream.Position < headerSize)
                 {
-                    long columnInfo = reader.ReadVarInt(out _);
+                    long columnInfo = cellStream.ReadVarInt(out _);
 
-                    ColumnDataMeta meta = new ColumnDataMeta();
                     if (columnInfo == 0)
                         meta.Type = SqliteDataType.Null;
                     else if (columnInfo == 1)
@@ -119,26 +94,19 @@ public class Sqlite3Table
                         meta.Type = SqliteDataType.Text;
                         meta.Length = (uint)((columnInfo - 13) / 2);
                     }
-
-                    metaInfos.Add(meta);
                 }
-
-                object?[] rowData = new object?[metaInfos.Count];
-                for (int i = 0; i < metaInfos.Count; i++)
-                {
-                    ColumnDataMeta meta = metaInfos[i];
-                    rowData[i] = meta.Type switch
-                    {
-                        SqliteDataType.Null => null,
-                        SqliteDataType.Integer => reader.ReadInteger((byte)meta.Length), // TODO: Do we handle negatives correctly?
-                        SqliteDataType.Float => BitConverter.Int64BitsToDouble(reader.ReadInteger((byte)meta.Length)),
-                        SqliteDataType.Boolean0 => 0,
-                        SqliteDataType.Boolean1 => 1,
-                        SqliteDataType.Blob => reader.Read((int)meta.Length),
-                        SqliteDataType.Text => reader.ReadString(meta.Length),
-                        _ => throw new ArgumentOutOfRangeException()
-                    };
-                }
+                
+                // meta.Type switch
+                // {
+                //     SqliteDataType.Null => null,
+                //     SqliteDataType.Integer => reader.ReadInteger((byte)meta.Length), // TODO: Do we handle negatives correctly?
+                //     SqliteDataType.Float => BitConverter.Int64BitsToDouble(reader.ReadInteger((byte)meta.Length)),
+                //     SqliteDataType.Boolean0 => 0,
+                //     SqliteDataType.Boolean1 => 1,
+                //     SqliteDataType.Blob => reader.Read((int)meta.Length),
+                //     SqliteDataType.Text => reader.ReadString(meta.Length),
+                //     _ => throw new ArgumentOutOfRangeException()
+                // };
 
                 yield return new Sqlite3Row(this, cell.RowId, rowData);
             }
@@ -152,4 +120,39 @@ public class Sqlite3Table
             throw new InvalidOperationException("Invalid page type");
         }
     }
+    
+    public bool MoveNext()
+    {
+        throw new NotImplementedException();
+    }
+    public void Reset()
+    {
+        throw new NotImplementedException();
+    }
+    public Sqlite3Row Current { get; }
+
+    object? IEnumerator.Current => Current;
+
+    public void Dispose()
+    {
+        throw new NotImplementedException();
+    }
+}
+
+public class Sqlite3Table
+{
+    private readonly PagedStream _stream;
+    private readonly uint _rootPage;
+    private readonly string _name;
+    private readonly string _tableName;
+
+    internal Sqlite3Table(PagedStream stream, uint rootPage, string name, string tableName)
+    {
+        _stream = stream;
+        _rootPage = rootPage;
+        _name = name;
+        _tableName = tableName;
+    }
+
+    public IEnumerable<Sqlite3Row> EnumerateRows() => new RowEnumerator(_stream);
 }
