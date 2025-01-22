@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -12,13 +11,10 @@ public class Sqlite3Database
 {
     private readonly Dictionary<string, Sqlite3Table> _tables;
 
-    public Sqlite3Database(Stream file)
+    public Sqlite3Database(Stream stream)
     {
-        Span<byte> headerBytes = stackalloc byte[DatabaseHeader.HeaderSize];
-        file.ReadExactly(headerBytes);
-
-        DatabaseHeader header = new DatabaseHeader(headerBytes);
-        PagedStream pagedStream = new PagedStream(file, header);
+        DatabaseHeader header = new DatabaseHeader(stream);
+        PagedStream pagedStream = new PagedStream(stream, header);
         
         // Fake the schema for the sqlite_master table
         Sqlite3Table masterTable = new Sqlite3Table(pagedStream, 1, "sqlite_master", "sqlite_master");

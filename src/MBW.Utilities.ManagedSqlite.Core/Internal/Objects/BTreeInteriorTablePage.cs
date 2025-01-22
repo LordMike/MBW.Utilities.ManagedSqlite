@@ -5,7 +5,7 @@
 /// </summary>
 internal class BTreeInteriorTablePage
 {
-    public BTreeInteriorTablePage(ReaderBase reader, uint page, ushort[] cellOffsets)
+    public BTreeInteriorTablePage(PagedStream reader, uint page, ushort[] cellOffsets)
     {
         Cells = new Cell[cellOffsets.Length];
 

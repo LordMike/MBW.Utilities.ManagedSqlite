@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Headers;
@@ -8,38 +9,39 @@ internal class DatabaseHeader
     public const int HeaderSize = 100;
     private static readonly byte[] _expectedHeader = "SQLite format 3\0"u8.ToArray();
 
-    public DatabaseHeader(ReadOnlySpan<byte> page)
+    public DatabaseHeader(Stream stream)
     {
-        SpanReader rdr = new SpanReader(page);
+        Span<byte> header = stackalloc byte[_expectedHeader.Length];
+        stream.ReadExactly(header);
 
-        if (!rdr.ReadBytes(_expectedHeader.Length).SequenceEqual(_expectedHeader))
+        if (!header.SequenceEqual(_expectedHeader))
             throw new InvalidOperationException("Database does not have a valid signature");
 
         // Read header
-        PageSize = rdr.ReadUInt16();
-        WriteVersion = rdr.ReadEnum<FileWriteVersion>();
-        ReadVersion = rdr.ReadEnum<FileReadVersion>();
-        ReservedSpaceAtEndOfPage = rdr.ReadByte();
-        MaximumEmbeddedPayloadFraction = rdr.ReadByte();
-        MinimumEmbeddedPayloadFraction = rdr.ReadByte();
-        LeafPayloadFraction = rdr.ReadByte();
-        ChangeCounter = rdr.ReadUInt32();
-        DatabaseSizeInPages = rdr.ReadUInt32();
-        FirstFreelistTrunkPage = rdr.ReadUInt32();
-        FreeListPages = rdr.ReadUInt32();
-        SchemaCookie = rdr.ReadUInt32();
-        SchemaFormat = rdr.ReadUInt32();
-        DefaultPageCacheSize = rdr.ReadUInt32();
-        Value7 = rdr.ReadUInt32();
-        TextEncoding = (SqliteEncoding)rdr.ReadUInt32();
-        UserVersion = rdr.ReadUInt32();
-        IncrementalVacuumMode = rdr.ReadUInt32();
-        ApplicationId = rdr.ReadUInt32();
+        PageSize = stream.ReadUInt16();
+        WriteVersion = (FileWriteVersion)stream.ReadByte();
+        ReadVersion = (FileReadVersion)stream.ReadByte();
+        ReservedSpaceAtEndOfPage = (byte)stream.ReadByte();
+        MaximumEmbeddedPayloadFraction = (byte)stream.ReadByte();
+        MinimumEmbeddedPayloadFraction = (byte)stream.ReadByte();
+        LeafPayloadFraction = (byte)stream.ReadByte();
+        ChangeCounter = stream.ReadUInt32();
+        DatabaseSizeInPages = stream.ReadUInt32();
+        FirstFreelistTrunkPage = stream.ReadUInt32();
+        FreeListPages = stream.ReadUInt32();
+        SchemaCookie = stream.ReadUInt32();
+        SchemaFormat = stream.ReadUInt32();
+        DefaultPageCacheSize = stream.ReadUInt32();
+        Value7 = stream.ReadUInt32();
+        TextEncoding = (SqliteEncoding)stream.ReadUInt32();
+        UserVersion = stream.ReadUInt32();
+        IncrementalVacuumMode = stream.ReadUInt32();
+        ApplicationId = stream.ReadUInt32();
 
-        rdr.SkipForwards(20);
+        stream.Position += 20;
 
-        VersionValidFor = rdr.ReadUInt32();
-        Version = rdr.ReadUInt32();
+        VersionValidFor = stream.ReadUInt32();
+        Version = stream.ReadUInt32();
     }
 
     public ushort PageSize { get; }

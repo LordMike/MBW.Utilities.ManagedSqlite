@@ -8,17 +8,17 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal.Objects;
 /// </summary>
 internal class BTreeLeafTablePage
 {
-    public BTreeLeafTablePage(ReaderBase reader, uint page, ushort[] cellOffsets)
+    public BTreeLeafTablePage(PagedStream stream, uint page, ushort[] cellOffsets)
     {
         CellOffsets = cellOffsets;
         Cells = new Cell[CellOffsets.Length];
 
         for (int i = 0; i < Cells.Length; i++)
         {
-            reader.SeekPage(page, CellOffsets[i]);
+            stream.SeekPage(page, CellOffsets[i]);
 
-            long bytes = reader.ReadVarInt(out byte bytesSize);
-            long rowId = reader.ReadVarInt(out byte rowIdSize);
+            long bytes = stream.ReadVarInt(out byte bytesSize);
+            long rowId = stream.ReadVarInt(out byte rowIdSize);
 
             uint overflowPage = 0;
 
@@ -26,7 +26,7 @@ internal class BTreeLeafTablePage
             long P = bytes;
 
             // let U be the usable size of a database page, the total page size less the reserved space at the end of each page
-            int U = reader.PageSize - reader.ReservedSpace;
+            int U = stream.PageSize - stream.ReservedSpace;
 
             // X is U-35 for table btree leaf pages or ((U-12)*64/255)-23 for index pages.
             int X = U - 35;
@@ -65,8 +65,8 @@ internal class BTreeLeafTablePage
             if (bytes > bytesInCell)
             {
                 // We have overflow
-                reader.Skip(bytesInCell);
-                overflowPage = reader.ReadUInt32();
+                stream.Position += bytesInCell;
+                overflowPage = stream.ReadUInt32();
             }
 
             Cells[i] = new Cell

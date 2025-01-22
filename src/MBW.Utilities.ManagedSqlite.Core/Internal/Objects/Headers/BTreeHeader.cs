@@ -10,30 +10,31 @@ internal ref struct BTreeHeader
     public ushort CellCount;
     public ushort CellContentBegin;
     public byte CellContentFragmentedFreeBytes;
+    public uint RightMostPointer;
 
-    public BTreeHeader(ReadOnlySpan<byte> span)
+    public BTreeHeader(PagedStream stream)
     {
-        Type = (BTreeType)reader.ReadByte();
-        FirstFreeBlock = reader.ReadUInt16();
-        CellCount = reader.ReadUInt16();
-        CellContentBegin = reader.ReadUInt16();
-        CellContentFragmentedFreeBytes = reader.ReadByte();
-        
-        if (Type == BTreeType.InteriorIndexBtreePage || Type == BTreeType.InteriorTableBtreePage)
-        {
-            RightMostPointer = reader.ReadUInt32();
-        }
+        Type = (BTreeType)stream.ReadByte();
+        FirstFreeBlock = stream.ReadUInt16();
+        CellCount = stream.ReadUInt16();
+        CellContentBegin = stream.ReadUInt16();
+        CellContentFragmentedFreeBytes = (byte)stream.ReadByte();
+
+        if (Type is BTreeType.InteriorIndexBtreePage or BTreeType.InteriorTableBtreePage)
+            RightMostPointer = stream.ReadUInt32();
     }
 
-    public ushort[] GetCellOffsets()
+    public ushort[] GetCellOffsets(PagedStream stream)
     {
         // Read cells
         var cellOffsets = new ushort[CellCount];
 
         for (ushort i = 0; i < CellCount; i++)
-            cellOffsets[i] = _reader.ReadUInt16();
+            cellOffsets[i] = stream.ReadUInt16();
 
         //TODO: needed?
         Array.Sort(cellOffsets);
+
+        return cellOffsets;
     }
 }
