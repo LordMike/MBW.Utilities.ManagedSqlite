@@ -1,4 +1,4 @@
-namespace MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
+namespace MBW.Utilities.ManagedSqlite.Core.Internal.Objects.Enums;
 
 public enum FileReadVersion : byte
 {

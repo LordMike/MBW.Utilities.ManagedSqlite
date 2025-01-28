@@ -1,13 +1,9 @@
-using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 public class Sqlite3Row
 {
-    public Sqlite3Table Table { get; }
-    public long RowId { get; }
-    public object[] ColumnData { get; }
-
     internal Sqlite3Row(Sqlite3Table table, long rowId, object[] columnData)
     {
         Table = table;
@@ -15,31 +11,19 @@ public class Sqlite3Row
         ColumnData = columnData;
     }
 
-    public bool TryGetOrdinal(ushort index, out object value)
-    {
-        value = default;
+    public Sqlite3Table Table { get; }
+    public long RowId { get; }
+    public object[] ColumnData { get; }
 
-        if (ColumnData.Length > index)
+    public bool TryGetOrdinal(ushort index, [NotNullWhen(true)]out object? value)
+    {
+        if (ColumnData.Length <= index)
         {
-            value = ColumnData[index];
-            return true;
+            value = null;
+            return false;
         }
 
-        return false;
-    }
-
-    public bool TryGetOrdinal<T>(ushort index, out T value)
-    {
-        value = default;
-
-        if (!TryGetOrdinal(index, out object tmp))
-            return false;
-
-        // TODO: Is null a success case?
-        if (tmp == null)
-            return false;
-
-        value = (T)Convert.ChangeType(tmp, typeof(T));
+        value = ColumnData[index];
         return true;
     }
 }
