@@ -1,6 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
+    <IsPackable>true</IsPackable>
     <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
     <Description>SQLite3 library in managed C# that can read sqlite db files. This package contains core components used to read the binary databases.</Description>
   </PropertyGroup>
