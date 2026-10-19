@@ -102,7 +102,8 @@ internal static class SqliteParity
             string name = (string)entry[1];
             string quoted = "\"" + name.Replace("\"", "\"\"") + "\"";
 
-            List<string> columns = Query(connection, $"PRAGMA table_info({quoted})").Select(s => (string)s[1]).ToList();
+            // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns
+            List<string> columns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
             AppendTableHeader(sb, name, columns);
 
             foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
@@ -191,6 +192,15 @@ internal static class SqliteParity
             return "NULL";
 
         return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n") + "\"";
+    }
+
+    private static List<string> ColumnNames(SqliteConnection connection, string sql)
+    {
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        using SqliteDataReader reader = command.ExecuteReader();
+        return Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
     }
 
     private static List<object[]> Query(SqliteConnection connection, string sql)

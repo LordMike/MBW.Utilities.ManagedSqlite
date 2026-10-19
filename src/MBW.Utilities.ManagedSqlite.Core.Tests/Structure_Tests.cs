@@ -46,9 +46,12 @@ INSERT INTO t SELECT ((x * 7919) % 2000) + 1, 'row ' || (((x * 7919) % 2000) + 1
 DELETE FROM t WHERE Id BETWEEN 500 AND 1500;
 WITH RECURSIVE seq(x) AS (SELECT 1500 UNION ALL SELECT x - 1 FROM seq WHERE x > 500)
 INSERT INTO t SELECT x, 'row ' || x FROM seq;" },
+        // Negative rowids and rowids >= 2^56 take a 9-byte varint in the cell header
         { "negative and very large rowids", @"
 CREATE TABLE t (Value TEXT);
-INSERT INTO t (rowid, Value) VALUES (9223372036854775807, 'max'), (-5, 'negative'), (0, 'zero');" },
+INSERT INTO t (rowid, Value) VALUES (-9223372036854775808, 'min'), (-5, 'negative'), (-1, 'minus one'), (0, 'zero'),
+    (127, 'max 1 byte'), (128, 'min 2 bytes'), (72057594037927935, 'max 8 bytes'), (72057594037927936, 'min 9 bytes'),
+    (9223372036854775807, 'max');" },
         { "deleted rows leave freeblocks and free pages", @"
 PRAGMA page_size = 512;
 CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);

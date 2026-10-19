@@ -14,6 +14,7 @@ public class SqlRealWorldSchemas_Tests
     [InlineData("From_WindowsActivity")]
     [InlineData("From_WindowsActivityCache")]
     [InlineData("From_Windows11ActivityDb")]
+    [InlineData("From_SqliteSyntax")]
     public void SchemaReadsSameAsSqlite(string source)
     {
         using Stream stream = typeof(SqlRealWorldSchemas_Tests).Assembly.GetManifestResourceStream($"MBW.Utilities.ManagedSqlite.Sql.Tests.Data.{source}.sql");
@@ -22,8 +23,9 @@ public class SqlRealWorldSchemas_Tests
             .Where(s => !s.Contains("WITHOUT ROWID", System.StringComparison.OrdinalIgnoreCase)));
 
         // One row per table, so a wrong rowid alias decision shows. Tables with NOT NULL columns without defaults get none.
-        string inserts = string.Concat(Regex.Matches(script, @"CREATE TABLE\s+[""\[]?(\w+)", RegexOptions.IgnoreCase)
-            .Select(m => $"INSERT OR IGNORE INTO \"{m.Groups[1].Value}\" DEFAULT VALUES;\n"));
+        string inserts = string.Concat(Regex.Matches(script, @"CREATE TABLE\s+(?:""((?:[^""]|"""")*)""|\[([^\]]*)\]|`([^`]*)`|(\w+))", RegexOptions.IgnoreCase)
+            .Select(m => string.Concat(m.Groups[1].Value.Replace("\"\"", "\""), m.Groups[2].Value, m.Groups[3].Value, m.Groups[4].Value))
+            .Select(name => $"INSERT OR IGNORE INTO \"{name.Replace("\"", "\"\"")}\" DEFAULT VALUES;\n"));
 
         SqliteParity.AssertSameAsSqlite("PRAGMA foreign_keys = OFF;\n" + script + "\n" + inserts);
     }
