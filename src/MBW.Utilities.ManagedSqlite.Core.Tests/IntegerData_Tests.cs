@@ -95,6 +95,30 @@ public class IntegerData_Tests : IDisposable
         Assert.Equal(expected, actual);
     }
 
+    /// <summary>
+    /// SQLite stores the integers 0 and 1 as serial types 8 and 9 (no payload bytes).
+    /// They must surface as long, like every other integer, not as bool.
+    /// </summary>
+    [Theory]
+    [InlineData(0, 0L)]
+    [InlineData(1, 1L)]
+    [InlineData(2, 255L)]
+    [InlineData(3, 256L)]
+    [InlineData(16, -1L)]
+    [InlineData(17, -9223372036854775808L)]
+    public void TestIntegerRawColumnDataIsLong(int id, long expected)
+    {
+        using Sqlite3Database db = new Sqlite3Database(_stream);
+
+        Sqlite3Table tbl = db.GetTable("IntegerTable");
+        Sqlite3Row row = tbl.GetRowById(id);
+
+        Assert.NotNull(row);
+
+        long actual = Assert.IsType<long>(row.ColumnData[1]);
+        Assert.Equal(expected, actual);
+    }
+
     public void Dispose()
     {
         _stream?.Dispose();

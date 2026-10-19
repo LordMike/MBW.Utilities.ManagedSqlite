@@ -82,9 +82,9 @@ public class Sqlite3Table
                         meta.Length = 8;
                     }
                     else if (columnInfo == 8)
-                        meta.Type = SqliteDataType.Boolean0;
+                        meta.Type = SqliteDataType.IntegerZero;
                     else if (columnInfo == 9)
-                        meta.Type = SqliteDataType.Boolean1;
+                        meta.Type = SqliteDataType.IntegerOne;
                     else if (columnInfo == 10 || columnInfo == 11)
                     {
                         throw new ArgumentOutOfRangeException();
@@ -121,11 +121,11 @@ public class Sqlite3Table
                         case SqliteDataType.Float:
                             rowData[i] = BitConverter.Int64BitsToDouble(reader.ReadInteger((byte)meta.Length));
                             break;
-                        case SqliteDataType.Boolean0:
-                            rowData[i] = false;
+                        case SqliteDataType.IntegerZero:
+                            rowData[i] = 0L;
                             break;
-                        case SqliteDataType.Boolean1:
-                            rowData[i] = true;
+                        case SqliteDataType.IntegerOne:
+                            rowData[i] = 1L;
                             break;
                         case SqliteDataType.Blob:
                             rowData[i] = reader.Read((int)meta.Length);
