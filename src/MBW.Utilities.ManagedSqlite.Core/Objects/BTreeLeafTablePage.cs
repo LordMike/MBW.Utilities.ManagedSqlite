@@ -1,5 +1,6 @@
 ﻿using System;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
@@ -18,16 +19,18 @@ internal class BTreeLeafTablePage : BTreePage
 
     }
 
-    protected override void ParseInternal()
+    protected override void ParseInternal(byte[] data, int length)
     {
         Cells = new Cell[CellOffsets.Length];
 
         for (int i = 0; i < Cells.Length; i++)
         {
-            Reader.SeekPage(Page, CellOffsets[i]);
+            int pos = CellOffsets[i];
 
-            long bytes = Reader.ReadVarInt(out byte bytesSize);
-            long rowId = Reader.ReadVarInt(out byte rowIdSize);
+            long bytes = ByteArrayReader.ReadVarInt(data, length, ref pos);
+            int bytesSize = pos - CellOffsets[i];
+            long rowId = ByteArrayReader.ReadVarInt(data, length, ref pos);
+            int rowIdSize = pos - CellOffsets[i] - bytesSize;
 
             uint overflowPage = 0;
 
@@ -74,8 +77,8 @@ internal class BTreeLeafTablePage : BTreePage
             if (bytes > bytesInCell)
             {
                 // We have overflow
-                Reader.Skip(bytesInCell);
-                overflowPage = Reader.ReadUInt32();
+                pos += (int)bytesInCell;
+                overflowPage = ByteArrayReader.ReadUInt32(data, length, ref pos);
             }
 
             long cellEnd = (long)CellOffsets[i] + bytesSize + rowIdSize + bytesInCell + (bytes > bytesInCell ? sizeof(uint) : 0);

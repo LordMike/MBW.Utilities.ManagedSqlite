@@ -29,23 +29,25 @@ internal abstract class BTreePage
     /// <param name="isChild">The page is a child in a table b-tree, so an index page here is corruption rather than an unsupported table</param>
     internal static BTreePage Parse(ReaderBase reader, uint page, bool isChild = false)
     {
-        // Read header
-        reader.SeekPage(page);
+        // Read the page once, and parse it from memory
+        byte[] data = reader.ReadPage(page);
+        int length = (int)reader.PageSize;
 
-        if (page == 1)
-        {
-            // Skip the first 100 bytes
-            reader.Skip(DatabaseHeader.HeaderSize);
-        }
+        // Page 1 begins with the 100 byte database header
+        int pos = page == 1 ? DatabaseHeader.HeaderSize : 0;
 
-        BTreeHeader header = BTreeHeader.Parse(reader);
+        BTreeHeader header = BTreeHeader.Parse(data, length, ref pos);
+
+        // The cell pointer array follows the header, make sure it fits before reading it. ValidateCellOffsets checks the rest.
+        if (pos + 2L * header.CellCount > reader.PageSize - reader.ReservedSpace)
+            throw new SqliteCorruptException($"cell count {header.CellCount} does not fit in the page", page, "b-tree page header");
 
         // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
         ushort[] cellOffsets = new ushort[header.CellCount];
 
         for (ushort i = 0; i < header.CellCount; i++)
         {
-            cellOffsets[i] = reader.ReadUInt16();
+            cellOffsets[i] = ByteArrayReader.ReadUInt16(data, length, ref pos);
         }
 
         BTreePage res;
@@ -71,7 +73,7 @@ internal abstract class BTreePage
 
         try
         {
-            res.ParseInternal();
+            res.ParseInternal(data, length);
         }
         catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
         {
@@ -101,5 +103,5 @@ internal abstract class BTreePage
         }
     }
 
-    protected abstract void ParseInternal();
+    protected abstract void ParseInternal(byte[] data, int length);
 }

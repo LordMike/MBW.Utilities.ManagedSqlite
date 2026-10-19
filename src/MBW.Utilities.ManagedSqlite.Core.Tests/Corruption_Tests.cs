@@ -70,7 +70,7 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
         // B-tree page headers
         ["page type: unknown"] = ("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01)),
         ["page type: index page inside a table b-tree"] = ("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A)),
-        ["cell count: pointer array past the end of the file"] = ("file length", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF)),
+        ["cell count: pointer array past the end of the page"] = ("b-tree page header", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF)),
         // Page 1's b-tree header follows the 100 byte database header: 100 + 8 + 2 * 250 = 608 is past the page
         ["cell count: pointer array past the end of the schema page"] = ("b-tree page header", p => p.SetCellCount(MasterRoot, 250)),
         // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells
