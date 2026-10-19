@@ -23,7 +23,7 @@ public class ReaderBase : IDisposable
 
     private Encoding _encoding;
 
-    public ushort PageSize { get; private set; }
+    public uint PageSize { get; private set; }
 
     /// <summary>
     /// Reserved space at the end of every page
@@ -147,7 +147,7 @@ public class ReaderBase : IDisposable
             };
     }
 
-    internal void SeekPage(uint page, ushort offset = 0)
+    internal void SeekPage(uint page, uint offset = 0)
     {
         if (page == 0)
             throw new ArgumentOutOfRangeException(nameof(page));
