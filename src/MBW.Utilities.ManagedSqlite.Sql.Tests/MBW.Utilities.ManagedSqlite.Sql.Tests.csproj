@@ -12,9 +12,14 @@
   </ItemGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.7.1" />
     <PackageReference Include="xunit" Version="2.5.0" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.5.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\MBW.Utilities.ManagedSqlite.Core.Tests\Helpers\SqliteParity.cs" Link="Helpers\SqliteParity.cs" />
   </ItemGroup>
 
   <ItemGroup>
