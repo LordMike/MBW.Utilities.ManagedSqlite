@@ -17,7 +17,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// Builds an in-memory database with real SQLite from a SQL script, then dumps it both with SQLite and with this library into
 /// the same text format and asserts the two dumps are equal.
 /// <para>
-/// The dump holds everything the library promises to read: the text encoding, every sqlite_master entry (type, name,
+/// The dump holds everything the library promises to read: the text encoding, the page size, every sqlite_master entry (type, name,
 /// table name and SQL, in file order), and for every table its column names and its rows in enumeration order, each
 /// with its rowid and every column value with its storage class. Virtual tables are listed but not read, since their
 /// contents are not in the file; their shadow tables are ordinary tables and are read. Views, indexes and triggers
@@ -28,15 +28,7 @@ internal static class SqliteParity
 {
     public static void AssertSameAsSqlite(string script)
     {
-        // An in-memory database, nothing touches the disk
-        using SqliteConnection connection = new SqliteConnection("Data Source=:memory:");
-        connection.Open();
-
-        using (SqliteCommand command = connection.CreateCommand())
-        {
-            command.CommandText = script;
-            command.ExecuteNonQuery();
-        }
+        using SqliteConnection connection = Run(script);
 
         string expected = DumpWithSqlite(connection);
 
@@ -45,6 +37,31 @@ internal static class SqliteParity
             actual = DumpWithLibrary(stream);
 
         Assert.Equal(expected, actual);
+    }
+
+    /// <summary>
+    /// The bytes of the database file real SQLite builds from <paramref name="script"/>, for tests of the library's
+    /// API that need a database but not a comparison.
+    /// </summary>
+    public static byte[] Build(string script)
+    {
+        using SqliteConnection connection = Run(script);
+        return Serialize(connection);
+    }
+
+    /// <summary>
+    /// Runs <paramref name="script"/> against a new in-memory database; nothing touches the disk.
+    /// </summary>
+    private static SqliteConnection Run(string script)
+    {
+        SqliteConnection connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = script;
+        command.ExecuteNonQuery();
+
+        return connection;
     }
 
     /// <summary>
@@ -74,6 +91,7 @@ internal static class SqliteParity
 
         string encoding = Query(connection, "PRAGMA encoding").Single()[0].ToString();
         sb.Append("encoding ").AppendLine(encoding.Replace("-", "").ToUpperInvariant());
+        sb.Append("page size ").AppendLine(Query(connection, "PRAGMA page_size").Single()[0].ToString());
 
         List<object[]> schema = Query(connection, "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY rowid");
         foreach (object[] entry in schema)
@@ -101,6 +119,7 @@ internal static class SqliteParity
         using Sqlite3Database db = new Sqlite3Database(stream);
 
         sb.Append("encoding ").AppendLine(db.Header.TextEncoding.ToString());
+        sb.Append("page size ").AppendLine(db.Header.PageSize.ToString(CultureInfo.InvariantCulture));
 
         List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
         foreach (Sqlite3SchemaRow entry in schema)
