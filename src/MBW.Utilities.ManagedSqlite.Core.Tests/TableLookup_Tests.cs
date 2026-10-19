@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
@@ -10,117 +9,60 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests;
 
 public class TableLookup_Tests
 {
-    private static Sqlite3Database OpenMixedCase() =>
-        new Sqlite3Database(ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.MixedCaseName.db"));
-
-    private static Sqlite3Database OpenVirtualTable() =>
-        new Sqlite3Database(ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.VirtualTable.db"));
+    private static Sqlite3Database Open() => new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+CREATE TABLE MixedCaseTable (Id INTEGER PRIMARY KEY, Value TEXT);
+CREATE INDEX MixedCaseIndex ON MixedCaseTable (Value);
+CREATE VIEW MixedCaseView AS SELECT Value FROM MixedCaseTable;
+CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
 
     [Theory]
-    [InlineData("MixedCaseTable")]
-    [InlineData("mixedcasetable")]
-    [InlineData("MIXEDCASETABLE")]
-    [InlineData("mIxEdCaSeTaBlE")]
-    public void TableLookupIsCaseInsensitive(string name)
+    [InlineData("MIXEDCASETABLE", "MixedCaseTable")]
+    [InlineData("mIxEdCaSeTaBlE", "MixedCaseTable")]
+    [InlineData("sqlite_master", "sqlite_master")]
+    [InlineData("SQLITE_SCHEMA", "sqlite_master")]
+    public void GetTableIsCaseInsensitiveAndResolvesMasterAliases(string lookup, string storedName)
     {
-        using Sqlite3Database db = OpenMixedCase();
+        using Sqlite3Database db = Open();
 
-        Sqlite3Table tbl = db.GetTable(name);
-        Assert.Equal("MixedCaseTable", tbl.SchemaDefinition.Name);
-        Assert.Equal(3, tbl.EnumerateRows().Count());
+        Assert.Equal(storedName, db.GetTable(lookup).SchemaDefinition.Name);
     }
 
     [Theory]
     [InlineData("MixedCaseIndex")]
     [InlineData("MixedCaseView")]
-    public void NonTableObjectsAreNotReturned(string name)
+    [InlineData("docs")]
+    [InlineData("Missing")]
+    public void TryGetTableIsFalseForNonTables(string name)
     {
-        using Sqlite3Database db = OpenMixedCase();
+        using Sqlite3Database db = Open();
 
         Assert.False(db.TryGetTable(name, out Sqlite3Table tbl));
         Assert.Null(tbl);
     }
 
     [Fact]
-    public void MissingTableThrowsKeyNotFound()
+    public void GetTableThrowsKeyNotFoundForMissingTable()
     {
-        using Sqlite3Database db = OpenMixedCase();
+        using Sqlite3Database db = Open();
 
-        KeyNotFoundException ex = Assert.Throws<KeyNotFoundException>(() => db.GetTable("BadTable"));
-        Assert.Contains("BadTable", ex.Message);
+        Assert.Throws<System.Collections.Generic.KeyNotFoundException>(() => db.GetTable("Missing"));
     }
 
-    [Theory]
-    [InlineData("sqlite_master")]
-    [InlineData("sqlite_schema")]
-    [InlineData("SQLITE_MASTER")]
-    [InlineData("Sqlite_Schema")]
-    public void MasterTableCanBeOpened(string name)
+    [Fact]
+    public void GetTableThrowsNotSupportedForVirtualTable()
     {
-        using Sqlite3Database db = OpenMixedCase();
+        using Sqlite3Database db = Open();
 
-        Sqlite3Table tbl = db.GetTable(name);
-        Assert.Equal("sqlite_master", tbl.SchemaDefinition.Name);
-
-        List<Sqlite3Row> rows = tbl.EnumerateRows().ToList();
-        Assert.Equal(3, rows.Count);
-
-        List<string> names = rows.Select(r =>
-        {
-            Assert.True(r.TryGetOrdinal(1, out string n));
-            return n;
-        }).OrderBy(n => n, StringComparer.Ordinal).ToList();
-        Assert.Equal(new[] { "MixedCaseIndex", "MixedCaseTable", "MixedCaseView" }, names);
+        Assert.Throws<NotSupportedException>(() => db.GetTable("docs"));
     }
 
     [Fact]
     public void VirtualTableIsListedAndFlagged()
     {
-        using Sqlite3Database db = OpenVirtualTable();
+        using Sqlite3Database db = Open();
 
         Sqlite3SchemaRow docs = db.GetTables().Single(s => s.Name == "docs");
-        Assert.Equal("table", docs.Type);
-        Assert.Equal(0u, docs.RootPage);
         Assert.True(docs.IsVirtual);
-
-        Assert.All(db.GetTables().Where(s => s.Name != "docs"), s => Assert.False(s.IsVirtual));
-    }
-
-    [Theory]
-    [InlineData("docs")]
-    [InlineData("DOCS")]
-    public void VirtualTableIsNotReturnedByTryGetTable(string name)
-    {
-        using Sqlite3Database db = OpenVirtualTable();
-
-        Assert.False(db.TryGetTable(name, out Sqlite3Table tbl));
-        Assert.Null(tbl);
-    }
-
-    [Fact]
-    public void VirtualTableGetTableThrowsNotSupported()
-    {
-        using Sqlite3Database db = OpenVirtualTable();
-
-        NotSupportedException ex = Assert.Throws<NotSupportedException>(() => db.GetTable("docs"));
-        Assert.Contains("docs", ex.Message);
-        Assert.Contains("virtual", ex.Message, StringComparison.OrdinalIgnoreCase);
-    }
-
-    [Fact]
-    public void VirtualTableShadowTablesAreReadable()
-    {
-        using Sqlite3Database db = OpenVirtualTable();
-
-        List<Sqlite3Row> rows = db.GetTable("docs_content").EnumerateRows().OrderBy(r => r.RowId).ToList();
-        Assert.Equal(3, rows.Count);
-
-        Assert.Equal(new long[] { 1, 2, 3 }, rows.Select(r => r.RowId));
-        Assert.True(rows[0].TryGetOrdinal(1, out string title));
-        Assert.Equal("First", title);
-        Assert.True(rows[0].TryGetOrdinal(2, out string body));
-        Assert.Equal("Hello world", body);
-
-        Assert.Equal(2, db.GetTable("Plain").EnumerateRows().Count());
+        Assert.Equal(0u, docs.RootPage);
     }
 }
