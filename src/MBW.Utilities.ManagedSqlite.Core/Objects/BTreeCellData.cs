@@ -9,5 +9,5 @@ internal class BTreeCellData
 
     internal BTreeLeafTablePage.Cell Cell { get; set; }
 
-    internal ushort CellOffset { get; set; }
+    internal uint CellOffset { get; set; }
 }

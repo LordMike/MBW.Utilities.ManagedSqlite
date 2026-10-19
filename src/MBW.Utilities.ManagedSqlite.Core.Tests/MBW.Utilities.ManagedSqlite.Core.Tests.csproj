@@ -18,11 +18,14 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers</IncludeAssets>
     </PackageReference>
     <PackageReference Include="xunit" Version="2.5.0" />
+    <!-- Test-only oracle: real SQLite builds the databases and dumps them for SqliteParity -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
     <DotNetCliToolReference Include="dotnet-xunit" Version="2.3.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Core\MBW.Utilities.ManagedSqlite.Core.csproj" />
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Sql\MBW.Utilities.ManagedSqlite.Sql.csproj" />
   </ItemGroup>
 
   <ItemGroup>

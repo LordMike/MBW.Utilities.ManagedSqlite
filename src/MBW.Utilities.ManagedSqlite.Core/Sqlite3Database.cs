@@ -19,6 +19,7 @@ public class Sqlite3Database : IDisposable
 
     public DatabaseHeader Header { get; private set; }
     private Sqlite3MasterTable _masterTable;
+    private Sqlite3SchemaRow _masterSchemaRow;
 
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
@@ -66,36 +67,68 @@ public class Sqlite3Database : IDisposable
             Sql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);"
         };
 
+        _masterSchemaRow = schemaRow;
+
         Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
         _masterTable = new Sqlite3MasterTable(this, table);
     }
 
+    /// <summary>
+    /// Finds a table by name. Like SQLite, the name is matched case-insensitively against <c>sqlite_master.name</c>,
+    /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
+    /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
+    /// </summary>
     public bool TryGetTable(string name, out Sqlite3Table table)
     {
-        IEnumerable<Sqlite3SchemaRow> tables = GetTables();
+        Sqlite3SchemaRow tbl = FindTable(name);
 
-        foreach (Sqlite3SchemaRow tbl in tables)
+        if (tbl == null || tbl.IsVirtual)
         {
-            if (tbl.TableName != name || tbl.Type != "table")
-                continue;
-
-            // Found it
-            BTreePage root = BTreePage.Parse(_reader, tbl.RootPage);
-
-            table = new Sqlite3Table(_reader, root, tbl);
-            return true;
+            table = null;
+            return false;
         }
 
-        table = null;
-        return false;
+        table = OpenTable(tbl);
+        return true;
     }
 
+    /// <summary>
+    /// Gets a table by name, see <see cref="TryGetTable"/>.
+    /// </summary>
+    /// <exception cref="KeyNotFoundException">No table with that name exists</exception>
+    /// <exception cref="NotSupportedException">The table is a virtual table</exception>
     public Sqlite3Table GetTable(string name)
     {
-        if (!TryGetTable(name, out var tbl))
-            throw new Exception("Unable to find table named " + name);
+        Sqlite3SchemaRow tbl = FindTable(name);
 
-        return tbl;
+        if (tbl == null)
+            throw new KeyNotFoundException("Unable to find table named " + name);
+
+        if (tbl.IsVirtual)
+            throw new NotSupportedException($"Table {tbl.Name} is a virtual table ({tbl.Sql}). Virtual tables have no data in the database file and cannot be read, though their shadow tables may be.");
+
+        return OpenTable(tbl);
+    }
+
+    private Sqlite3SchemaRow FindTable(string name)
+    {
+        if (string.Equals(name, "sqlite_master", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(name, "sqlite_schema", StringComparison.OrdinalIgnoreCase))
+            return _masterSchemaRow;
+
+        foreach (Sqlite3SchemaRow tbl in GetTables())
+        {
+            if (tbl.Type == "table" && string.Equals(tbl.Name, name, StringComparison.OrdinalIgnoreCase))
+                return tbl;
+        }
+
+        return null;
+    }
+
+    private Sqlite3Table OpenTable(Sqlite3SchemaRow tbl)
+    {
+        BTreePage root = BTreePage.Parse(_reader, tbl.RootPage);
+        return new Sqlite3Table(_reader, root, tbl);
     }
 
     public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;

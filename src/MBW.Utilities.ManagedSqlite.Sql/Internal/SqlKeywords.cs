@@ -19,6 +19,14 @@ internal static class SqlKeywords
         "REFERENCES"
     };
 
+    /// <summary>
+    /// Keywords that start a column-constraint. The declared type of a column is everything between its name and the first of these.
+    /// </summary>
+    public static HashSet<string> ColumnConstraintKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CONSTRAINT", "PRIMARY", "NOT", "NULL", "UNIQUE", "CHECK", "DEFAULT", "COLLATE", "REFERENCES", "GENERATED", "AS"
+    };
+
     public static (string[] words, Type type)[] TypeKeywords =
         new[] {
             // integer, numeric

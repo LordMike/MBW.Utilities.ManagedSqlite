@@ -27,22 +27,20 @@ internal abstract class BTreePage
     {
         // Read the page once, and parse it from memory
         byte[] data = reader.ReadPage(page);
-        int length = reader.PageSize;
+        int length = (int)reader.PageSize;
 
         // Page 1 begins with the 100 byte database header
         int pos = page == 1 ? DatabaseHeader.HeaderSize : 0;
 
         BTreeHeader header = BTreeHeader.Parse(data, length, ref pos);
 
-        // Read cells
+        // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
         ushort[] cellOffsets = new ushort[header.CellCount];
 
         for (ushort i = 0; i < header.CellCount; i++)
         {
             cellOffsets[i] = ByteArrayReader.ReadUInt16(data, length, ref pos);
         }
-
-        Array.Sort(cellOffsets);
 
         BTreePage res;
         switch (header.Type)

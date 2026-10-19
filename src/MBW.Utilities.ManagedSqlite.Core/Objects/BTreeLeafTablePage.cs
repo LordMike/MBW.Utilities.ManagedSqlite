@@ -37,7 +37,7 @@ internal class BTreeLeafTablePage : BTreePage
             long P = bytes;
 
             // let U be the usable size of a database page, the total page size less the reserved space at the end of each page
-            int U = Reader.PageSize - Reader.ReservedSpace;
+            int U = (int)Reader.PageSize - Reader.ReservedSpace;
 
             // X is U-35 for table btree leaf pages or ((U-12)*64/255)-23 for index pages.
             int X = U - 35;
@@ -53,20 +53,20 @@ internal class BTreeLeafTablePage : BTreePage
             // If P>X and K>X then the first M bytes of P are stored on the btree page and the remaining P-M bytes are stored on overflow pages.
             // The number of bytes stored on the leaf page is never less than M.
 
-            ushort bytesInCell;
+            uint bytesInCell;
 
             if (P <= X)
             {
                 // All data is in cell
-                bytesInCell = (ushort)P;
+                bytesInCell = (uint)P;
             }
             else if (P > X && K <= X)
             {
-                bytesInCell = (ushort)K;
+                bytesInCell = (uint)K;
             }
             else if (P > X && K > X)
             {
-                bytesInCell = (ushort)M;
+                bytesInCell = (uint)M;
             }
             else
             {
@@ -76,7 +76,7 @@ internal class BTreeLeafTablePage : BTreePage
             if (bytes > bytesInCell)
             {
                 // We have overflow
-                pos += bytesInCell;
+                pos += (int)bytesInCell;
                 overflowPage = ByteArrayReader.ReadUInt32(data, length, ref pos);
             }
 
@@ -101,8 +101,8 @@ internal class BTreeLeafTablePage : BTreePage
         /// <summary>
         /// The size of the data in the cell (in the first page only), excluding the header and overfow page pointers
         /// </summary>
-        // Maximum cell size slightly less than one page, which is 65K
-        public ushort DataSizeInCell;
+        // Maximum cell size is slightly less than one page, and pages can be up to 65536 bytes
+        public uint DataSizeInCell;
 
         public long RowId;
         public uint FirstOverflowPage;
