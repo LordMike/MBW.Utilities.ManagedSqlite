@@ -40,15 +40,13 @@ internal abstract class BTreePage
 
         BTreeHeader header = BTreeHeader.Parse(reader);
 
-        // Read cells
+        // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
         ushort[] cellOffsets = new ushort[header.CellCount];
 
         for (ushort i = 0; i < header.CellCount; i++)
         {
             cellOffsets[i] = reader.ReadUInt16();
         }
-
-        Array.Sort(cellOffsets);
 
         BTreePage res;
         switch (header.Type)

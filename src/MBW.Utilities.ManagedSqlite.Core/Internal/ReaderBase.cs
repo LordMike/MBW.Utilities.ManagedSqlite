@@ -23,7 +23,7 @@ public class ReaderBase : IDisposable
 
     private Encoding _encoding;
 
-    public ushort PageSize { get; private set; }
+    public uint PageSize { get; private set; }
 
     /// <summary>
     /// Reserved space at the end of every page
@@ -152,13 +152,14 @@ public class ReaderBase : IDisposable
             };
     }
 
-    internal void SeekPage(uint page, ushort offset = 0)
+    internal void SeekPage(uint page, uint offset = 0)
     {
         if (page == 0 || (PageCount > 0 && page > PageCount))
             throw new SqliteCorruptException($"page number {page} is outside the database (1..{PageCount})", page, "page number");
 
         // Note: Pages are 1-indexed
-        ulong position = (page - 1) * PageSize;
+        // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB
+        ulong position = (ulong)(page - 1) * PageSize;
         position += offset;
 
         SetPositionAndCheckSize(position, (uint)(PageSize - offset));
@@ -253,11 +254,9 @@ public class ReaderBase : IDisposable
             }
         }
 
-        // Read final byte
+        // Read final byte. The loop above has already left readBytes at 9 (8 bytes read + this one)
         res <<= 8;
         res += ReadByte();
-
-        readBytes++;
 
         return res;
     }

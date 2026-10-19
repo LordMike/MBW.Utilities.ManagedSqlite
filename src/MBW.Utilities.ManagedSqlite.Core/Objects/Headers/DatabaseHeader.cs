@@ -12,7 +12,10 @@ public class DatabaseHeader
         (byte) 'o',(byte) 'r', (byte) 'm', (byte) 'a', (byte) 't', (byte) ' ', (byte) '3', 0
     };
 
-    public ushort PageSize { get; internal set; }
+    /// <summary>
+    /// The database page size in bytes (512 to 65536)
+    /// </summary>
+    public uint PageSize { get; internal set; }
 
     public FileWriteVersion WriteVersion { get; private set; }
 
@@ -64,7 +67,9 @@ public class DatabaseHeader
         // Read header
         DatabaseHeader res = new DatabaseHeader();
 
-        res.PageSize = reader.ReadUInt16();
+        // The page size is stored as a big-endian 2-byte value, where 1 means 65536
+        ushort rawPageSize = reader.ReadUInt16();
+        res.PageSize = rawPageSize == 1 ? 65536u : rawPageSize;
         res.WriteVersion = (FileWriteVersion)reader.ReadByte();
         res.ReadVersion = (FileReadVersion)reader.ReadByte();
         res.ReservedSpaceAtEndOfPage = reader.ReadByte();
