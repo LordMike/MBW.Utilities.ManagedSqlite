@@ -153,7 +153,8 @@ public class ReaderBase : IDisposable
             throw new ArgumentOutOfRangeException(nameof(page));
 
         // Note: Pages are 1-indexed
-        ulong position = (page - 1) * PageSize;
+        // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB
+        ulong position = (ulong)(page - 1) * PageSize;
         position += offset;
 
         SetPositionAndCheckSize(position, (uint)(PageSize - offset));
