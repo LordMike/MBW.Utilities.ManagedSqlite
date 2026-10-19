@@ -23,6 +23,6 @@ Notes:
 - SQL commands are prepared in `[GlobalSetup]`, so statement compilation is not measured.
 - The managed reader parses sqlite_master when it opens, while SQLite reads the schema lazily on first use, so
   `OpenDatabase` is not quite like for like.
-- The job is short (in-process, 2 warmups, 5 iterations) so each case finishes in a few seconds. The large row
-  count is 100k instead of 1M for the same reason. Expect wider error bars than a default BenchmarkDotNet run.
+- The job runs in-process with 3 warmups and 10 iterations of about 200 ms, so each case takes roughly 3-4 s
+  while keeping the error to a few percent. The large row count is 100k instead of 1M to stay under 5 s per case.
 - Setup checks that both readers return the same number of rows and tables before anything is measured.

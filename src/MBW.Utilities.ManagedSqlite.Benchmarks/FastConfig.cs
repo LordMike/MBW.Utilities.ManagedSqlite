@@ -10,7 +10,7 @@ using Perfolizer.Horology;
 namespace MBW.Utilities.ManagedSqlite.Benchmarks;
 
 /// <summary>
-/// A short job so each benchmark case finishes in a few seconds. Runs in-process to skip the per-benchmark
+/// A job sized so each benchmark case finishes in under 5 seconds while still giving stable numbers. Runs in-process to skip the per-benchmark
 /// rebuild and process launch that BenchmarkDotNet does by default.
 /// </summary>
 internal class FastConfig : ManualConfig
@@ -25,9 +25,9 @@ internal class FastConfig : ManualConfig
         AddJob(Job.Default
             .WithToolchain(InProcessEmitToolchain.Instance)
             .WithLaunchCount(1)
-            .WithWarmupCount(2)
-            .WithIterationCount(5)
-            .WithIterationTime(TimeInterval.FromMilliseconds(100)));
+            .WithWarmupCount(3)
+            .WithIterationCount(10)
+            .WithIterationTime(TimeInterval.FromMilliseconds(200)));
 
         AddDiagnoser(MemoryDiagnoser.Default);
         AddColumn(CategoriesColumn.Default);
