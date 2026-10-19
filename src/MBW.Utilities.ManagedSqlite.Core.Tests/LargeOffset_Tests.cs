@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using Xunit;
@@ -10,26 +9,23 @@ using Xunit;
 namespace MBW.Utilities.ManagedSqlite.Core.Tests;
 
 /// <summary>
-/// Reads a table whose pages lie past the 4 GiB mark, without a 4 GiB file.
-/// LargeOffset.db has the table's root (leaf) page at page 2 and its overflow page at page 3. The test moves
-/// both into a virtual file just over 4 GiB long and patches the page numbers that point at them.
+/// Reads a table whose pages lie past the 4 GiB mark.
+/// LargeOffset.sparse is a 4.5 GB database written by SQLite (see LargeOffset_Create.py), stored as just its
+/// non-zero pages: page 1, and LargeOffsetTable's root page and overflow page past 4 GiB.
 /// </summary>
 public class LargeOffset_Tests
 {
-    private const int PageSize = 4096;
     private const string TableName = "LargeOffsetTable";
-    private const string StoredSql = "CREATE TABLE LargeOffsetTable (Id INTEGER PRIMARY KEY, Name TEXT   )";
-
-    // (FarPage - 1) * 4096 = 4,294,971,392, just past 4 GiB. Computed in 32 bits it wraps to 4096 (page 2)
-    private const uint FarPage = 1_048_578;
 
     [Fact]
     public void TestTableBeyond4GiB()
     {
-        using Sqlite3Database db = new Sqlite3Database(CreateLargeStream());
+        using Stream stream = LoadSparse("MBW.Utilities.ManagedSqlite.Core.Tests.Data.LargeOffset.sparse", out int pageSize);
+        using Sqlite3Database db = new Sqlite3Database(stream);
 
+        // Computed in 32 bits, this offset wraps around to a page that is all zeros
         Sqlite3SchemaRow schema = db.GetTables().Single(s => s.TableName == TableName);
-        Assert.Equal(FarPage, schema.RootPage);
+        Assert.True((schema.RootPage - 1L) * pageSize > uint.MaxValue);
 
         Sqlite3Table tbl = db.GetTable(TableName);
         List<Sqlite3Row> rows = tbl.EnumerateRows().OrderBy(s => s.RowId).ToList();
@@ -42,97 +38,38 @@ public class LargeOffset_Tests
         Assert.True(rows[1].TryGetOrdinal(1, out string two));
         Assert.Equal("two", two);
 
-        // Partly stored on the overflow page at FarPage + 1
+        // Partly stored on the overflow page after the root page
         Assert.True(rows[2].TryGetOrdinal(1, out string large));
         Assert.Equal(new string('x', 5000), large);
     }
 
-    private static Stream CreateLargeStream()
+    /// <summary>
+    /// Reads a sparse database: for each non-zero page, a 4-byte big-endian page number followed by the page.
+    /// Page size and page count are taken from the database header in page 1.
+    /// </summary>
+    private static Stream LoadSparse(string resource, out int pageSize)
     {
-        byte[] file;
-        using (Stream fs = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.LargeOffset.db"))
+        byte[] data;
+        using (Stream fs = ResourceHelper.OpenResource(resource))
         using (MemoryStream ms = new MemoryStream())
         {
             fs.CopyTo(ms);
-            file = ms.ToArray();
+            data = ms.ToArray();
         }
 
-        Assert.Equal(3 * PageSize, file.Length);
+        Assert.Equal(1u, ReadUInt32(data, 0));
 
-        byte[] page1 = file.AsSpan(0, PageSize).ToArray();
-        byte[] rootPage = file.AsSpan(PageSize, PageSize).ToArray();
-        byte[] overflowPage = file.AsSpan(2 * PageSize, PageSize).ToArray();
+        // Header offset 16: page size, offset 28: page count
+        pageSize = (data[4 + 16] << 8) | data[4 + 17];
+        long pageCount = ReadUInt32(data, 4 + 28);
 
-        // sqlite_master: rootpage 2 (serial type 1, a 1-byte integer) becomes FarPage (serial type 4, a 4-byte
-        // integer). Three trailing spaces are taken out of the stored SQL so the record keeps its length.
-        ReplaceOnce(page1,
-            MasterRecord(1, new byte[] { 2 }, StoredSql),
-            MasterRecord(4, BigEndian(FarPage), StoredSql.Remove(StoredSql.Length - 4, 3)));
+        Dictionary<long, byte[]> pages = new Dictionary<long, byte[]>();
+        for (int offset = 0; offset < data.Length; offset += 4 + pageSize)
+            pages.Add(ReadUInt32(data, offset), data.AsSpan(offset + 4, pageSize).ToArray());
 
-        // The last cell's overflow pointer comes right after its in-page 'x' characters
-        ReplaceOnce(rootPage,
-            Concat(Encoding.ASCII.GetBytes("xxxx"), BigEndian(3)),
-            Concat(Encoding.ASCII.GetBytes("xxxx"), BigEndian(FarPage + 1)));
-
-        // Pages 2 and 3 stay unmapped (zeros), so a read that wraps around to them cannot succeed by accident
-        Dictionary<long, byte[]> pages = new Dictionary<long, byte[]>
-        {
-            { 1, page1 },
-            { FarPage, rootPage },
-            { FarPage + 1, overflowPage }
-        };
-
-        long length = (FarPage + 1L) * PageSize;
-        Assert.True(length > 4L * 1024 * 1024 * 1024);
-
-        return new PageMappedStream(PageSize, length, pages);
+        return new PageMappedStream(pageSize, pageCount * pageSize, pages);
     }
 
-    /// <summary>
-    /// The sqlite_master record (type, name, tbl_name, rootpage, sql) for <see cref="TableName"/>
-    /// </summary>
-    private static byte[] MasterRecord(byte rootPageSerialType, byte[] rootPage, string sql)
-    {
-        byte[] type = Encoding.ASCII.GetBytes("table");
-        byte[] name = Encoding.ASCII.GetBytes(TableName);
-        byte[] sqlBytes = Encoding.ASCII.GetBytes(sql);
-
-        // Text serial types are 13 + 2 * length. Every value here fits a 1-byte varint, except the SQL which takes 2
-        int sqlSerialType = 13 + 2 * sqlBytes.Length;
-        Assert.InRange(sqlSerialType, 128, 16383);
-
-        byte[] header =
-        {
-            7, // header size, including this byte
-            (byte)(13 + 2 * type.Length),
-            (byte)(13 + 2 * name.Length),
-            (byte)(13 + 2 * name.Length),
-            rootPageSerialType,
-            (byte)(0x80 | (sqlSerialType >> 7)),
-            (byte)(sqlSerialType & 0x7F)
-        };
-
-        return Concat(header, type, name, name, rootPage, sqlBytes);
-    }
-
-    private static void ReplaceOnce(byte[] data, byte[] find, byte[] replace)
-    {
-        Assert.Equal(find.Length, replace.Length);
-
-        int index = data.AsSpan().IndexOf(find);
-        Assert.True(index >= 0, "Pattern to patch was not found");
-        Assert.True(data.AsSpan(index + 1).IndexOf(find) < 0, "Pattern to patch was found more than once");
-
-        replace.CopyTo(data, index);
-    }
-
-    private static byte[] BigEndian(uint value) => new[]
-    {
-        (byte)(value >> 24),
-        (byte)(value >> 16),
-        (byte)(value >> 8),
-        (byte)value
-    };
-
-    private static byte[] Concat(params byte[][] parts) => parts.SelectMany(s => s).ToArray();
+    private static uint ReadUInt32(byte[] data, int offset) =>
+        (uint)((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
 }
