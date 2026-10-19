@@ -8,14 +8,19 @@ using Microsoft.Data.Sqlite;
 namespace MBW.Utilities.ManagedSqlite.Benchmarks;
 
 /// <summary>
-/// Listing tables and opening a named table on an already-open database. SQLite has no API for either, so the
-/// native side runs the nearest SQL with commands prepared in setup, outside the measured region.
+/// Listing tables and opening a named table. SQLite has no API for either, so the native side runs the nearest SQL.
 /// </summary>
+/// <remarks>
+/// The managed reader parses sqlite_master once when the database opens and keeps the list, so listing tables on an
+/// open database would only count a list. ListTables therefore opens a fresh database on both sides and lists its
+/// tables, which makes both read sqlite_master. The native query has to be compiled on each new connection, so that
+/// is included there. OpenTable runs on an already-open database, with the native query prepared in setup.
+/// </remarks>
 public class SchemaBenchmarks
 {
     private NativeDatabase _native;
     private SqliteConnection _conn;
-    private SqliteCommand _listTables;
+    private byte[] _image;
     private SqliteCommand _openTable;
     private Sqlite3Database _db;
 
@@ -23,13 +28,10 @@ public class SchemaBenchmarks
     public void Setup()
     {
         byte[] image = TestDatabases.Get(1000);
+        _image = image;
 
         _native = new NativeDatabase(image);
         _conn = _native.Open();
-
-        _listTables = _conn.CreateCommand();
-        _listTables.CommandText = "SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master";
-        _listTables.Prepare();
 
         _openTable = _conn.CreateCommand();
         _openTable.CommandText = $"SELECT id, i, r, t, b FROM {TestDatabases.TableName}";
@@ -44,7 +46,6 @@ public class SchemaBenchmarks
     [GlobalCleanup]
     public void Cleanup()
     {
-        _listTables.Dispose();
         _openTable.Dispose();
         _conn.Dispose();
         _native.Dispose();
@@ -55,7 +56,11 @@ public class SchemaBenchmarks
     public int NativeListTables()
     {
         int count = 0;
-        using SqliteDataReader reader = _listTables.ExecuteReader();
+        using SqliteConnection conn = _native.Open();
+        using SqliteCommand listTables = conn.CreateCommand();
+        listTables.CommandText = "SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master";
+
+        using SqliteDataReader reader = listTables.ExecuteReader();
         while (reader.Read())
         {
             _ = reader.GetString(0);
@@ -73,7 +78,8 @@ public class SchemaBenchmarks
     public int ManagedListTables()
     {
         int count = 0;
-        foreach (Sqlite3SchemaRow _ in _db.GetTables())
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(_image, false));
+        foreach (Sqlite3SchemaRow _ in db.GetTables())
             count++;
 
         return count;
