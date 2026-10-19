@@ -1,3 +1,4 @@
+using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using Xunit;
 
@@ -53,6 +54,8 @@ public class Values_Tests
     [InlineData("4.9e-324")]
     [InlineData("2.2250738585072014e-308")]
     [InlineData("0.1")]
+    [InlineData("9e999")]
+    [InlineData("-9e999")]
     public void Reals(string literal)
     {
         SqliteParity.AssertSameAsSqlite($"CREATE TABLE tbl (v REAL); INSERT INTO tbl VALUES ({literal});");
@@ -74,11 +77,12 @@ INSERT INTO tbl VALUES ('ru', 'В чащах юга жил бы цитрус? Д
 INSERT INTO tbl VALUES ('emoji', '😀 outside the BMP');
 INSERT INTO tbl VALUES ('empty', '');");
 
-            // 150,000 characters, far past one page, so the text is spread over a chain of overflow pages
+            // 120,000 characters of 1, 2, 3 and 4 byte UTF-8 (2 and 4 byte UTF-16), far past one page, so the text
+            // is spread over a chain of overflow pages and characters straddle the page boundaries
             data.Add(encoding + " very long", $@"
 PRAGMA encoding = '{encoding}';
 CREATE TABLE tbl (v TEXT);
-INSERT INTO tbl VALUES (replace(hex(zeroblob(75000)), '0', 'x'));");
+INSERT INTO tbl VALUES (replace(hex(zeroblob(15000)), '0', 'aæ😀日'));");
         }
 
         return data;
@@ -114,7 +118,17 @@ INSERT INTO tbl VALUES (replace(hex(zeroblob(75000)), '0', 'x'));");
         return new TheoryData<string, string>
         {
             { "NULL in the middle", "CREATE TABLE tbl (a INTEGER, b TEXT, c REAL, d BLOB, e INTEGER); INSERT INTO tbl VALUES (1, NULL, NULL, NULL, 5); INSERT INTO tbl VALUES (NULL, 'x', NULL, X'00', NULL);" },
-            { "all storage classes", "CREATE TABLE tbl (a, b, c, d, e); INSERT INTO tbl VALUES (NULL, 42, 1.5, 'text', X'CAFE'); INSERT INTO tbl VALUES (X'CAFE', 'text', 1.5, 42, NULL);" }
+            { "all storage classes", "CREATE TABLE tbl (a, b, c, d, e); INSERT INTO tbl VALUES (NULL, 42, 1.5, 'text', X'CAFE'); INSERT INTO tbl VALUES (X'CAFE', 'text', 1.5, 42, NULL);" },
+            // Affinity decides how SQLite stores each value, and REAL affinity how an integral real reads back.
+            // FLOATING POINT contains "INT" so has INTEGER affinity; STRING, DECIMAL, DATETIME and "my type" are NUMERIC.
+            { "declared types and affinity", @"
+CREATE TABLE tbl (i INTEGER, t TEXT, b BLOB, n NUMERIC, r REAL, x, vc VARCHAR(255), dec DECIMAL(10, 5), dp DOUBLE PRECISION,
+    ubi UNSIGNED BIG INT, li int, s STRING, fp FLOATING POINT, q ""my type"", dt DATETIME);
+INSERT INTO tbl SELECT v, v, v, v, v, v, v, v, v, v, v, v, v, v, v FROM
+    (SELECT '12' AS v UNION ALL SELECT 2.0 UNION ALL SELECT 2.5 UNION ALL SELECT '1e3' UNION ALL SELECT '0.25' UNION ALL SELECT 'abc' UNION ALL SELECT X'01');" },
+            // 150 columns make a record header of 152 bytes, so the header size itself is a 2 byte varint
+            { "150 columns", "CREATE TABLE tbl (" + string.Join(", ", Enumerable.Range(0, 150).Select(i => "c" + i)) + "); " +
+                             "INSERT INTO tbl VALUES (" + string.Join(", ", Enumerable.Range(0, 150).Select(i => i * 1000 + 7)) + ");" },
         };
     }
 

@@ -32,6 +32,7 @@ INSERT INTO BlobTable SELECT 1, CAST(substr(v, 1, 60000) AS BLOB) FROM s UNION A
 
     public static TheoryData<string, string> BTreeShapes() => new()
     {
+        { "empty table", "CREATE TABLE t (Value TEXT);" },
         { "ordered 5000 rows, 3 levels", @"
 PRAGMA page_size = 512;
 CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
@@ -58,6 +59,28 @@ CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
 WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 2000)
 INSERT INTO t SELECT x, 'row ' || x FROM seq;
 DELETE FROM t WHERE Id % 2 = 0;" },
+        // Pointer-map pages sit between the b-tree pages, and creating table u after t is filled makes SQLite move
+        // t's pages to keep the root pages together
+        { "auto_vacuum FULL", @"
+PRAGMA auto_vacuum = FULL;
+PRAGMA page_size = 512;
+CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 2000)
+INSERT INTO t SELECT x, printf('%0*d', x % 300, x) FROM seq;
+CREATE TABLE u (v);
+INSERT INTO u VALUES ('after');
+DELETE FROM t WHERE Id % 3 = 0;" },
+        // Rows that shrink free their overflow pages, and rows that grow later chain those pages out of order
+        { "updates move rows to overflow pages and back", @"
+PRAGMA page_size = 512;
+CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 400)
+INSERT INTO t SELECT x, 'short' FROM seq;
+UPDATE t SET Value = (WITH RECURSIVE n(i) AS (SELECT Id UNION ALL SELECT i + 1 FROM n WHERE i < Id + 500)
+    SELECT group_concat(printf('%06d', i), '') FROM n) WHERE Id % 4 = 0;
+UPDATE t SET Value = NULL WHERE Id % 8 = 0;
+UPDATE t SET Value = (WITH RECURSIVE n(i) AS (SELECT Id UNION ALL SELECT i + 1 FROM n WHERE i < Id + 500)
+    SELECT group_concat(printf('%06d', i), '') FROM n) WHERE Id % 5 = 0;" },
     };
 
     public static TheoryData<string, string> Schemas()
@@ -95,12 +118,73 @@ CREATE TABLE ""my table"" (""select"" TEXT, ""a b"" INTEGER, ""q""""uote"" TEXT)
 CREATE TABLE ""order"" (id INTEGER PRIMARY KEY, ""group"" TEXT);
 INSERT INTO ""my table"" VALUES ('s', 1, 'q');
 INSERT INTO ""order"" VALUES (1, 'g'), (2, 'h');" },
-            // rtree rather than fts5: fts5's shadow tables include WITHOUT ROWID tables, which the dump can't select rowid from
             { "rtree virtual table and plain table", @"
 CREATE VIRTUAL TABLE boxes USING rtree(id, minX, maxX, minY, maxY);
 INSERT INTO boxes VALUES (1, 0, 10, 0, 10), (2, 5, 15, 5, 15), (3, -3, 3, -3, 3);
 CREATE TABLE Plain (Id INTEGER PRIMARY KEY, Value TEXT);
 INSERT INTO Plain VALUES (1, 'one'), (2, 'two');" },
+            // fts5's shadow tables docs_idx and docs_config are WITHOUT ROWID tables
+            { "fts5 virtual table", @"
+CREATE VIRTUAL TABLE docs USING fts5(a, b);
+INSERT INTO docs VALUES ('hello world', 'x'), ('second row', 'y');" },
+            { "WITHOUT ROWID", @"
+CREATE TABLE tbl (k TEXT PRIMARY KEY, v) WITHOUT ROWID;
+INSERT INTO tbl VALUES ('b', 2), ('a', 'x'), ('c', NULL);" },
+            // Rows written before ADD COLUMN read the column's DEFAULT
+            { "ALTER TABLE ADD COLUMN with DEFAULT", @"
+CREATE TABLE tbl (a);
+INSERT INTO tbl VALUES (10);
+ALTER TABLE tbl ADD COLUMN b TEXT DEFAULT 'dflt';
+INSERT INTO tbl VALUES (20, 'x');" },
+            { "generated STORED column", @"
+CREATE TABLE tbl (a, b AS (a || '!') STORED, c);
+INSERT INTO tbl (a, c) VALUES ('x', 'third');" },
+            // A VIRTUAL generated column is not in the record, so the columns after it sit one ordinal earlier there
+            { "generated VIRTUAL column", @"
+CREATE TABLE tbl (a, b AS (a || '!') VIRTUAL, c);
+INSERT INTO tbl (a, c) VALUES ('x', 'third');" },
+            // Quoting and escapes already in SqlParserSyntaxTests.SchemaFeatures are left out here
+            { "CREATE TABLE syntax and names", @"
+CREATE TABLE [bracketed space] ([my col] TEXT, ""kølønne_日本"" TEXT);
+INSERT INTO [bracketed space] VALUES ('a', 'b');
+CREATE TABLE `table` (a);
+INSERT INTO `table` VALUES (1);
+CREATE TABLE ""tæst_ø_日本_😀"" (a);
+INSERT INTO ""tæst_ø_日本_😀"" VALUES (2);
+CREATE TABLE unquotedæøå (a);
+INSERT INTO unquotedæøå VALUES (3);
+CREATE TABLE main.qualified (a);
+INSERT INTO qualified VALUES (5);
+CREATE TABLE ""main"".""quoted_qualified"" (a);
+INSERT INTO quoted_qualified VALUES (6);
+CREATE TABLE IF NOT EXISTS if_not_exists (a);
+INSERT INTO if_not_exists VALUES (7);
+create table lowercase_create (a);
+insert into lowercase_create values (8);
+CREATE   TABLE
+	whitespace
+(
+  a
+)
+;
+INSERT INTO whitespace VALUES (9);" },
+            { "column constraints, defaults and STRICT", @"
+CREATE TABLE parent (id INTEGER PRIMARY KEY);
+INSERT INTO parent VALUES (42);
+CREATE TABLE tbl (
+  a TEXT NOT NULL UNIQUE,
+  b INTEGER DEFAULT 5,
+  c INTEGER DEFAULT -5,
+  e INTEGER DEFAULT (40 + 2),
+  f TEXT DEFAULT CURRENT_TIMESTAMP,
+  g TEXT COLLATE NOCASE,
+  h INTEGER REFERENCES parent(id) ON DELETE CASCADE,
+  i INTEGER CONSTRAINT positive CHECK (i > 0),
+  UNIQUE (a, g)
+);
+INSERT INTO tbl (a, f, g, h, i) VALUES ('x', '2026-10-19', 'g', 42, 1);
+CREATE TABLE strict (a INTEGER, b TEXT) STRICT;
+INSERT INTO strict VALUES (42, 'x');" },
         };
     }
 
