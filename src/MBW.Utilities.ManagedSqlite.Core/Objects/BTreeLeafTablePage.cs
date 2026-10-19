@@ -1,4 +1,5 @@
 ﻿using System;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
@@ -76,6 +77,10 @@ internal class BTreeLeafTablePage : BTreePage
                 Reader.Skip(bytesInCell);
                 overflowPage = Reader.ReadUInt32();
             }
+
+            long cellEnd = (long)CellOffsets[i] + bytesSize + rowIdSize + bytesInCell + (bytes > bytesInCell ? sizeof(uint) : 0);
+            if (bytes < 0 || cellEnd > U)
+                throw new SqliteCorruptException($"cell with payload size {bytes} at offset {CellOffsets[i]} extends past the end of the page", Page, "b-tree leaf cell");
 
             Cells[i] = new Cell
             {

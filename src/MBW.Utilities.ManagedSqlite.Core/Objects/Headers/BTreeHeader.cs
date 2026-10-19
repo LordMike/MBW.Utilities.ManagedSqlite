@@ -36,6 +36,9 @@ internal struct BTreeHeader
             res.RightMostPointer = reader.ReadUInt32();
         }
 
+        // The cell pointer array follows, make sure it can be read. BTreePage checks it fits in the page.
+        reader.CheckSize(2u * res.CellCount);
+
         return res;
     }
 }
