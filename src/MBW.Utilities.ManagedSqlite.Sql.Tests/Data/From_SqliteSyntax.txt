@@ -1,0 +1,39 @@
+# SQL
+#    Table Name
+#    Column1Name
+#    Column2Name ClrType(Integer, String, Bytes, Double) SqlType Modifiers(Primary, RowId)
+# Statements exercising SQLite schema syntax (constraints with operators, comments, escaped quotes, generated columns)
+# as stored verbatim by SQLite 3.45 in sqlite_master.sql
+CREATE TABLE products(id INTEGER PRIMARY KEY, name TEXT NOT NULL CHECK (length(name) > 0), price REAL CHECK (price >= 0.0 AND price <= 1e6), qty INTEGER DEFAULT -1 CHECK (qty <> 0 OR qty != 1 OR qty == 2), flags INTEGER DEFAULT 0x1F CHECK (((flags & 3) | (flags << 2)) >> 1 = ~flags % 2), code TEXT DEFAULT ('a' || 'b'), ratio REAL DEFAULT (10 / 4 * 2 - .5 + 1.5E-3))
+	products
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	name	STRING	TEXT	
+	price	DOUBLE	REAL	
+	qty	INTEGER	INTEGER	
+	flags	INTEGER	INTEGER	
+	code	STRING	TEXT	
+	ratio	DOUBLE	REAL	
+
+CREATE TABLE notes( /* id */ id INTEGER PRIMARY KEY, /* body */ body TEXT /* trailing */)
+	notes
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	body	STRING	TEXT	
+
+CREATE TABLE "my""table"("col""two" TEXT, 'sq''col' INTEGER, `bt``col` BLOB, [br col] REAL)
+	my"table
+	col"two	STRING	TEXT	
+	sq'col	INTEGER	INTEGER	
+	bt`col	BYTES	BLOB	
+	br col	DOUBLE	REAL	
+
+CREATE TABLE gen(a INTEGER, b INTEGER GENERATED ALWAYS AS (a * 2) STORED, c TEXT AS (upper(a)) VIRTUAL)
+	gen
+	a	INTEGER	INTEGER	
+	b	INTEGER	INTEGER	
+	c	STRING	TEXT	
+
+CREATE TABLE child(id INTEGER, parent_id INTEGER NOT NULL, PRIMARY KEY (id), FOREIGN KEY (parent_id) REFERENCES parent(id) ON DELETE CASCADE, CHECK (id > parent_id))
+	child
+	id	INTEGER	INTEGER	PRIMARY ROWID
+	parent_id	INTEGER	INTEGER	
+
