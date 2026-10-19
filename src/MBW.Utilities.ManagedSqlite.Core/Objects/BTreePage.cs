@@ -1,4 +1,5 @@
 ﻿using System;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
@@ -24,23 +25,21 @@ internal abstract class BTreePage
 
     internal static BTreePage Parse(ReaderBase reader, uint page)
     {
-        // Read header
-        reader.SeekPage(page);
+        // Read the page once, and parse it from memory
+        byte[] data = reader.ReadPage(page);
+        int length = (int)reader.PageSize;
 
-        if (page == 1)
-        {
-            // Skip the first 100 bytes
-            reader.Skip(DatabaseHeader.HeaderSize);
-        }
+        // Page 1 begins with the 100 byte database header
+        int pos = page == 1 ? DatabaseHeader.HeaderSize : 0;
 
-        BTreeHeader header = BTreeHeader.Parse(reader);
+        BTreeHeader header = BTreeHeader.Parse(data, length, ref pos);
 
         // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
         ushort[] cellOffsets = new ushort[header.CellCount];
 
         for (ushort i = 0; i < header.CellCount; i++)
         {
-            cellOffsets[i] = reader.ReadUInt16();
+            cellOffsets[i] = ByteArrayReader.ReadUInt16(data, length, ref pos);
         }
 
         BTreePage res;
@@ -60,10 +59,10 @@ internal abstract class BTreePage
                 throw new ArgumentOutOfRangeException();
         }
 
-        res.ParseInternal();
+        res.ParseInternal(data, length);
 
         return res;
     }
 
-    protected abstract void ParseInternal();
+    protected abstract void ParseInternal(byte[] data, int length);
 }
