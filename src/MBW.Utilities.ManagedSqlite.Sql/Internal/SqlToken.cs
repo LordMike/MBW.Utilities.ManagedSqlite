@@ -9,5 +9,6 @@ internal enum SqlToken
     ParenthesisStart,
     ParenthesisEnd,
     Semicolon,
-    Dot
+    Dot,
+    Operator
 }
