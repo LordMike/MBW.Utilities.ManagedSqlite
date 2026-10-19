@@ -314,6 +314,11 @@ public class ReaderBase : IDisposable
         return res;
     }
 
+    internal string DecodeString(byte[] buffer, int offset, int count)
+    {
+        return _encoding.GetString(buffer, offset, count);
+    }
+
     public string ReadString(uint bytes)
     {
         byte[] data = Read((int)bytes);
