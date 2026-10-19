@@ -86,7 +86,7 @@ public class Sqlite3Table
         serialTypes ??= new long[16];
 
         int pos = 0;
-        long headerSize = ReadVarInt(payload, length, ref pos);
+        long headerSize = ByteArrayReader.ReadVarInt(payload, length, ref pos);
         if (headerSize > length)
             throw new EndOfStreamException();
 
@@ -96,7 +96,7 @@ public class Sqlite3Table
             if (columns == serialTypes.Length)
                 Array.Resize(ref serialTypes, columns * 2);
 
-            serialTypes[columns++] = ReadVarInt(payload, length, ref pos);
+            serialTypes[columns++] = ByteArrayReader.ReadVarInt(payload, length, ref pos);
         }
 
         object[] rowData = new object[columns];
@@ -112,16 +112,16 @@ public class Sqlite3Table
                 case 2:
                 case 3:
                 case 4:
-                    rowData[i] = ReadInteger(payload, length, ref pos, (int)serialType);
+                    rowData[i] = ByteArrayReader.ReadInteger(payload, length, ref pos, (int)serialType);
                     break;
                 case 5:
-                    rowData[i] = ReadInteger(payload, length, ref pos, 6);
+                    rowData[i] = ByteArrayReader.ReadInteger(payload, length, ref pos, 6);
                     break;
                 case 6:
-                    rowData[i] = ReadInteger(payload, length, ref pos, 8);
+                    rowData[i] = ByteArrayReader.ReadInteger(payload, length, ref pos, 8);
                     break;
                 case 7:
-                    rowData[i] = BitConverter.Int64BitsToDouble(ReadInteger(payload, length, ref pos, 8));
+                    rowData[i] = BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(payload, length, ref pos, 8));
                     break;
                 case 8:
                     rowData[i] = false;
@@ -158,40 +158,5 @@ public class Sqlite3Table
         }
 
         return rowData;
-    }
-
-    private static long ReadVarInt(byte[] data, int length, ref int pos)
-    {
-        // See ReaderBase.ReadVarInt: 8 bytes of 7 bits each, then a 9th byte of 8 bits
-        long res = 0;
-        for (int i = 0; i < 8; i++)
-        {
-            if (pos >= length)
-                throw new EndOfStreamException();
-
-            byte tmp = data[pos++];
-            res = (res << 7) | (long)(tmp & 0x7F);
-
-            if ((tmp & 0x80) == 0x00)
-                return res;
-        }
-
-        if (pos >= length)
-            throw new EndOfStreamException();
-
-        return (res << 8) | data[pos++];
-    }
-
-    private static long ReadInteger(byte[] data, int length, ref int pos, int bytes)
-    {
-        if (bytes > length - pos)
-            throw new EndOfStreamException();
-
-        // Big-endian two's complement; the sign comes from the first byte
-        long res = (sbyte)data[pos++];
-        for (int i = 1; i < bytes; i++)
-            res = (res << 8) | data[pos++];
-
-        return res;
     }
 }
