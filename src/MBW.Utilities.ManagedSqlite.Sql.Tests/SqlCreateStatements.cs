@@ -15,7 +15,8 @@ public class SqlCreateStatements
             $"{assembly.GetName().Name}.Data.From_Firefox.txt",
             $"{assembly.GetName().Name}.Data.From_WindowsActivity.txt",
             $"{assembly.GetName().Name}.Data.From_WindowsActivityCache.txt",
-            $"{assembly.GetName().Name}.Data.From_Windows11ActivityDb.txt"
+            $"{assembly.GetName().Name}.Data.From_Windows11ActivityDb.txt",
+            $"{assembly.GetName().Name}.Data.From_SqliteSyntax.txt"
         };
 
         foreach (string file in files)
