@@ -1,9 +1,9 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
@@ -166,51 +166,28 @@ public class SqlParserSyntaxTests
         Assert.Null(ex);
     }
 
-    private static Sqlite3Database OpenSchemaFeaturesDb()
-    {
-        Assembly assembly = typeof(SqlParserSyntaxTests).Assembly;
-        Stream stream = assembly.GetManifestResourceStream($"{assembly.GetName().Name}.Data.SchemaFeatures.db");
-        Assert.NotNull(stream);
-
-        return new Sqlite3Database(stream);
-    }
+    /// <summary>
+    /// SQLite keeps CREATE statements verbatim (including comments) in sqlite_master.sql. Generated VIRTUAL columns
+    /// are left out: they are not stored in the record, and the reader does not compute them.
+    /// </summary>
+    private const string SchemaFeatures = @"
+CREATE TABLE checks(id INTEGER PRIMARY KEY, a INTEGER CHECK (a > 0), b TEXT DEFAULT 'x');
+INSERT INTO checks VALUES (1, 5, 'hello');
+CREATE TABLE comments( -- the id
+  a INTEGER, /* note */ b TEXT
+);
+INSERT INTO comments VALUES (7, 'seven');
+CREATE TABLE ""quo""""ted""(""col""""two"" TEXT, 'sq''col' INTEGER, `bt``col` REAL);
+INSERT INTO ""quo""""ted"" VALUES ('two', 2, 2.5);
+CREATE VIEW checks_view AS SELECT a FROM checks;";
 
     [Fact]
-    public void ReadTablesWithSchemaFeaturesFromDatabase()
-    {
-        using Sqlite3Database db = OpenSchemaFeaturesDb();
-
-        Sqlite3Row checksRow = db.GetTable("checks").EnumerateRows().Single();
-        Assert.True(checksRow.TryGetValueByName("id", out long id));
-        Assert.True(checksRow.TryGetValueByName("a", out long a));
-        Assert.True(checksRow.TryGetValueByName("b", out string b));
-        Assert.Equal(1, id);
-        Assert.Equal(5, a);
-        Assert.Equal("hello", b);
-
-        Sqlite3Row commentsRow = db.GetTable("comments").EnumerateRows().Single();
-        Assert.True(commentsRow.TryGetValueByName("a", out a));
-        Assert.True(commentsRow.TryGetValueByName("b", out b));
-        Assert.Equal(7, a);
-        Assert.Equal("seven", b);
-
-        Sqlite3Row quotedRow = db.GetTable("quo\"ted").EnumerateRows().Single();
-        Assert.True(quotedRow.TryGetValueByName("col\"two", out string colTwo));
-        Assert.True(quotedRow.TryGetValueByName("sq'col", out long sqCol));
-        Assert.True(quotedRow.TryGetValueByName("bt`col", out double btCol));
-        Assert.Equal("two", colTwo);
-        Assert.Equal(2, sqCol);
-        Assert.Equal(2.5, btCol);
-
-        // Generated columns parse; value ordinals of virtual columns are not handled here
-        SqlTableDefinition generated = db.GetTable("generated").GetTableDefinition();
-        Assert.Equal(new[] { "a", "b" }, generated.Columns.Select(s => s.Name));
-    }
+    public void SchemaFeaturesReadSameAsSqlite() => SqliteParity.AssertSameAsSqlite(SchemaFeatures);
 
     [Fact]
     public void GetTableDefinitionOnUnparseableSchemaThrowsDescriptiveException()
     {
-        using Sqlite3Database db = OpenSchemaFeaturesDb();
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(SchemaFeatures)));
 
         Sqlite3SchemaRow view = db.GetTables().Single(s => s.Name == "checks_view");
 
