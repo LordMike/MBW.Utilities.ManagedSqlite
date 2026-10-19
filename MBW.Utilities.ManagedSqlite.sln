@@ -23,6 +23,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestDataGenerator", "src\Te
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Sql.Tests", "src\MBW.Utilities.ManagedSqlite.Sql.Tests\MBW.Utilities.ManagedSqlite.Sql.Tests.csproj", "{162FE8EB-FB16-47A6-912A-C018DC4E962A}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Differential.Tests", "src\MBW.Utilities.ManagedSqlite.Differential.Tests\MBW.Utilities.ManagedSqlite.Differential.Tests.csproj", "{5EC825BE-61EF-4D32-8F58-203C78EE2F27}"
+EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Imports", "_Imports", "{63529930-D46E-4D5A-989F-29EA708A1261}"
 	ProjectSection(SolutionItems) = preProject
 		_Imports\Local.targets = _Imports\Local.targets
@@ -59,6 +61,10 @@ Global
 		{162FE8EB-FB16-47A6-912A-C018DC4E962A}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{162FE8EB-FB16-47A6-912A-C018DC4E962A}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{162FE8EB-FB16-47A6-912A-C018DC4E962A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5EC825BE-61EF-4D32-8F58-203C78EE2F27}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5EC825BE-61EF-4D32-8F58-203C78EE2F27}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5EC825BE-61EF-4D32-8F58-203C78EE2F27}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5EC825BE-61EF-4D32-8F58-203C78EE2F27}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -70,6 +76,7 @@ Global
 		{3B41163B-8FCB-4569-9843-510DF5D6A91D} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{901F8D38-6910-47C3-8D9C-44EF487DEF46} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{162FE8EB-FB16-47A6-912A-C018DC4E962A} = {7F205CD8-F964-4521-95FF-15A73F05C893}
+		{5EC825BE-61EF-4D32-8F58-203C78EE2F27} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{63529930-D46E-4D5A-989F-29EA708A1261} = {5A21CA7B-C932-4454-A9DB-5A341A46AE66}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
