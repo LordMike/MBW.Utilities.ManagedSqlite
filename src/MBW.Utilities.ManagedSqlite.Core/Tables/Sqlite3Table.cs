@@ -50,7 +50,7 @@ public class Sqlite3Table
                 payload = new byte[payloadSize];
             }
 
-            ushort dataOffset = (ushort)(cell.CellOffset + cell.Cell.CellHeaderSize);
+            uint dataOffset = cell.CellOffset + cell.Cell.CellHeaderSize;
             if (cell.Cell.FirstOverflowPage == 0)
             {
                 // All data is on this page
@@ -124,10 +124,11 @@ public class Sqlite3Table
                     rowData[i] = BitConverter.Int64BitsToDouble(ReadInteger(payload, length, ref pos, 8));
                     break;
                 case 8:
-                    rowData[i] = false;
+                    // Serial types 8 and 9: integer constants 0 and 1, no payload bytes
+                    rowData[i] = 0L;
                     break;
                 case 9:
-                    rowData[i] = true;
+                    rowData[i] = 1L;
                     break;
                 case 10:
                 case 11:

@@ -22,7 +22,8 @@ public static class SqlParser
 
             if (tmp.Value.Kind == SqlToken.Comma)
             {
-                if (stack.Count < 1)
+                // Commas are only meaningful inside parentheses
+                if (stack.Count < 2)
                     return false;
 
                 stack.Pop();
@@ -70,6 +71,25 @@ public static class SqlParser
     {
         tableDefinition = null;
 
+        if (sql == null)
+            return false;
+
+        try
+        {
+            return TryParseInternal(sql, out tableDefinition);
+        }
+        catch (Exception)
+        {
+            // Anything unexpected in the SQL means it could not be parsed
+            tableDefinition = null;
+            return false;
+        }
+    }
+
+    private static bool TryParseInternal(string sql, out SqlTableDefinition tableDefinition)
+    {
+        tableDefinition = null;
+
         // Parse out the SQL into series of column creation statements
         Result<TokenList<SqlToken>> tokens = SqlTokenizer.Tokenizer.TryTokenize(sql);
 
@@ -89,10 +109,13 @@ public static class SqlParser
         int primaryKeyComponents = 0;
         SqlTableColumn primaryKeyColumn = null;
 
+        // Columns that may alias the rowid if they turn out to be the sole primary key
+        HashSet<SqlTableColumn> rowIdAliasCandidates = new HashSet<SqlTableColumn>();
+
         for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
         {
             SqlNode columnSet = columns.Children[columnIndex];
-            if (!columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
+            if (columnSet.Children == null || !columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
                 continue;
 
             string firstToken = columnSet.Children.First().GetString();
@@ -128,6 +151,11 @@ public static class SqlParser
             }
 
             name = columnSet.GetString(0);
+
+            // Duplicate column names are invalid
+            if (def.TryGetColumn(name, out _))
+                return false;
+
             string[] typeStrings = columnSet.Children.Skip(1).Where(s => s.Is(SqlToken.String))
                 .Select(s => s.GetString()).ToArray();
 
@@ -137,7 +165,7 @@ public static class SqlParser
 
             foreach ((string[] words, Type type) candidate in SqlKeywords.TypeKeywords)
             {
-                if (!typeStrings.Take(candidate.words.Length).SequenceEqual(candidate.words))
+                if (!typeStrings.Take(candidate.words.Length).SequenceEqual(candidate.words, StringComparer.OrdinalIgnoreCase))
                     continue;
 
                 identifiedType = candidate.type;
@@ -156,15 +184,56 @@ public static class SqlParser
                 primaryKeyComponents++;
                 primaryKeyColumn = sqlTableColumn;
             }
+
+            // A column declared as exactly "INTEGER" may alias the rowid. As a quirk, SQLite does not
+            // alias the rowid when the column-constraint is "PRIMARY KEY DESC" (a table-constraint
+            // "PRIMARY KEY (x DESC)" does alias it). https://www.sqlite.org/lang_createtable.html#rowid
+            if (IsDeclaredAsInteger(columnSet) && !IsColumnPrimaryKeyDesc(columnSet))
+                rowIdAliasCandidates.Add(sqlTableColumn);
         }
 
         // Identify row-id substitutes
-        if (primaryKeyComponents == 1 && primaryKeyColumn.DetectedType == typeof(long))
+        if (primaryKeyComponents == 1 && rowIdAliasCandidates.Contains(primaryKeyColumn) && !IsWithoutRowId(node))
         {
             def.ConfigureRowIdColumn(primaryKeyColumn);
         }
 
         tableDefinition = def;
         return true;
+    }
+
+    private static bool IsDeclaredAsInteger(SqlNode columnSet)
+    {
+        // The declared type is everything between the column name and the first column-constraint
+        List<SqlNode> declaredType = columnSet.Children.Skip(1)
+            .TakeWhile(s => !(s.Is(SqlToken.String) && SqlKeywords.ColumnConstraintKeywords.Contains(s.GetString())))
+            .ToList();
+
+        return declaredType.Count == 1 &&
+               declaredType[0].Is(SqlToken.String) &&
+               string.Equals(declaredType[0].GetString().Trim('"', '[', ']', '`', '\''), "INTEGER", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsColumnPrimaryKeyDesc(SqlNode columnSet)
+    {
+        for (int i = 1; i < columnSet.Children.Count; i++)
+        {
+            if (columnSet.Is(i, "PRIMARY") && columnSet.Is(i + 1, "KEY"))
+                return columnSet.Is(i + 2, "DESC");
+        }
+
+        return false;
+    }
+
+    private static bool IsWithoutRowId(SqlNode createStatement)
+    {
+        // Table options follow the column definitions group
+        for (int i = 4; i < createStatement.Children.Count; i++)
+        {
+            if (createStatement.Is(i, "WITHOUT") && createStatement.Is(i + 1, "ROWID"))
+                return true;
+        }
+
+        return false;
     }
 }
