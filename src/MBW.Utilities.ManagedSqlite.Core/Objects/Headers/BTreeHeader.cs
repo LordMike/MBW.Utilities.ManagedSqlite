@@ -1,4 +1,4 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Internal;
+﻿using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
@@ -17,24 +17,18 @@ internal struct BTreeHeader
 
     public uint RightMostPointer;
 
-    public static BTreeHeader Parse(ReaderBase reader)
+    public static BTreeHeader Parse(byte[] page, int length, ref int pos)
     {
-        reader.CheckSize(8);
-
         BTreeHeader res = new BTreeHeader();
 
-        res.Type = (BTreeType)reader.ReadByte();
-        res.FirstFreeBlock = reader.ReadUInt16();
-        res.CellCount = reader.ReadUInt16();
-        res.CellContentBegin = reader.ReadUInt16();
-        res.CellContentFragmentedFreeBytes = reader.ReadByte();
+        res.Type = (BTreeType)ByteArrayReader.ReadByte(page, length, ref pos);
+        res.FirstFreeBlock = ByteArrayReader.ReadUInt16(page, length, ref pos);
+        res.CellCount = ByteArrayReader.ReadUInt16(page, length, ref pos);
+        res.CellContentBegin = ByteArrayReader.ReadUInt16(page, length, ref pos);
+        res.CellContentFragmentedFreeBytes = ByteArrayReader.ReadByte(page, length, ref pos);
 
         if (res.Type == BTreeType.InteriorIndexBtreePage || res.Type == BTreeType.InteriorTableBtreePage)
-        {
-            reader.CheckSize(sizeof(uint));
-
-            res.RightMostPointer = reader.ReadUInt32();
-        }
+            res.RightMostPointer = ByteArrayReader.ReadUInt32(page, length, ref pos);
 
         return res;
     }

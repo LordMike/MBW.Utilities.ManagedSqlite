@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.IO;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using Xunit;
 
@@ -102,6 +103,11 @@ public class ReaderBaseVarInt_Tests
         skipReader.SkipVarInt();
 
         Assert.Equal(expectedLength, skipReader.Position);
+
+        // The byte-array decoder used for pages and records must agree
+        int pos = 0;
+        Assert.Equal(expectedValue, ByteArrayReader.ReadVarInt(data, data.Length, ref pos));
+        Assert.Equal(expectedLength, pos);
     }
 
     [Theory]
@@ -119,5 +125,15 @@ public class ReaderBaseVarInt_Tests
     public void ReadVarIntKnownEncodings(byte[] encoded, long expected)
     {
         AssertDecodes(encoded, expected, encoded.Length);
+    }
+
+    [Fact]
+    public void ByteArrayReadVarIntPastLengthThrows()
+    {
+        // A varint whose continuation bit points past the readable length, as in a truncated record
+        byte[] data = { 0x81, 0x81, 0x00 };
+        int pos = 0;
+
+        Assert.Throws<EndOfStreamException>(() => ByteArrayReader.ReadVarInt(data, 2, ref pos));
     }
 }
