@@ -1,4 +1,5 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Internal;
+﻿using MBW.Utilities.ManagedSqlite.Core.Helpers;
+using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Objects;
@@ -16,16 +17,16 @@ internal class BTreeInteriorTablePage : BTreePage
 
     }
 
-    protected override void ParseInternal()
+    protected override void ParseInternal(byte[] data, int length)
     {
         Cells = new Cell[CellOffsets.Length];
 
         for (int i = 0; i < Cells.Length; i++)
         {
-            Reader.SeekPage(Page, CellOffsets[i]);
+            int pos = CellOffsets[i];
 
-            uint leftPagePointer = Reader.ReadUInt32();
-            long intKey = Reader.ReadVarInt();
+            uint leftPagePointer = ByteArrayReader.ReadUInt32(data, length, ref pos);
+            long intKey = ByteArrayReader.ReadVarInt(data, length, ref pos);
 
             Cells[i] = new Cell
             {

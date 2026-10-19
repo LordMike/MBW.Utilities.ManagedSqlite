@@ -23,6 +23,8 @@ public class ReaderBase : IDisposable
 
     private Encoding _encoding;
 
+    private byte[] _pageBuffer;
+
     public uint PageSize { get; private set; }
 
     /// <summary>
@@ -158,6 +160,23 @@ public class ReaderBase : IDisposable
         position += offset;
 
         SetPositionAndCheckSize(position, (uint)(PageSize - offset));
+    }
+
+    /// <summary>
+    /// Reads a whole page into a buffer owned by this reader. The buffer is overwritten by the next call, so callers
+    /// must be done with it before reading another page.
+    /// </summary>
+    internal byte[] ReadPage(uint page)
+    {
+        SeekPage(page);
+
+        if (_pageBuffer == null || _pageBuffer.Length != PageSize)
+            _pageBuffer = new byte[PageSize];
+
+        if (Read(_pageBuffer, 0, (int)PageSize) != PageSize)
+            throw new EndOfStreamException();
+
+        return _pageBuffer;
     }
 
     internal void Skip(uint bytes)
