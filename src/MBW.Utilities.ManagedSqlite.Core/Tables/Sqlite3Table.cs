@@ -28,47 +28,49 @@ public class Sqlite3Table
 
     public IEnumerable<Sqlite3Row> EnumerateRows()
     {
-        IEnumerable<BTreeCellData> cells = BTreeTools.WalkTableBTree(RootPage);
-
         byte[] buffer = null;
         long[] serialTypes = null;
 
-        foreach (BTreeCellData cell in cells)
+        foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
-            // Read the whole payload once, then decode it from memory
-            int payloadSize = checked((int)cell.Cell.DataSize);
-            byte[] payload;
-            if (payloadSize <= MaxReusedBufferSize)
+            BTreeLeafTablePage.Cell[] cells = leaf.Cells;
+            for (int i = 0; i < cells.Length; i++)
             {
-                if (buffer == null || buffer.Length < payloadSize)
-                    buffer = new byte[RoundUpToPowerOfTwo(payloadSize)];
+                // Read the whole payload once, then decode it from memory
+                int payloadSize = checked((int)cells[i].DataSize);
+                byte[] payload;
+                if (payloadSize <= MaxReusedBufferSize)
+                {
+                    if (buffer == null || buffer.Length < payloadSize)
+                        buffer = new byte[RoundUpToPowerOfTwo(payloadSize)];
 
-                payload = buffer;
-            }
-            else
-            {
-                payload = new byte[payloadSize];
-            }
+                    payload = buffer;
+                }
+                else
+                {
+                    payload = new byte[payloadSize];
+                }
 
-            ushort dataOffset = (ushort)(cell.CellOffset + cell.Cell.CellHeaderSize);
-            if (cell.Cell.FirstOverflowPage == 0)
-            {
-                // All data is on this page
-                _reader.SeekPage(cell.Page, dataOffset);
-                if (_reader.Read(payload, 0, payloadSize) != payloadSize)
-                    throw new EndOfStreamException();
-            }
-            else
-            {
-                // The data continues on overflow pages
-                using SqliteDataStream dataStream = new SqliteDataStream(_reader, cell.Page, dataOffset,
-                    cell.Cell.DataSizeInCell, cell.Cell.FirstOverflowPage, cell.Cell.DataSize);
+                ushort dataOffset = (ushort)(leaf.CellOffsets[i] + cells[i].CellHeaderSize);
+                if (cells[i].FirstOverflowPage == 0)
+                {
+                    // All data is on this page
+                    _reader.SeekPage(leaf.Page, dataOffset);
+                    if (_reader.Read(payload, 0, payloadSize) != payloadSize)
+                        throw new EndOfStreamException();
+                }
+                else
+                {
+                    // The data continues on overflow pages
+                    using SqliteDataStream dataStream = new SqliteDataStream(_reader, leaf.Page, dataOffset,
+                        cells[i].DataSizeInCell, cells[i].FirstOverflowPage, cells[i].DataSize);
 
-                if (dataStream.ReadFully(payload, 0, payloadSize) != payloadSize)
-                    throw new EndOfStreamException();
-            }
+                    if (dataStream.ReadFully(payload, 0, payloadSize) != payloadSize)
+                        throw new EndOfStreamException();
+                }
 
-            yield return new Sqlite3Row(this, cell.Cell.RowId, DecodeRecord(payload, payloadSize, ref serialTypes));
+                yield return new Sqlite3Row(this, cells[i].RowId, DecodeRecord(payload, payloadSize, ref serialTypes));
+            }
         }
     }
 
