@@ -66,16 +66,16 @@ public class Sqlite3Database : IDisposable
     private static void ValidateHeader(DatabaseHeader header)
     {
         // https://www.sqlite.org/fileformat.html#page_size
-        // A power of two between 512 and 32768, or the value 1 which means 65536
+        // A power of two between 512 and 65536. DatabaseHeader.Parse has already mapped the stored value 1 to 65536.
         uint pageSize = header.PageSize;
-        bool validPageSize = pageSize == 1 || (pageSize >= 512 && pageSize <= 65536 && (pageSize & (pageSize - 1)) == 0);
+        bool validPageSize = pageSize >= 512 && pageSize <= 65536 && (pageSize & (pageSize - 1)) == 0;
 
         if (!validPageSize)
             throw new SqliteCorruptException($"invalid page size {pageSize}", structure: "database header");
 
         // https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
         // The usable size of a page may not be less than 480
-        uint usableSize = (pageSize == 1 ? 65536 : pageSize) - header.ReservedSpaceAtEndOfPage;
+        uint usableSize = pageSize - header.ReservedSpaceAtEndOfPage;
         if (usableSize < 480)
             throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {pageSize}, reserved space {header.ReservedSpaceAtEndOfPage})", structure: "database header");
     }

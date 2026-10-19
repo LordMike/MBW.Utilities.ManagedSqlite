@@ -3,7 +3,7 @@ using System;
 namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 
 /// <summary>
-/// Patches the structures of an in-memory SQLite database file, to build named corruption cases.
+/// Patches the structures of a copy of an in-memory SQLite database file, to build named corruption cases.
 /// See https://www.sqlite.org/fileformat.html for the layout.
 /// </summary>
 internal sealed class DbPatcher
@@ -28,7 +28,7 @@ internal sealed class DbPatcher
     /// <summary>
     /// The offset of the b-tree page header, which follows the 100 byte database header on page 1
     /// </summary>
-    public int BTreeHeaderOffset(uint page) => PageOffset(page) + (page == 1 ? 100 : 0);
+    private int BTreeHeaderOffset(uint page) => PageOffset(page) + (page == 1 ? 100 : 0);
 
     // Database header
 
@@ -36,15 +36,9 @@ internal sealed class DbPatcher
 
     public DbPatcher SetReservedSpace(byte value) => WriteByte(20, value);
 
-    public DbPatcher SetMagicByte(int index, byte value) => WriteByte(index, value);
-
     // B-tree page header
 
-    public byte GetPageType(uint page) => Data[BTreeHeaderOffset(page)];
-
     public DbPatcher SetPageType(uint page, byte type) => WriteByte(BTreeHeaderOffset(page), type);
-
-    public ushort GetCellCount(uint page) => ReadUInt16(BTreeHeaderOffset(page) + 3);
 
     public DbPatcher SetCellCount(uint page, ushort count) => WriteUInt16(BTreeHeaderOffset(page) + 3, count);
 
@@ -54,11 +48,8 @@ internal sealed class DbPatcher
         return ReadUInt32(BTreeHeaderOffset(page) + 8);
     }
 
-    public DbPatcher SetRightMostPointer(uint page, uint value)
-    {
-        // Writing the field is allowed on any page, so a leaf can be turned into an interior page
-        return WriteUInt32(BTreeHeaderOffset(page) + 8, value);
-    }
+    // Writing the field is allowed on any page, so a leaf can be turned into an interior page
+    public DbPatcher SetRightMostPointer(uint page, uint value) => WriteUInt32(BTreeHeaderOffset(page) + 8, value);
 
     /// <summary>
     /// Turns a page into an interior table page without cells, whose only child is <paramref name="rightMostPointer"/>
@@ -73,7 +64,7 @@ internal sealed class DbPatcher
     /// <summary>
     /// The page-relative offset of a cell, from the cell pointer array
     /// </summary>
-    public ushort GetCellOffset(uint page, int cell)
+    private ushort GetCellOffset(uint page, int cell)
     {
         int headerSize = IsInterior(page) ? 12 : 8;
         return ReadUInt16(BTreeHeaderOffset(page) + headerSize + 2 * cell);
@@ -98,7 +89,7 @@ internal sealed class DbPatcher
     /// </summary>
     public int GetRecordOffset(uint page, int cell, out long payloadSize)
     {
-        if (GetPageType(page) != 0x0D)
+        if (Data[BTreeHeaderOffset(page)] != 0x0D)
             throw new InvalidOperationException($"Page {page} is not a leaf table page");
 
         int pos = PageOffset(page) + GetCellOffset(page, cell);
@@ -111,7 +102,7 @@ internal sealed class DbPatcher
     /// <summary>
     /// The file offset of a leaf cell's first overflow page pointer
     /// </summary>
-    public int GetOverflowPointerOffset(uint page, int cell)
+    private int GetOverflowPointerOffset(uint page, int cell)
     {
         int recordOffset = GetRecordOffset(page, cell, out long p);
 
@@ -124,8 +115,7 @@ internal sealed class DbPatcher
         if (p <= x)
             throw new InvalidOperationException($"Cell {cell} on page {page} does not overflow");
 
-        int local = k <= x ? k : m;
-        return recordOffset + local;
+        return recordOffset + (k <= x ? k : m);
     }
 
     public uint GetOverflowPointer(uint page, int cell) => ReadUInt32(GetOverflowPointerOffset(page, cell));
@@ -134,12 +124,9 @@ internal sealed class DbPatcher
 
     // File
 
-    public DbPatcher TruncateToPages(int pages)
+    public DbPatcher Truncate(int length)
     {
-        byte[] res = new byte[pages * PageSize];
-        Array.Copy(Data, res, res.Length);
-        Data = res;
-
+        Data = Data.AsSpan(0, length).ToArray();
         return this;
     }
 
@@ -151,7 +138,7 @@ internal sealed class DbPatcher
         return this;
     }
 
-    public DbPatcher WriteUInt16(int offset, ushort value)
+    private DbPatcher WriteUInt16(int offset, ushort value)
     {
         Data[offset] = (byte)(value >> 8);
         Data[offset + 1] = (byte)value;
@@ -169,7 +156,7 @@ internal sealed class DbPatcher
 
     private ushort ReadUInt16(int offset) => (ushort)((Data[offset] << 8) | Data[offset + 1]);
 
-    private uint ReadUInt32(int offset) => ((uint)Data[offset] << 24) | ((uint)Data[offset + 1] << 16) | ((uint)Data[offset + 2] << 8) | Data[offset + 3];
+    public uint ReadUInt32(int offset) => ((uint)Data[offset] << 24) | ((uint)Data[offset + 1] << 16) | ((uint)Data[offset + 2] << 8) | Data[offset + 3];
 
     private long ReadVarInt(ref int pos)
     {
@@ -185,7 +172,7 @@ internal sealed class DbPatcher
         return (res << 8) | Data[pos++];
     }
 
-    private bool IsInterior(uint page) => GetPageType(page) == 0x05 || GetPageType(page) == 0x02;
+    private bool IsInterior(uint page) => Data[BTreeHeaderOffset(page)] == 0x05 || Data[BTreeHeaderOffset(page)] == 0x02;
 
     private void RequireInterior(uint page)
     {

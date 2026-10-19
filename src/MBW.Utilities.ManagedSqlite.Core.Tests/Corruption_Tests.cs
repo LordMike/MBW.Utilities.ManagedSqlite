@@ -11,80 +11,148 @@ using Xunit;
 namespace MBW.Utilities.ManagedSqlite.Core.Tests;
 
 /// <summary>
-/// Named, structure-aware corruption cases. Each one patches a few bytes of Corruption.db (see Corruption_Create.sql)
-/// in memory and checks the contract: reading terminates, and malformed input surfaces as <see cref="SqliteCorruptException"/>.
-/// Every case runs with a timeout, so a regression (such as a page cycle) fails the test instead of hanging the run.
+/// Named, structure-aware corruption cases. Each one patches a few bytes of a database SQLite builds from
+/// <see cref="Script"/> and checks the contract: reading terminates, and malformed input surfaces as
+/// <see cref="SqliteCorruptException"/>. Every case runs with a timeout, so a regression (such as a page cycle) fails
+/// the test instead of hanging the run.
 /// </summary>
 public class Corruption_Tests
 {
+    /// <summary>
+    /// 512 byte pages and 300 byte rows give one row per leaf page, so Deep is a 3-level b-tree (root interior ->
+    /// interior -> leaf). Small fits on one leaf page, and its row 2 overflows into a chain of overflow pages.
+    /// </summary>
+    private const string Script = @"
+PRAGMA page_size = 512;
+CREATE TABLE Deep (Id INTEGER PRIMARY KEY, Payload TEXT);
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 120)
+INSERT INTO Deep SELECT i, printf('%300d', i) FROM n;
+CREATE TABLE Small (Id INTEGER PRIMARY KEY, Name TEXT, Data BLOB);
+INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'three', x'0102');";
+
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
-    private static readonly byte[] Fixture = LoadFixture();
+    private static readonly byte[] Base = SqliteParity.Build(Script);
 
     private const uint MasterRoot = 1;
+    private static readonly uint DeepRoot = RootPage("Deep");
+    private static readonly uint DeepLeft = new DbPatcher(Base).GetChildPointer(DeepRoot, 0);
+    private static readonly uint DeepRight = new DbPatcher(Base).GetRightMostPointer(DeepRoot);
+    private static readonly uint DeepFirstLeaf = new DbPatcher(Base).GetChildPointer(DeepLeft, 0);
+    private static readonly uint SmallRoot = RootPage("Small");
+    private static readonly uint PastTheEnd = (uint)new DbPatcher(Base).PageCount + 1;
 
-    /// <summary>
-    /// Root of the "Deep" table: an interior page whose children are the interior pages <see cref="DeepLeft"/>
-    /// and <see cref="DeepRight"/>, which point to leaves holding one row each
-    /// </summary>
-    private const uint DeepRoot = 2;
-
-    private static readonly uint DeepLeft = new DbPatcher(Fixture).GetChildPointer(DeepRoot, 0);
-    private static readonly uint DeepRight = new DbPatcher(Fixture).GetRightMostPointer(DeepRoot);
-    private static readonly uint DeepFirstLeaf = new DbPatcher(Fixture).GetChildPointer(DeepLeft, 0);
-
-    /// <summary>
-    /// Root of the "Small" table, a single leaf with 3 rows. Row 2 (cell 1) overflows.
-    /// </summary>
-    private static readonly uint SmallRoot = GetRootPage("Small");
-
-    private static byte[] LoadFixture()
+    private static uint RootPage(string table)
     {
-        using Stream stream = ResourceHelper.OpenResource("MBW.Utilities.ManagedSqlite.Core.Tests.Data.Corruption.db");
-        using MemoryStream ms = new MemoryStream();
-        stream.CopyTo(ms);
-
-        return ms.ToArray();
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(Base));
+        return db.GetTable(table).SchemaDefinition.RootPage;
     }
 
-    private static uint GetRootPage(string table)
+    /// <summary>
+    /// Each case: the <see cref="SqliteCorruptException.Structure"/> it must report, so the case fails if a later,
+    /// unrelated check is what catches it, and the patch that damages the database
+    /// </summary>
+    private static readonly Dictionary<string, (string Structure, Action<DbPatcher> Patch)> Cases = new()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(Fixture));
-        return db.GetTables().Single(s => s.Name == table).RootPage;
+        // Database header
+        ["header: bad magic"] = ("magic bytes", p => p.WriteByte(0, (byte)'X')),
+        // A page size is a power of two from 512 to 65536. The stored value 1 means 65536, read by Structure_Tests.
+        ["header: page size 0, below 512"] = ("database header", p => p.SetPageSizeField(0)),
+        ["header: page size 1000, not a power of two"] = ("database header", p => p.SetPageSizeField(1000)),
+        ["header: usable size below 480"] = ("database header", p => p.SetReservedSpace(255)),
+
+        // File length
+        ["truncated: empty file"] = ("file length", p => p.Truncate(0)),
+        ["truncated: inside the header"] = ("file length", p => p.Truncate(50)),
+        ["truncated: after the schema page"] = ("file length", p => p.Truncate(p.PageSize)),
+        ["truncated: last page missing"] = ("file length", p => p.Truncate((p.PageCount - 1) * p.PageSize)),
+
+        // B-tree page headers
+        ["page type: unknown"] = ("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01)),
+        ["page type: index page inside a table b-tree"] = ("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A)),
+        ["cell count: pointer array past the end of the file"] = ("file length", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF)),
+        // Page 1's b-tree header follows the 100 byte database header: 100 + 8 + 2 * 250 = 608 is past the page
+        ["cell count: pointer array past the end of the schema page"] = ("b-tree page header", p => p.SetCellCount(MasterRoot, 250)),
+        // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells
+        ["cell count: pointers overlap the cells"] = ("cell pointer array", p => p.SetCellCount(SmallRoot, 249)),
+
+        // Child pointers
+        ["cycle: right-most pointer back to the root"] = ("right-most pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot)),
+        // The first leaf is also listed as a child of the right subtree, which would read its rows twice
+        ["shared page: child of two parents"] = ("interior cell child pointer", p => p.SetChildPointer(DeepRight, 0, DeepFirstLeaf)),
+        // Leaves become a chain of interior pages with only a right-most child each: no cycle, but far deeper than any
+        // real b-tree. The left interior page is cut down to only the chain, so no page is reached twice.
+        ["depth: chain of 31 interior pages"] = ("right-most pointer", p =>
+        {
+            p.MakeEmptyInterior(DeepLeft, DeepFirstLeaf);
+            for (uint page = DeepFirstLeaf; page < DeepFirstLeaf + 30; page++)
+                p.MakeEmptyInterior(page, page + 1);
+        }),
+        ["child pointer: page 1, the schema root"] = ("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, 1)),
+        ["child pointer: past the end"] = ("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd)),
+        // Every interior page has a right-most child
+        ["right-most pointer: 0"] = ("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0)),
+        ["schema root page: 0"] = ("page number", p => SetDeepRootPageInSchema(p, 0)),
+        // The 1-byte integer 0xFF is -1
+        ["schema root page: -1"] = ("page number", p => SetDeepRootPageInSchema(p, 0xFF)),
+
+        // Row 1 is the last cell on Small's page. Its payload size (the 1-byte varint 7, before the rowid varint and
+        // the record) becomes 127, which no longer fits in the page.
+        ["leaf cell: payload past the end of the page"] = ("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 0x7F)),
+
+        // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
+        ["record: reserved serial type 10"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 1, 10)),
+        ["record: reserved serial type 11"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 1, 11)),
+        ["record: header larger than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 0x7F)),
+        // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 127 is a 57 byte text, past any value that fits.
+        ["record: serial type larger than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 127)),
+        // Serial type 21 is a 4 byte text, one byte more than the payload holds
+        ["record: values longer than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 21)),
+        // The "type" column of the first schema row holds 'table' (serial type 23, text). 22 is a 5 byte blob.
+        ["record: schema type stored as a blob"] = (null, p => p.WriteByte(p.GetRecordOffset(MasterRoot, 0, out _) + 1, 22)),
+
+        // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
+        ["overflow: chain ends early"] = ("overflow chain", p => p.SetOverflowPointer(SmallRoot, 1, 0)),
+        ["overflow: pointer past the end"] = ("page number", p => p.SetOverflowPointer(SmallRoot, 1, PastTheEnd)),
+    };
+
+    public static TheoryData<string> CaseNames()
+    {
+        TheoryData<string> res = new TheoryData<string>();
+        foreach (string name in Cases.Keys)
+            res.Add(name);
+
+        return res;
     }
 
-    private static DbPatcher Patch() => new DbPatcher(Fixture);
+    /// <summary>
+    /// The first schema row is Deep's. Its rootpage column is a 1-byte integer that follows "table", "Deep", "Deep".
+    /// </summary>
+    private static void SetDeepRootPageInSchema(DbPatcher patcher, byte value)
+    {
+        int record = patcher.GetRecordOffset(MasterRoot, 0, out _);
+        Assert.Equal(1, patcher.Data[record + 4]);
+
+        int rootPageValue = record + patcher.Data[record] + 5 + 4 + 4;
+        Assert.Equal(DeepRoot, patcher.Data[rootPageValue]);
+        patcher.WriteByte(rootPageValue, value);
+    }
 
     /// <summary>
     /// Opens the database, lists its tables and reads every row of every table
     /// </summary>
-    private static Dictionary<string, int> ReadEverything(byte[] data)
+    private static void ReadEverything(byte[] data)
     {
-        Dictionary<string, int> rowCounts = new Dictionary<string, int>();
-
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
 
-        foreach (Sqlite3SchemaRow schema in db.GetTables().ToList())
-        {
-            if (schema.Type != "table")
-                continue;
-
-            rowCounts[schema.Name] = ReadTable(db, schema.Name);
-        }
-
-        return rowCounts;
+        foreach (Sqlite3SchemaRow schema in db.GetTables().Where(s => s.Type == "table").ToList())
+            ReadTable(db, schema.Name);
     }
 
-    private static int ReadTable(Sqlite3Database db, string table)
+    private static void ReadTable(Sqlite3Database db, string table)
     {
-        int count = 0;
         foreach (Sqlite3Row row in db.GetTable(table).EnumerateRows())
-        {
             Assert.NotNull(row.ColumnData);
-            count++;
-        }
-
-        return count;
     }
 
     /// <summary>
@@ -107,16 +175,6 @@ public class Corruption_Tests
         return null;
     }
 
-    private static SqliteCorruptException AssertCorrupt(Action action)
-    {
-        Exception ex = RunBounded(action);
-
-        Assert.NotNull(ex);
-        return Assert.IsType<SqliteCorruptException>(ex);
-    }
-
-    private static SqliteCorruptException AssertCorrupt(DbPatcher patched) => AssertCorrupt(() => ReadEverything(patched.Data));
-
     /// <summary>
     /// Asserts that the action terminates, and that if it fails, it fails with a <see cref="SqliteException"/>
     /// </summary>
@@ -128,187 +186,32 @@ public class Corruption_Tests
             Assert.IsAssignableFrom<SqliteException>(ex);
     }
 
-    [Fact]
-    public void Fixture_IsReadable()
-    {
-        Assert.Equal(0x05, Patch().GetPageType(DeepLeft));
-        Assert.Equal(0x05, Patch().GetPageType(DeepRight));
-        Assert.Equal(0x0D, Patch().GetPageType(DeepFirstLeaf));
-        Assert.Equal(0x0D, Patch().GetPageType(SmallRoot));
-
-        Exception ex = RunBounded(() =>
-        {
-            Dictionary<string, int> counts = ReadEverything(Fixture);
-            Assert.Equal(120, counts["Deep"]);
-            Assert.Equal(3, counts["Small"]);
-        });
-
-        Assert.Null(ex);
-    }
-
-    // Database header
-
     [Theory]
-    [InlineData((ushort)0)]
-    [InlineData((ushort)3)]
-    [InlineData((ushort)100)]
-    [InlineData((ushort)256)]
-    [InlineData((ushort)1000)]
-    [InlineData((ushort)(100000 & 0xFFFF))]
-    public void Header_InvalidPageSize(ushort pageSize)
+    [MemberData(nameof(CaseNames))]
+    public void Corruption_ThrowsSqliteCorruptException(string name)
     {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetPageSizeField(pageSize));
-        Assert.Equal("database header", ex.Structure);
+        (string structure, Action<DbPatcher> patch) = Cases[name];
+        DbPatcher patcher = new DbPatcher(Base);
+        patch(patcher);
+
+        Exception ex = RunBounded(() => ReadEverything(patcher.Data));
+
+        Assert.Equal(structure, Assert.IsType<SqliteCorruptException>(ex).Structure);
     }
 
     [Fact]
-    public void Header_PageSizeOne_IsAccepted()
+    public void Corruption_OtherTablesStillReadLikeSqlite()
     {
-        // 1 is how a 65536 byte page size is stored. It is valid, so it must not be rejected as an invalid page
-        // size. This file's pages are 512 bytes though, so reading may still fail, but only in a defined way.
-        AssertTerminatesGracefully(() => ReadEverything(Patch().SetPageSizeField(1).Data));
-    }
-
-    [Fact]
-    public void Header_UsableSizeBelow480()
-    {
-        // 512 - 255 = 257 usable bytes per page, below SQLite's minimum of 480
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetReservedSpace(255));
-        Assert.Equal("database header", ex.Structure);
-    }
-
-    [Fact]
-    public void Header_BadMagic()
-    {
-        AssertCorrupt(Patch().SetMagicByte(0, (byte)'X'));
-    }
-
-    // Truncation
-
-    public static IEnumerable<object[]> TruncationPoints()
-    {
-        DbPatcher patcher = new DbPatcher(Fixture);
-
-        // Every page of the fixture is in use, so cutting the file at any page boundary loses data
-        for (int pages = 0; pages < patcher.PageCount; pages++)
-            yield return new object[] { pages };
-    }
-
-    [Theory]
-    [MemberData(nameof(TruncationPoints))]
-    public void Truncated_AtPageBoundary(int pages)
-    {
-        AssertCorrupt(Patch().TruncateToPages(pages));
-    }
-
-    [Fact]
-    public void Truncated_InsideHeader()
-    {
-        DbPatcher patcher = Patch();
-        byte[] data = patcher.Data.Take(50).ToArray();
-
-        AssertCorrupt(() => ReadEverything(data));
-    }
-
-    // B-tree page headers
-
-    [Theory]
-    [InlineData((byte)0x00)]
-    [InlineData((byte)0x01)]
-    [InlineData((byte)0xFF)]
-    public void PageType_UnknownOnRoot(byte type)
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetPageType(DeepRoot, type));
-        Assert.Equal(DeepRoot, ex.Page);
-    }
-
-    [Theory]
-    [InlineData((byte)0x00)]
-    [InlineData((byte)0x01)]
-    [InlineData((byte)0xFF)]
-    public void PageType_UnknownOnLeaf(byte type)
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetPageType(DeepFirstLeaf, type));
-        Assert.Equal(DeepFirstLeaf, ex.Page);
-    }
-
-    [Theory]
-    [InlineData((byte)0x02)]
-    [InlineData((byte)0x0A)]
-    public void PageType_IndexPageInsideTableTree(byte type)
-    {
-        AssertCorrupt(Patch().SetPageType(DeepFirstLeaf, type));
-    }
-
-    [Fact]
-    public void CellCount_HugeOnRoot()
-    {
-        AssertCorrupt(Patch().SetCellCount(DeepRoot, 0xFFFF));
-    }
-
-    [Fact]
-    public void CellCount_HugeOnLeaf()
-    {
-        AssertCorrupt(Patch().SetCellCount(DeepFirstLeaf, 0xFFFF));
-    }
-
-    [Fact]
-    public void CellCount_HugeOnSchemaPage()
-    {
-        AssertCorrupt(Patch().SetCellCount(MasterRoot, 0xFFFF));
-    }
-
-    [Fact]
-    public void CellCount_JustTooManyForPage()
-    {
-        // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells
-        AssertCorrupt(Patch().SetCellCount(SmallRoot, 249));
-    }
-
-    // Cycles and bad child pointers
-
-    [Fact]
-    public void Cycle_RootRightMostPointerToItself()
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetRightMostPointer(DeepRoot, DeepRoot));
-        Assert.Equal("right-most pointer", ex.Structure);
-    }
-
-    [Fact]
-    public void Cycle_ChildPointerToItself()
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetChildPointer(DeepLeft, 0, DeepLeft));
-        Assert.Equal(DeepLeft, ex.Page);
-        Assert.Equal("interior cell child pointer", ex.Structure);
-    }
-
-    [Fact]
-    public void Cycle_RightMostPointerToRoot()
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetRightMostPointer(DeepLeft, DeepRoot));
-        Assert.Equal(DeepLeft, ex.Page);
-    }
-
-    [Fact]
-    public void Cycle_ChildPointerToRoot()
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetChildPointer(DeepRight, 0, DeepRoot));
-        Assert.Equal(DeepRight, ex.Page);
-    }
-
-    [Fact]
-    public void Cycle_OtherTablesStillReadable()
-    {
-        byte[] data = Patch().SetRightMostPointer(DeepLeft, DeepRoot).Data;
+        byte[] data = new DbPatcher(Base).SetRightMostPointer(DeepLeft, DeepRoot).Data;
 
         Exception ex = RunBounded(() =>
         {
             using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
 
-            Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep"));
+            Assert.Equal(DeepLeft, Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep")).Page);
 
             // The failure is not sticky: the same database still reads its other table, and fails the same way again
-            Assert.Equal(3, ReadTable(db, "Small"));
+            SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small");
             Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep"));
         });
 
@@ -316,145 +219,32 @@ public class Corruption_Tests
     }
 
     [Fact]
-    public void SharedPage_ChildVisitedTwice()
-    {
-        // The first leaf is also listed as a child of the right subtree, which would read its rows twice
-        AssertCorrupt(Patch().SetChildPointer(DeepRight, 0, DeepFirstLeaf));
-    }
-
-    [Fact]
-    public void DepthLimit_LongChainOfInteriorPages()
-    {
-        // Turn leaves into a chain of interior pages with only a right-most child each: no cycle, but far deeper
-        // than any real b-tree. The left interior page is cut down to only the chain, so no page is reached twice.
-        DbPatcher patcher = Patch().MakeEmptyInterior(DeepLeft, DeepFirstLeaf);
-        for (uint page = DeepFirstLeaf; page < DeepFirstLeaf + 30; page++)
-            patcher.MakeEmptyInterior(page, page + 1);
-
-        SqliteCorruptException ex = AssertCorrupt(patcher);
-        Assert.Contains("deeper", ex.Message);
-    }
-
-    [Theory]
-    [InlineData(0u)]
-    [InlineData(1u)]
-    [InlineData(129u)]
-    [InlineData(100000u)]
-    [InlineData(uint.MaxValue)]
-    public void ChildPointer_OutOfRange(uint child)
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetChildPointer(DeepLeft, 0, child));
-        Assert.Equal(DeepLeft, ex.Page);
-    }
-
-    [Theory]
-    [InlineData(0u)]
-    [InlineData(1u)]
-    [InlineData(129u)]
-    [InlineData(uint.MaxValue)]
-    public void RightMostPointer_OutOfRange(uint child)
-    {
-        SqliteCorruptException ex = AssertCorrupt(Patch().SetRightMostPointer(DeepRoot, child));
-        Assert.Equal(DeepRoot, ex.Page);
-    }
-
-    [Theory]
-    [InlineData(0u)]
-    [InlineData(129u)]
-    public void RootPage_OutOfRange(uint rootPage)
-    {
-        // Point the "Deep" schema row at a page that does not exist: the rootpage column is a 1-byte integer
-        DbPatcher patcher = Patch();
-        int record = patcher.GetRecordOffset(MasterRoot, 0, out _);
-
-        // Serial types: type, name, tbl_name, rootpage. The rootpage value follows "table", "Deep", "Deep".
-        Assert.Equal(1, patcher.Data[record + 4]);
-        int rootPageValue = record + patcher.Data[record] + 5 + 4 + 4;
-        Assert.Equal(DeepRoot, patcher.Data[rootPageValue]);
-        patcher.WriteByte(rootPageValue, (byte)rootPage);
-
-        AssertCorrupt(patcher);
-    }
-
-    // Records
-
-    [Theory]
-    [InlineData(10)]
-    [InlineData(11)]
-    public void Record_ReservedSerialType(byte serialType)
-    {
-        DbPatcher patcher = Patch();
-        int record = patcher.GetRecordOffset(SmallRoot, 0, out _);
-        patcher.WriteByte(record + 1, serialType);
-
-        SqliteCorruptException ex = AssertCorrupt(patcher);
-        Assert.Equal(SmallRoot, ex.Page);
-        Assert.Equal("record header", ex.Structure);
-    }
-
-    [Fact]
-    public void Record_HeaderLargerThanPayload()
-    {
-        DbPatcher patcher = Patch();
-        int record = patcher.GetRecordOffset(SmallRoot, 0, out _);
-        patcher.WriteByte(record, 0x7F);
-
-        AssertCorrupt(patcher);
-    }
-
-    [Fact]
-    public void Record_ValueLongerThanPayload()
-    {
-        // Row 1's name is 'one' (serial type 19). 127 claims a 57 byte text, which would read into the next cell.
-        DbPatcher patcher = Patch();
-        int record = patcher.GetRecordOffset(SmallRoot, 0, out _);
-        Assert.Equal(19, patcher.Data[record + 2]);
-        patcher.WriteByte(record + 2, 127);
-
-        AssertCorrupt(patcher);
-    }
-
-    [Fact]
-    public void Record_SchemaTypeStoredAsBlob()
-    {
-        // The "type" column of the first schema row holds 'table' (text, serial type 23). 22 is a 5 byte blob.
-        DbPatcher patcher = Patch();
-        int record = patcher.GetRecordOffset(MasterRoot, 0, out _);
-        Assert.Equal(23, patcher.Data[record + 1]);
-        patcher.WriteByte(record + 1, 22);
-
-        AssertCorrupt(patcher);
-    }
-
-    // Overflow chains
-
-    [Fact]
-    public void Overflow_ChainEndsEarly()
-    {
-        // Without its overflow pages the blob would come back zero-filled
-        AssertCorrupt(Patch().SetOverflowPointer(SmallRoot, 1, 0));
-    }
-
-    [Theory]
-    [InlineData(1u)]
-    [InlineData(129u)]
-    [InlineData(uint.MaxValue)]
-    public void Overflow_PointerOutOfRange(uint page)
-    {
-        AssertCorrupt(Patch().SetOverflowPointer(SmallRoot, 1, page));
-    }
-
-    [Fact]
-    public void Overflow_ChainCycle_Terminates()
+    public void Corruption_OverflowChainCycle_Terminates()
     {
         // The second overflow page points back to the first. The chain length is bounded by the payload size, so
         // this must terminate. Detecting the cycle itself is a follow-up.
-        DbPatcher patcher = Patch();
+        DbPatcher patcher = new DbPatcher(Base);
         uint first = patcher.GetOverflowPointer(SmallRoot, 1);
-        uint second = (uint)((patcher.Data[patcher.PageOffset(first)] << 24) | (patcher.Data[patcher.PageOffset(first) + 1] << 16) |
-                             (patcher.Data[patcher.PageOffset(first) + 2] << 8) | patcher.Data[patcher.PageOffset(first) + 3]);
+        uint second = patcher.ReadUInt32(patcher.PageOffset(first));
         patcher.WriteUInt32(patcher.PageOffset(second), first);
 
         AssertTerminatesGracefully(() => ReadEverything(patcher.Data));
+    }
+
+    [Fact]
+    public void Corruption_RandomByteDamage_FailsGracefully()
+    {
+        // A smoke test for what the named cases miss: overwrite a few random bytes, with a fixed seed so a failure
+        // reproduces
+        Random random = new Random(20261019);
+
+        for (int i = 0; i < 300; i++)
+        {
+            DbPatcher patcher = new DbPatcher(Base);
+            for (int j = random.Next(1, 5); j > 0; j--)
+                patcher.WriteByte(random.Next(patcher.Data.Length), (byte)random.Next(256));
+
+            AssertTerminatesGracefully(() => ReadEverything(patcher.Data));
+        }
     }
 }

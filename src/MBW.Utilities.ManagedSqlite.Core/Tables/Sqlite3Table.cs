@@ -56,8 +56,8 @@ public class Sqlite3Table
             metaInfos.Clear();
 
             // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
-            int usableSize = _reader.PageSize - _reader.ReservedSpace;
-            long maxPayload = Math.Min(int.MaxValue, cell.Cell.DataSizeInCell + (long)_reader.PageCount * (usableSize - 4));
+            long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
+            long maxPayload = Math.Min(int.MaxValue, cell.Cell.DataSizeInCell + _reader.PageCount * (usableSize - 4));
             if (cell.Cell.DataSize < 0 || cell.Cell.DataSize > maxPayload)
                 throw new SqliteCorruptException($"payload size {cell.Cell.DataSize} of row {cell.Cell.RowId} is larger than the database", cell.Page, "b-tree leaf cell");
 
