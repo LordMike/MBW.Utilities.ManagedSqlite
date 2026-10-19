@@ -21,7 +21,7 @@ public static class SqlExtensions
         }
 
         if (definition == null)
-            throw new Exception();
+            throw new InvalidOperationException($"Unable to parse a table definition from the SQL of {schema.Type} '{schema.Name}'");
 
         SqlTableDefinition def = definition;
 
@@ -54,6 +54,12 @@ public static class SqlExtensions
         }
 
         value = row.ColumnData[column.Ordinal];
+
+        // SQLite writes REAL values without a fractional part as integers, and turns them back into REAL when read
+        // through a column with REAL affinity
+        if (value is long integer && column.DetectedType == typeof(double))
+            value = (double)integer;
+
         return true;
     }
 
