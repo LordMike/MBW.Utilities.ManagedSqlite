@@ -248,11 +248,9 @@ public class ReaderBase : IDisposable
             }
         }
 
-        // Read final byte
+        // Read final byte. The loop above has already left readBytes at 9 (8 bytes read + this one)
         res <<= 8;
         res += ReadByte();
-
-        readBytes++;
 
         return res;
     }
