@@ -4,6 +4,7 @@ using BenchmarkDotNet.Attributes;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using Microsoft.Data.Sqlite;
+using SQLitePCL;
 
 namespace MBW.Utilities.ManagedSqlite.Benchmarks;
 
@@ -18,10 +19,14 @@ namespace MBW.Utilities.ManagedSqlite.Benchmarks;
 /// </remarks>
 public class SchemaBenchmarks
 {
+    private const string ListTablesSql = "SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master";
+
     private NativeDatabase _native;
     private SqliteConnection _conn;
     private byte[] _image;
     private SqliteCommand _openTable;
+    private sqlite3 _rawDb;
+    private sqlite3_stmt _rawOpenTable;
     private Sqlite3Database _db;
 
     [GlobalSetup]
@@ -37,9 +42,12 @@ public class SchemaBenchmarks
         _openTable.CommandText = $"SELECT id, i, r, t, b FROM {TestDatabases.TableName}";
         _openTable.Prepare();
 
+        _rawDb = _native.OpenRaw();
+        _rawOpenTable = NativeDatabase.Prepare(_rawDb, _openTable.CommandText);
+
         _db = new Sqlite3Database(new MemoryStream(image, false));
 
-        if (NativeListTables() != ManagedListTables())
+        if (SqliteListTables() != ManagedListTables() || AdoNetListTables() != ManagedListTables())
             throw new InvalidOperationException("Native and managed disagree on the number of tables");
     }
 
@@ -47,18 +55,39 @@ public class SchemaBenchmarks
     public void Cleanup()
     {
         _openTable.Dispose();
+        _rawOpenTable.Dispose();
+        _rawDb.Dispose();
         _conn.Dispose();
         _native.Dispose();
         _db.Dispose();
     }
 
     [Benchmark(Baseline = true), BenchmarkCategory("ListTables")]
-    public int NativeListTables()
+    public int SqliteListTables()
+    {
+        int count = 0;
+        using sqlite3 db = _native.OpenRaw();
+        using sqlite3_stmt stmt = NativeDatabase.Prepare(db, ListTablesSql);
+        while (raw.sqlite3_step(stmt) == raw.SQLITE_ROW)
+        {
+            _ = raw.sqlite3_column_text(stmt, 0).utf8_to_string();
+            _ = raw.sqlite3_column_text(stmt, 1).utf8_to_string();
+            _ = raw.sqlite3_column_text(stmt, 2).utf8_to_string();
+            _ = raw.sqlite3_column_int64(stmt, 3);
+            _ = raw.sqlite3_column_text(stmt, 4).utf8_to_string();
+            count++;
+        }
+
+        return count;
+    }
+
+    [Benchmark, BenchmarkCategory("ListTables")]
+    public int AdoNetListTables()
     {
         int count = 0;
         using SqliteConnection conn = _native.Open();
         using SqliteCommand listTables = conn.CreateCommand();
-        listTables.CommandText = "SELECT type, name, tbl_name, rootpage, sql FROM sqlite_master";
+        listTables.CommandText = ListTablesSql;
 
         using SqliteDataReader reader = listTables.ExecuteReader();
         while (reader.Read())
@@ -87,7 +116,16 @@ public class SchemaBenchmarks
 
     /// <summary>Starts a query on the table, which positions SQLite on the first row, then stops.</summary>
     [Benchmark(Baseline = true), BenchmarkCategory("OpenTable")]
-    public bool NativeOpenTable()
+    public bool SqliteOpenTable()
+    {
+        bool hasRow = raw.sqlite3_step(_rawOpenTable) == raw.SQLITE_ROW;
+        raw.sqlite3_reset(_rawOpenTable);
+        return hasRow;
+    }
+
+    /// <summary>Starts a query on the table, which positions SQLite on the first row, then stops.</summary>
+    [Benchmark, BenchmarkCategory("OpenTable")]
+    public bool AdoNetOpenTable()
     {
         using SqliteDataReader reader = _openTable.ExecuteReader();
         return reader.HasRows;

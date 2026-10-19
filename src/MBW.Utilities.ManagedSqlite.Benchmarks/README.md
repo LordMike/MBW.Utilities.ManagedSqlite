@@ -1,7 +1,10 @@
 # Benchmarks
 
-BenchmarkDotNet benchmarks that run each flow through the managed reader and through real SQLite
-(Microsoft.Data.Sqlite) on the same database bytes, with SQLite as the baseline.
+BenchmarkDotNet benchmarks that run each flow three ways on the same database bytes:
+
+- `Sqlite`: real SQLite called directly through SQLitePCL (`raw.sqlite3_*`). This is the baseline.
+- `AdoNet`: real SQLite through Microsoft.Data.Sqlite, which adds the ADO.NET layer on top.
+- `Managed`: this library.
 
 ```
 dotnet run -c Release --project src/MBW.Utilities.ManagedSqlite.Benchmarks -- --filter '*'
@@ -9,12 +12,12 @@ dotnet run -c Release --project src/MBW.Utilities.ManagedSqlite.Benchmarks -- --
 
 Filter to one area with e.g. `--filter '*EnumerateRows*'`, or `--anyCategories ListTables`.
 
-| Category      | Managed                                   | Native (SQLite)                                        |
+| Category      | Managed                                   | Native (SQLite, both raw and ADO.NET)                  |
 |---------------|-------------------------------------------|--------------------------------------------------------|
 | OpenDatabase  | `new Sqlite3Database(MemoryStream)`       | open `:memory:` connection + `sqlite3_deserialize`     |
 | ListTables    | open + `GetTables()`                      | open + `SELECT ... FROM sqlite_master`, read all       |
 | OpenTable     | `GetTable("tbl")`                         | prepared `SELECT ... FROM tbl`, positioned on row 1    |
-| EnumerateRows | `EnumerateRows()` over 0/1/1000/100k rows | prepared `SELECT ... FROM tbl`, `GetValue` per column  |
+| EnumerateRows | `EnumerateRows()` over 0/1/1000/100k rows | prepared `SELECT ... FROM tbl`, every column read      |
 
 Notes:
 
@@ -27,4 +30,6 @@ Notes:
   `OpenDatabase` is not quite like for like.
 - The job runs in-process with 3 warmups and 10 iterations of about 200 ms, so each case takes roughly 3-4 s
   while keeping the error to a few percent. The large row count is 100k instead of 1M to stay under 5 s per case.
-- Setup checks that both readers return the same number of rows and tables before anything is measured.
+- Every column is read as a boxed value (long, double, string or byte[]) on all three, since that is what the
+  managed reader returns.
+- Setup checks that all readers return the same number of rows and tables before anything is measured.
