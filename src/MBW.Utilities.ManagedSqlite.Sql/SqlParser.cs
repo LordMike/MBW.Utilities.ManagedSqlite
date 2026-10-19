@@ -22,7 +22,8 @@ public static class SqlParser
 
             if (tmp.Value.Kind == SqlToken.Comma)
             {
-                if (stack.Count < 1)
+                // Commas are only meaningful inside parentheses
+                if (stack.Count < 2)
                     return false;
 
                 stack.Pop();
@@ -70,6 +71,25 @@ public static class SqlParser
     {
         tableDefinition = null;
 
+        if (sql == null)
+            return false;
+
+        try
+        {
+            return TryParseInternal(sql, out tableDefinition);
+        }
+        catch (Exception)
+        {
+            // Anything unexpected in the SQL means it could not be parsed
+            tableDefinition = null;
+            return false;
+        }
+    }
+
+    private static bool TryParseInternal(string sql, out SqlTableDefinition tableDefinition)
+    {
+        tableDefinition = null;
+
         // Parse out the SQL into series of column creation statements
         Result<TokenList<SqlToken>> tokens = SqlTokenizer.Tokenizer.TryTokenize(sql);
 
@@ -92,7 +112,7 @@ public static class SqlParser
         for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
         {
             SqlNode columnSet = columns.Children[columnIndex];
-            if (!columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
+            if (columnSet.Children == null || !columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
                 continue;
 
             string firstToken = columnSet.Children.First().GetString();
@@ -128,6 +148,11 @@ public static class SqlParser
             }
 
             name = columnSet.GetString(0);
+
+            // Duplicate column names are invalid
+            if (def.TryGetColumn(name, out _))
+                return false;
+
             string[] typeStrings = columnSet.Children.Skip(1).Where(s => s.Is(SqlToken.String))
                 .Select(s => s.GetString()).ToArray();
 

@@ -21,7 +21,7 @@ public static class SqlExtensions
         }
 
         if (definition == null)
-            throw new Exception();
+            throw new InvalidOperationException($"Unable to parse a table definition from the SQL of {schema.Type} '{schema.Name}'");
 
         SqlTableDefinition def = definition;
 
