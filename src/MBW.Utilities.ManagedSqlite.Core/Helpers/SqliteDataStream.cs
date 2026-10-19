@@ -8,8 +8,8 @@ internal class SqliteDataStream : ReadonlyStream
 {
     private readonly ReaderBase _reader;
     private uint _currentPage;
-    private ushort _dataOffset;
-    private ushort _dataLengthRemaining;
+    private uint _dataOffset;
+    private uint _dataLengthRemaining;
     private uint _nextPage;
 
     private long _position;
@@ -24,7 +24,7 @@ internal class SqliteDataStream : ReadonlyStream
     /// <param name="dataLength">The length of the initial data in the initial page</param>
     /// <param name="overflowPage">The pointer to the first overflow page</param>
     /// <param name="fullDataSize">The final length of all data in this stream</param>
-    public SqliteDataStream(ReaderBase reader, uint page, ushort dataOffset, ushort dataLength, uint overflowPage, long fullDataSize)
+    public SqliteDataStream(ReaderBase reader, uint page, uint dataOffset, uint dataLength, uint overflowPage, long fullDataSize)
     {
         _reader = reader;
         _currentPage = page;
@@ -43,14 +43,14 @@ internal class SqliteDataStream : ReadonlyStream
             return 0;
 
         // Read as much as possible on this page
-        ushort canRead = (ushort)Math.Min(count, _dataLengthRemaining);
+        int canRead = (int)Math.Min((uint)count, _dataLengthRemaining);
 
         _reader.SeekPage(_currentPage, _dataOffset);
         _reader.Read(buffer, offset, canRead);
 
         // Current page tracking
-        _dataOffset += canRead;
-        _dataLengthRemaining -= canRead;
+        _dataOffset += (uint)canRead;
+        _dataLengthRemaining -= (uint)canRead;
 
         // Global state tracking
         _position += canRead;
@@ -66,7 +66,7 @@ internal class SqliteDataStream : ReadonlyStream
             _nextPage = _reader.ReadUInt32();
 
             _dataOffset = sizeof(uint);
-            _dataLengthRemaining = (ushort)Math.Min(_reader.PageSize - _dataOffset - _reader.ReservedSpace, _fullLengthRemaining);
+            _dataLengthRemaining = (uint)Math.Min(_reader.PageSize - _dataOffset - _reader.ReservedSpace, _fullLengthRemaining);
         }
 
         return canRead;
