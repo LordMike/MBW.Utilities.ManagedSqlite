@@ -25,11 +25,9 @@ public class TableLookup_Tests
     {
         using Sqlite3Database db = OpenMixedCase();
 
-        Assert.True(db.TryGetTable(name, out Sqlite3Table tbl));
+        Sqlite3Table tbl = db.GetTable(name);
         Assert.Equal("MixedCaseTable", tbl.SchemaDefinition.Name);
         Assert.Equal(3, tbl.EnumerateRows().Count());
-
-        Assert.Equal(3, db.GetTable(name).EnumerateRows().Count());
     }
 
     [Theory]
@@ -61,10 +59,10 @@ public class TableLookup_Tests
     {
         using Sqlite3Database db = OpenMixedCase();
 
-        Assert.True(db.TryGetTable(name, out Sqlite3Table tbl));
+        Sqlite3Table tbl = db.GetTable(name);
         Assert.Equal("sqlite_master", tbl.SchemaDefinition.Name);
 
-        List<Sqlite3Row> rows = db.GetTable(name).EnumerateRows().ToList();
+        List<Sqlite3Row> rows = tbl.EnumerateRows().ToList();
         Assert.Equal(3, rows.Count);
 
         List<string> names = rows.Select(r =>
