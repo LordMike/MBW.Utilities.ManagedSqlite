@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
@@ -69,6 +70,74 @@ internal static class SqliteParity
     {
         using SqliteConnection connection = Run(script);
         return Serialize(connection);
+    }
+
+    /// <summary>
+    /// Asserts that the Sql package parses every table's CREATE statement, as SQLite stored it in sqlite_schema, into
+    /// the columns SQLite reports for that table. Only the schema is compared, no rows, so WITHOUT ROWID tables work.
+    /// <para>
+    /// Per table (by name; sqlite_ internal tables left out): the table name and its rowid alias, then per column its
+    /// name, declared type, primary key membership and whether it is a VIRTUAL generated column. SQLite's side comes
+    /// from pragma_table_list (wr), pragma_table_xinfo (name, type, pk, hidden = 2) and pragma_index_list: a rowid table
+    /// (wr = 0) whose primary key has no automatic index (origin 'pk') has a rowid alias, its one pk column. The
+    /// declared type is compared without its size, in upper case, as <see cref="SqlTableColumn.TypeName"/> leaves
+    /// out "(10, 5)". The definition exposes neither STRICT nor the primary key's column order, so those are not
+    /// compared; WITHOUT ROWID shows through the rowid alias.
+    /// </para>
+    /// </summary>
+    public static void AssertSchemaSameAsSqlite(string script)
+    {
+        using SqliteConnection connection = Run(script);
+
+        StringBuilder expected = new StringBuilder();
+        // Shadow tables of virtual tables are ordinary tables, which the library reads; sorted here, with the same
+        // comparer as the library's side, as SQLite's BINARY order is byte order of the UTF-8 text.
+        foreach (object[] table in Query(connection, "SELECT name, wr FROM pragma_table_list WHERE schema = 'main' AND type IN ('table', 'shadow') AND name NOT LIKE 'sqlite~_%' ESCAPE '~'")
+                     .OrderBy(t => (string)t[0], StringComparer.Ordinal))
+        {
+            string name = (string)table[0];
+
+            List<object[]> columns = Query(connection, $"SELECT name, type, pk, hidden FROM pragma_table_xinfo({Literal(name)}) ORDER BY cid");
+            List<object[]> pkColumns = columns.Where(c => (long)c[2] > 0).ToList();
+            bool pkHasIndex = Query(connection, $"SELECT 1 FROM pragma_index_list({Literal(name)}) WHERE origin = 'pk'").Any();
+            string rowIdAlias = (long)table[1] == 0 && pkColumns.Count == 1 && !pkHasIndex ? (string)pkColumns[0][0] : null;
+
+            AppendSchemaTable(expected, name, rowIdAlias, columns.Select(c =>
+                ((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim().ToUpperInvariant(), (long)c[2] > 0, (long)c[3] == 2)));
+        }
+
+        StringBuilder actual = new StringBuilder();
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(Serialize(connection))))
+        {
+            foreach (Sqlite3SchemaRow entry in db.GetTables().Where(s => IsReadableTable(s.Type, s.Sql) && !s.Name.StartsWith("sqlite_", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(s => s.Name, StringComparer.Ordinal))
+            {
+                SqlTableDefinition definition;
+                try
+                {
+                    definition = entry.GetTableDefinition();
+                }
+                catch (InvalidOperationException)
+                {
+                    actual.Append("table ").Append(Quote(entry.Name)).AppendLine(" unparseable");
+                    continue;
+                }
+
+                AppendSchemaTable(actual, definition.TableName, definition.RowIdColumn?.Name, definition.Columns.OrderBy(c => c.Ordinal)
+                    .Select(c => (c.Name, c.TypeName.ToUpperInvariant(), c.IsPartOfPrimaryKey, c.IsVirtualGenerated)));
+            }
+        }
+
+        Assert.Equal(expected.ToString(), actual.ToString());
+    }
+
+    private static void AppendSchemaTable(StringBuilder sb, string name, string rowIdAlias,
+        IEnumerable<(string name, string type, bool pk, bool virtualGenerated)> columns)
+    {
+        sb.Append("table ").Append(Quote(name)).Append(" rowid alias ").AppendLine(rowIdAlias == null ? "none" : Quote(rowIdAlias));
+        foreach ((string column, string type, bool pk, bool virtualGenerated) in columns)
+            sb.Append("  column ").Append(Quote(column)).Append(" type ").Append(Quote(type))
+                .Append(pk ? " pk" : "").AppendLine(virtualGenerated ? " virtual" : "");
     }
 
     /// <summary>
