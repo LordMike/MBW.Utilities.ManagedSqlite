@@ -46,7 +46,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
 ## Notes
 
 * This is not an ADO.Net substitute, it will not support SQL statements or use indexes - it will only provide access to the data in a database.
-* All of the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
+* All the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
 * Interestingly, SQLite3 allows _any_ value in _any_ column. So you may get different types out of the raw files, should you encounter an app that does this.
 
 ## Known limitations
@@ -56,7 +56,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 ### Out of scope
 
 * **Read-only.** There is no way to write, update or delete data.
-* **No SQL execution.** Queries, views, triggers and expressions are not run. Rows are read from the table b-trees in rowid order, and indexes are listed but never used.
+* **No SQL execution.** Queries, views, triggers and expressions are not run. Rows are read in the order they are stored (rowid order, or primary key order for WITHOUT ROWID tables), and indexes are listed but never used.
 * **Virtual tables cannot be read.** Their rows are produced by a SQLite extension (such as fts5 or rtree) at query time, not stored in the file, so `GetTable()` throws `NotSupportedException`. Their shadow tables (for fts5: `<name>_content`, `<name>_data` and so on) are ordinary tables and can be read.
 * **VIRTUAL generated columns have no value.** SQLite computes them from their expression each time they are read, and nothing is stored in the file. STORED generated columns are stored and read normally.
 * **Only the main database file is read.** Changes still in a `-wal` file (WAL mode) or a hot `-journal` are not seen. Checkpoint the database, or open it with SQLite once, before reading it here.
@@ -64,9 +64,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 
 ### Differences from SQLite
 
-* **WITHOUT ROWID tables cannot be read.** `GetTable()` fails on them, which includes the WITHOUT ROWID shadow tables of fts5 (`<name>_idx`, `<name>_config`).
 * **Column DEFAULTs are not applied.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column. SQLite returns the column's DEFAULT for it, but this library returns no value (`null`).
-* **Columns after a VIRTUAL generated column are misread.** The generated column is not in the stored row, but reading by name still counts it, so every later column reads the value one position to its left.
 * **Declared type names are matched as whole words.** SQLite's [affinity rules](https://www.sqlite.org/datatype3.html#determination_of_column_affinity) match substrings, so a type such as `FLOATING POINT` or `CHARINT` gets REAL or INTEGER affinity in SQLite, but is not recognized here (`byte[]`).
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
