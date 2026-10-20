@@ -2,7 +2,7 @@
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
-public class Sqlite3Settings
+public sealed class Sqlite3Settings
 {
     /// <summary>
     /// Should the sqlite database have an invalid text encoding, it can be overridden here.

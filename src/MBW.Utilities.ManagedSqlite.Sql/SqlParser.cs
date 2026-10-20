@@ -6,7 +6,7 @@ using Superpower.Model;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
-public static class SqlParser
+internal static class SqlParser
 {
     private static bool TryParseTokenList(TokenList<SqlToken> list, out SqlNode rootNode)
     {

@@ -7,7 +7,7 @@ using MBW.Utilities.ManagedSqlite.Core.Objects;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3Table
+public sealed class Sqlite3Table
 {
     /// <summary>
     /// Payloads larger than this are read into a temporary buffer, so one huge row does not keep a huge buffer alive
