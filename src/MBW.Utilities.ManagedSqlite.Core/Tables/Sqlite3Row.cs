@@ -1,21 +1,22 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3Row
+public sealed class Sqlite3Row
 {
     public Sqlite3Table Table { get; }
     public long RowId { get; }
-    public object[] ColumnData { get; }
+    public object?[] ColumnData { get; }
 
-    internal Sqlite3Row(Sqlite3Table table, long rowId, object[] columnData)
+    internal Sqlite3Row(Sqlite3Table table, long rowId, object?[] columnData)
     {
         Table = table;
         RowId = rowId;
         ColumnData = columnData;
     }
 
-    public bool TryGetOrdinal(ushort index, out object value)
+    public bool TryGetOrdinal(ushort index, out object? value)
     {
         value = default;
 
@@ -28,11 +29,11 @@ public class Sqlite3Row
         return false;
     }
 
-    public bool TryGetOrdinal<T>(ushort index, out T value)
+    public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
     {
         value = default;
 
-        if (!TryGetOrdinal(index, out object tmp))
+        if (!TryGetOrdinal(index, out object? tmp))
             return false;
 
         // TODO: Is null a success case?

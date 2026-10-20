@@ -27,7 +27,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
     
     // Get the data of column 0 on row 0
     Sqlite3Row row = rows.First();
-    object data = rows.ColumnData[0];
+    object data = row.ColumnData[0];
 
     // Using the SQL package also provides a TryGetValueByName(), this package also tries to detect row-id substitutes
     row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
@@ -46,61 +46,43 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
 ## Notes
 
 * This is not an ADO.Net substitute, it will not support SQL statements or use indexes - it will only provide access to the data in a database.
-* All of the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
-* The library has limited support for handling cases where the primary key of a table is the [row-id](https://www.sqlite.org/lang_createtable.html#rowid). 
+* All the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
 * Interestingly, SQLite3 allows _any_ value in _any_ column. So you may get different types out of the raw files, should you encounter an app that does this.
+
+## Known limitations
+
+The goal is to read a database file exactly as SQLite itself reads it. These are the known places where it does not, or where it deliberately does less.
+
+### Out of scope
+
+* **Read-only.** There is no way to write, update or delete data.
+* **No SQL execution.** Queries, views, triggers and expressions are not run. Rows are read in the order they are stored (rowid order, or primary key order for WITHOUT ROWID tables), and indexes are listed but never used.
+* **Virtual tables cannot be read.** Their rows are produced by a SQLite extension (such as fts5 or rtree) at query time, not stored in the file, so `GetTable()` throws `NotSupportedException`. Their shadow tables (for fts5: `<name>_content`, `<name>_data` and so on) are ordinary tables and can be read.
+* **VIRTUAL generated columns have no value.** SQLite computes them from their expression each time they are read, and nothing is stored in the file. STORED generated columns are stored and read normally.
+* **Only the main database file is read.** Changes still in a `-wal` file (WAL mode) or a hot `-journal` are not seen. Checkpoint the database, or open it with SQLite once, before reading it here.
+* **No locking.** Reading a file while another process writes to it can return inconsistent data.
+
+### Differences from SQLite
+
+* **Column DEFAULTs are not applied.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column. SQLite returns the column's DEFAULT for it, but this library returns no value (`null`).
+* **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs
 * Format changes: https://www.sqlite.org/formatchng.html
 * File format: https://www.sqlite.org/fileformat.html
 
 ## Data types mapping
-Source: https://www.techonthenet.com/sqlite/datatypes.php
 
-Note: Sqlite only has 5 data types: https://sqlite.org/datatype3.html
+SQLite has five storage classes, and a column's declared type only sets its [affinity](https://www.sqlite.org/datatype3.html#determination_of_column_affinity). `SqlTableColumn.DetectedType` follows SQLite's rules, checked in this order against the declared type name (case-insensitive, matching anywhere in the name):
 
-The following translate to `string`.
-```
-CHAR(size)			-- Equivalent to TEXT (size is ignored)
-VARCHAR(size)		-- Equivalent to TEXT (size is ignored)
-TINYTEXT(size)		-- Equivalent to TEXT (size is ignored)
-TEXT(size)			-- Equivalent to TEXT (size is ignored)
-MEDIUMTEXT(size)	-- Equivalent to TEXT (size is ignored)
-LONGTEXT(size)		-- Equivalent to TEXT (size is ignored)
-NCHAR(size)			-- Equivalent to TEXT (size is ignored)
-NVARCHAR(size)		-- Equivalent to TEXT (size is ignored)
-CLOB(size)			-- Equivalent to TEXT (size is ignored)
-```
+| Declared type contains | Affinity | `DetectedType` | Examples |
+|---|---|---|---|
+| `INT` | INTEGER | `long` | `INT`, `INTEGER`, `BIGINT`, `TINYINT`, `INT8`, `POINT` |
+| `CHAR`, `CLOB` or `TEXT` | TEXT | `string` | `TEXT`, `VARCHAR(255)`, `NCHAR`, `CLOB` |
+| `BLOB`, or no type at all | BLOB | `byte[]` | `BLOB`, a column with no type |
+| `REAL`, `FLOA` or `DOUB` | REAL | `double` | `REAL`, `FLOAT`, `DOUBLE PRECISION`, `FLOAT8` |
+| anything else | NUMERIC | `long` | `NUMERIC`, `DECIMAL(10,5)`, `BOOLEAN`, `DATE`, `DATETIME`, `GUID` |
 
-The following translate to `long`.
-```
-TINYINT				-- Equivalent to INTEGER
-SMALLINT			-- Equivalent to INTEGER
-MEDIUMINT			-- Equivalent to INTEGER
-INT					-- Equivalent to INTEGER
-INTEGER				-- Equivalent to INTEGER
-BIGINT				-- Equivalent to INTEGER
-INT2				-- Equivalent to INTEGER
-INT4				-- Equivalent to INTEGER
-INT8				-- Equivalent to INTEGER
-NUMERIC				-- Equivalent to NUMERIC
-DECIMAL				-- Equivalent to NUMERIC
-BOOLEAN				-- Equivalent to NUMERIC
-DATE				-- Equivalent to NUMERIC
-DATETIME			-- Equivalent to NUMERIC
-TIMESTAMP			-- Equivalent to NUMERIC
-TIME				-- Equivalent to NUMERIC
-```
+Because the rules are checked in order, `FLOATING POINT` contains `INT` and gets INTEGER affinity, as in SQLite. A size such as `VARCHAR(255)` is ignored.
 
-The following translate to `double`.
-```
-REAL				-- Equivalent to REAL
-DOUBLE				-- Equivalent to REAL
-DOUBLE PRECISION	-- Equivalent to REAL
-FLOAT				-- Equivalent to REAL
-```
-
-The following translate to `byte[]`.
-```
-BLOB				-- Equivalent to NONE
-```
+SQLite allows any value in any column, so a row can still hold a value of a different type than `DetectedType`. Values are returned as they are stored, except that reading a column by name returns a whole-number value in a REAL column as a `double`, as SQLite does.

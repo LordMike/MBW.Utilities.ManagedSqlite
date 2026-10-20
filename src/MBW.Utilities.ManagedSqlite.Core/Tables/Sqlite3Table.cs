@@ -1,13 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3Table
+public sealed class Sqlite3Table
 {
     /// <summary>
     /// Payloads larger than this are read into a temporary buffer, so one huge row does not keep a huge buffer alive
@@ -26,16 +27,47 @@ public class Sqlite3Table
         RootPage = rootPage;
     }
 
+    /// <summary>
+    /// Reads every row of the table in rowid order.
+    /// </summary>
+    /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
     public IEnumerable<Sqlite3Row> EnumerateRows()
     {
-        byte[] buffer = null;
-        long[] serialTypes = null;
+        using IEnumerator<Sqlite3Row> rows = EnumerateRowsInternal().GetEnumerator();
+
+        while (true)
+        {
+            try
+            {
+                if (!rows.MoveNext())
+                    yield break;
+            }
+            catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
+            {
+                throw new SqliteCorruptException($"unable to read the rows of table {SchemaDefinition.Name}", structure: "table b-tree", innerException: e);
+            }
+
+            yield return rows.Current;
+        }
+    }
+
+    private IEnumerable<Sqlite3Row> EnumerateRowsInternal()
+    {
+        // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
+        long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
+
+        byte[]? buffer = null;
+        long[]? serialTypes = null;
 
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
             BTreeLeafTablePage.Cell[] cells = leaf.Cells;
             for (int i = 0; i < cells.Length; i++)
             {
+                long maxPayload = Math.Min(int.MaxValue, cells[i].DataSizeInCell + _reader.PageCount * (usableSize - 4));
+                if (cells[i].DataSize < 0 || cells[i].DataSize > maxPayload)
+                    throw new SqliteCorruptException($"payload size {cells[i].DataSize} of row {cells[i].RowId} is larger than the database", leaf.Page, "b-tree leaf cell");
+
                 // Read the whole payload once, then decode it from memory
                 int payloadSize = checked((int)cells[i].DataSize);
                 byte[] payload;
@@ -54,6 +86,10 @@ public class Sqlite3Table
                 uint dataOffset = leaf.CellOffsets[i] + (uint)cells[i].CellHeaderSize;
                 if (cells[i].FirstOverflowPage == 0)
                 {
+                    // The payload spills past this page, but there is no overflow chain to hold the rest
+                    if (cells[i].DataSizeInCell < cells[i].DataSize)
+                        throw new SqliteCorruptException($"the overflow chain of row {cells[i].RowId} ended with {cells[i].DataSize - cells[i].DataSizeInCell} bytes of the payload left", leaf.Page, "overflow chain");
+
                     // All data is on this page
                     _reader.SeekPage(leaf.Page, dataOffset);
                     if (_reader.Read(payload, 0, payloadSize) != payloadSize)
@@ -69,7 +105,7 @@ public class Sqlite3Table
                         throw new EndOfStreamException();
                 }
 
-                yield return new Sqlite3Row(this, cells[i].RowId, DecodeRecord(payload, payloadSize, ref serialTypes));
+                yield return new Sqlite3Row(this, cells[i].RowId, DecodeRecord(leaf.Page, cells[i].RowId, payload, payloadSize, ref serialTypes));
             }
         }
     }
@@ -83,31 +119,47 @@ public class Sqlite3Table
         return res;
     }
 
-    private object[] DecodeRecord(byte[] payload, int length, ref long[] serialTypes)
+    private object?[] DecodeRecord(uint page, long rowId, byte[] payload, int length, ref long[]? serialTypes)
     {
         serialTypes ??= new long[16];
 
         int pos = 0;
         long headerSize = ByteArrayReader.ReadVarInt(payload, length, ref pos);
-        if (headerSize > length)
-            throw new EndOfStreamException();
+        if (headerSize < 1 || headerSize > length)
+            throw new SqliteCorruptException($"record header size {headerSize} of row {rowId} is outside the payload of {length} bytes", page, "record header");
+
+        // The largest serial type whose value could still fit in the payload
+        long maxSerialType = 2L * length + 13;
 
         int columns = 0;
+        long dataSize = 0;
         while (pos < headerSize)
         {
             if (columns == serialTypes.Length)
                 Array.Resize(ref serialTypes, columns * 2);
 
-            serialTypes[columns++] = ByteArrayReader.ReadVarInt(payload, length, ref pos);
+            long serialType = ByteArrayReader.ReadVarInt(payload, length, ref pos);
+            if (serialType < 0 || serialType > maxSerialType)
+                throw new SqliteCorruptException($"serial type {serialType} of row {rowId} does not fit in the payload", page, "record header");
+
+            dataSize += SerialTypeSize(serialType);
+            serialTypes[columns++] = serialType;
         }
 
-        object[] rowData = new object[columns];
+        // The header must end exactly where it says, and the values must fill the rest of the payload exactly
+        if (pos != headerSize || headerSize + dataSize != length)
+            throw new SqliteCorruptException($"record of row {rowId} has a {pos} byte header (declared {headerSize}) and {dataSize} bytes of values, but the payload is {length} bytes", page, "record header");
+
+        object?[] rowData = new object?[columns];
         for (int i = 0; i < columns; i++)
         {
             long serialType = serialTypes[i];
             switch (serialType)
             {
                 case 0:
+                case 10:
+                case 11:
+                    // 10 and 11 are reserved. SQLite reads them as NULL with no payload bytes, and so does this.
                     rowData[i] = null;
                     break;
                 case 1:
@@ -132,9 +184,6 @@ public class Sqlite3Table
                 case 9:
                     rowData[i] = 1L;
                     break;
-                case 10:
-                case 11:
-                    throw new ArgumentOutOfRangeException();
                 default:
                 {
                     long size = (serialType - 12) / 2;
@@ -161,5 +210,30 @@ public class Sqlite3Table
         }
 
         return rowData;
+    }
+
+    private static long SerialTypeSize(long serialType)
+    {
+        switch (serialType)
+        {
+            case 0:
+            case 8:
+            case 9:
+            case 10:
+            case 11:
+                return 0;
+            case 1:
+            case 2:
+            case 3:
+            case 4:
+                return serialType;
+            case 5:
+                return 6;
+            case 6:
+            case 7:
+                return 8;
+            default:
+                return (serialType - 12) / 2;
+        }
     }
 }

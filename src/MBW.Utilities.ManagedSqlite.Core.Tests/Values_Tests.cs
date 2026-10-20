@@ -113,19 +113,45 @@ INSERT INTO tbl VALUES (replace(hex(zeroblob(15000)), '0', 'aæ😀日'));");
         SqliteParity.AssertSameAsSqlite($"CREATE TABLE tbl (v BLOB); INSERT INTO tbl VALUES (randomblob({size}));");
     }
 
+    /// <summary>
+    /// SQLite picks a column's affinity from substrings of its declared type, in this order: "INT" is INTEGER; "CHAR",
+    /// "CLOB" or "TEXT" is TEXT; "BLOB", or no type, is BLOB; "REAL", "FLOA" or "DOUB" is REAL; anything else is NUMERIC
+    /// (https://www.sqlite.org/datatype3.html#determination_of_column_affinity). Every column gets the same values: an
+    /// integer, an integral real, integral and fractional numeric text, other text and a blob. SQLite stores them
+    /// differently per affinity, and with REAL affinity writes integral values as integers that must read back as REAL.
+    /// </summary>
+    [Theory]
+    [InlineData("REAL in FLOAT8", "FLOAT8")]
+    [InlineData("REAL in REALVAL", "REALVAL")]
+    [InlineData("REAL in DOUBLEX", "DOUBLEX")]
+    [InlineData("REAL in a multi-word name", "LONG DOUBLE")]
+    [InlineData("REAL with a size", "FLOAT(10)")]
+    [InlineData("REAL in lower case", "floatval")]
+    [InlineData("INT before CHAR", "CHARINT")]
+    [InlineData("INT before FLOA", "FLOATING POINT")]
+    [InlineData("INT before DOUB", "DOUBLE INT")]
+    [InlineData("INT in POINT", "POINT")]
+    [InlineData("BLOB before FLOA", "FLOAT BLOB")]
+    [InlineData("NUMERIC for STRINGY", "STRINGY")]
+    [InlineData("NUMERIC for STRING", "STRING")]
+    [InlineData("BLOB for no type", "")]
+    public void DeclaredTypeAffinity(string name, string declaredType)
+    {
+        _ = name;
+        SqliteParity.AssertSameAsSqlite($"CREATE TABLE tbl (v {declaredType}); INSERT INTO tbl VALUES (3), (3.0), ('3'), ('1.5'), ('x'), (X'00');");
+    }
+
     public static TheoryData<string, string> NullAndMixedCases()
     {
         return new TheoryData<string, string>
         {
             { "NULL in the middle", "CREATE TABLE tbl (a INTEGER, b TEXT, c REAL, d BLOB, e INTEGER); INSERT INTO tbl VALUES (1, NULL, NULL, NULL, 5); INSERT INTO tbl VALUES (NULL, 'x', NULL, X'00', NULL);" },
             { "all storage classes", "CREATE TABLE tbl (a, b, c, d, e); INSERT INTO tbl VALUES (NULL, 42, 1.5, 'text', X'CAFE'); INSERT INTO tbl VALUES (X'CAFE', 'text', 1.5, 42, NULL);" },
-            // Affinity decides how SQLite stores each value, and REAL affinity how an integral real reads back.
-            // FLOATING POINT contains "INT" so has INTEGER affinity; STRING, DECIMAL, DATETIME and "my type" are NUMERIC.
+            // What DeclaredTypeAffinity leaves out: exponent text, which NUMERIC stores as an integer and REAL as a real,
+            // and declared types with a space, one of them quoted. DATETIME and "my type" are NUMERIC, DOUBLE PRECISION is REAL.
             { "declared types and affinity", @"
-CREATE TABLE tbl (i INTEGER, t TEXT, b BLOB, n NUMERIC, r REAL, x, vc VARCHAR(255), dec DECIMAL(10, 5), dp DOUBLE PRECISION,
-    ubi UNSIGNED BIG INT, li int, s STRING, fp FLOATING POINT, q ""my type"", dt DATETIME);
-INSERT INTO tbl SELECT v, v, v, v, v, v, v, v, v, v, v, v, v, v, v FROM
-    (SELECT '12' AS v UNION ALL SELECT 2.0 UNION ALL SELECT 2.5 UNION ALL SELECT '1e3' UNION ALL SELECT '0.25' UNION ALL SELECT 'abc' UNION ALL SELECT X'01');" },
+CREATE TABLE tbl (dt DATETIME, q ""my type"", dp DOUBLE PRECISION);
+INSERT INTO tbl SELECT v, v, v FROM (SELECT 2.5 AS v UNION ALL SELECT '1e3' UNION ALL SELECT '0.25');" },
             // 150 columns make a record header of 152 bytes, so the header size itself is a 2 byte varint
             { "150 columns", "CREATE TABLE tbl (" + string.Join(", ", Enumerable.Range(0, 150).Select(i => "c" + i)) + "); " +
                              "INSERT INTO tbl VALUES (" + string.Join(", ", Enumerable.Range(0, 150).Select(i => i * 1000 + 7)) + ");" },

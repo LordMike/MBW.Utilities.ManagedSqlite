@@ -1,9 +1,11 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Internal;
+﻿using System.Linq;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
-public class DatabaseHeader
+internal sealed class DatabaseHeader
 {
     public const int HeaderSize = 100;
 
@@ -15,88 +17,123 @@ public class DatabaseHeader
     /// <summary>
     /// The database page size in bytes (512 to 65536)
     /// </summary>
-    public uint PageSize { get; internal set; }
+    public uint PageSize { get; }
 
-    public FileWriteVersion WriteVersion { get; private set; }
+    public FileWriteVersion WriteVersion { get; }
 
-    public FileReadVersion ReadVersion { get; private set; }
+    public FileReadVersion ReadVersion { get; }
 
-    public byte ReservedSpaceAtEndOfPage { get; internal set; }
+    public byte ReservedSpaceAtEndOfPage { get; }
 
-    public byte MaximumEmbeddedPayloadFraction { get; private set; }
+    public byte MaximumEmbeddedPayloadFraction { get; }
 
-    public byte MinimumEmbeddedPayloadFraction { get; private set; }
+    public byte MinimumEmbeddedPayloadFraction { get; }
 
-    public byte LeafPayloadFraction { get; private set; }
+    public byte LeafPayloadFraction { get; }
 
-    public uint ChangeCounter { get; private set; }
+    public uint ChangeCounter { get; }
 
-    public uint DatabaseSizeInPages { get; private set; }
+    public uint DatabaseSizeInPages { get; }
 
-    public uint FirstFreelistTrunkPage { get; private set; }
+    public uint FirstFreelistTrunkPage { get; }
 
-    public uint FreeListPages { get; private set; }
+    public uint FreeListPages { get; }
 
-    public uint SchemaCookie { get; private set; }
+    public uint SchemaCookie { get; }
 
-    public uint SchemaFormat { get; private set; }
+    public uint SchemaFormat { get; }
 
-    public uint DefaultPageCacheSize { get; private set; }
+    public uint DefaultPageCacheSize { get; }
 
-    public uint Value7 { get; private set; }
+    public uint Value7 { get; }
 
-    public SqliteEncoding TextEncoding { get; internal set; }
+    public SqliteEncoding TextEncoding { get; }
 
-    public uint UserVersion { get; private set; }
+    public uint UserVersion { get; }
 
-    public uint IncrementalVacuumMode { get; private set; }
+    public uint IncrementalVacuumMode { get; }
 
-    public uint ApplicationId { get; private set; }
+    public uint ApplicationId { get; }
 
-    public uint VersionValidFor { get; private set; }
+    public uint VersionValidFor { get; }
 
-    public uint Version { get; private set; }
+    public uint Version { get; }
 
-    internal static DatabaseHeader Parse(ReaderBase reader)
+    /// <summary>
+    /// Parses the first <see cref="HeaderSize"/> bytes of the database file. <paramref name="length"/> is how many
+    /// bytes of <paramref name="data"/> the file actually had.
+    /// </summary>
+    internal DatabaseHeader(byte[] data, int length)
     {
-        // The header is 100 bytes
-        reader.CheckSize(100);
+        if (length < HeaderSize)
+            throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
+            {
+                Data =
+                {
+                    { "Position", 0L },
+                    { "sizeWanted", (uint)HeaderSize },
+                    { "SourceLength", (long)length }
+                }
+            };
 
-        reader.CheckMagicBytes(_expectedHeader);
+        if (!data.Take(_expectedHeader.Length).SequenceEqual(_expectedHeader))
+            throw new SqliteCorruptException("the requested magic bytes did not match", structure: "magic bytes")
+            {
+                Data =
+                {
+                    { "comparison", _expectedHeader.ToHex() },
+                    { "data", data.Take(_expectedHeader.Length).ToArray().ToHex() }
+                }
+            };
 
-        // Read header
-        DatabaseHeader res = new DatabaseHeader();
+        int pos = _expectedHeader.Length;
 
         // The page size is stored as a big-endian 2-byte value, where 1 means 65536
-        ushort rawPageSize = reader.ReadUInt16();
-        res.PageSize = rawPageSize == 1 ? 65536u : rawPageSize;
-        res.WriteVersion = (FileWriteVersion)reader.ReadByte();
-        res.ReadVersion = (FileReadVersion)reader.ReadByte();
-        res.ReservedSpaceAtEndOfPage = reader.ReadByte();
-        res.MaximumEmbeddedPayloadFraction = reader.ReadByte();
-        res.MinimumEmbeddedPayloadFraction = reader.ReadByte();
-        res.LeafPayloadFraction = reader.ReadByte();
-        res.ChangeCounter = reader.ReadUInt32();
+        ushort rawPageSize = ByteArrayReader.ReadUInt16(data, length, ref pos);
+        PageSize = rawPageSize == 1 ? 65536u : rawPageSize;
+        WriteVersion = (FileWriteVersion)ByteArrayReader.ReadByte(data, length, ref pos);
+        ReadVersion = (FileReadVersion)ByteArrayReader.ReadByte(data, length, ref pos);
+        ReservedSpaceAtEndOfPage = ByteArrayReader.ReadByte(data, length, ref pos);
+        MaximumEmbeddedPayloadFraction = ByteArrayReader.ReadByte(data, length, ref pos);
+        MinimumEmbeddedPayloadFraction = ByteArrayReader.ReadByte(data, length, ref pos);
+        LeafPayloadFraction = ByteArrayReader.ReadByte(data, length, ref pos);
+        ChangeCounter = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
-        res.DatabaseSizeInPages = reader.ReadUInt32();
-        res.FirstFreelistTrunkPage = reader.ReadUInt32();
-        res.FreeListPages = reader.ReadUInt32();
-        res.SchemaCookie = reader.ReadUInt32();
-        res.SchemaFormat = reader.ReadUInt32();
-        res.DefaultPageCacheSize = reader.ReadUInt32();
-        res.Value7 = reader.ReadUInt32();
-        res.TextEncoding = (SqliteEncoding)reader.ReadUInt32();
-        res.UserVersion = reader.ReadUInt32();
-        res.IncrementalVacuumMode = reader.ReadUInt32();
-        res.ApplicationId = reader.ReadUInt32();
+        DatabaseSizeInPages = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        FirstFreelistTrunkPage = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        FreeListPages = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        SchemaCookie = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        SchemaFormat = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        DefaultPageCacheSize = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        Value7 = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        TextEncoding = (SqliteEncoding)ByteArrayReader.ReadUInt32(data, length, ref pos);
+        UserVersion = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        IncrementalVacuumMode = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        ApplicationId = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
-        reader.Skip(20);
+        pos += 20;
 
-        res.VersionValidFor = reader.ReadUInt32();
-        res.Version = reader.ReadUInt32();
+        VersionValidFor = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        Version = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
         // TODO: Warn/err on mismatch with expected values
 
-        return res;
+        Validate();
+    }
+
+    private void Validate()
+    {
+        // https://www.sqlite.org/fileformat.html#page_size
+        // A power of two between 512 and 65536. The stored value 1 has already been mapped to 65536.
+        bool validPageSize = PageSize >= 512 && PageSize <= 65536 && (PageSize & (PageSize - 1)) == 0;
+
+        if (!validPageSize)
+            throw new SqliteCorruptException($"invalid page size {PageSize}", structure: "database header");
+
+        // https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
+        // The usable size of a page may not be less than 480
+        uint usableSize = PageSize - ReservedSpaceAtEndOfPage;
+        if (usableSize < 480)
+            throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {PageSize}, reserved space {ReservedSpaceAtEndOfPage})", structure: "database header");
     }
 }
