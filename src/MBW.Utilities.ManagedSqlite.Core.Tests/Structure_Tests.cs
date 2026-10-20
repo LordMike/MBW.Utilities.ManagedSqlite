@@ -95,6 +95,18 @@ CREATE TABLE ""my table"" (""select"" TEXT, ""a b"" INTEGER, ""q""""uote"" TEXT)
 CREATE TABLE ""order"" (id INTEGER PRIMARY KEY, ""group"" TEXT);
 INSERT INTO ""my table"" VALUES ('s', 1, 'q');
 INSERT INTO ""order"" VALUES (1, 'g'), (2, 'h');" },
+            // A VIRTUAL generated column is not in the record, so the columns after it sit one position left there
+            { "VIRTUAL generated column before stored columns", @"
+CREATE TABLE tbl (a, b TEXT GENERATED ALWAYS AS (a || '!') VIRTUAL, c, d INTEGER);
+INSERT INTO tbl (a, c, d) VALUES ('x', 'third', 4);" },
+            // Without VIRTUAL or STORED, a generated column is VIRTUAL
+            { "generated column in short AS form", @"
+CREATE TABLE tbl (a, b AS (a || '!'), c);
+INSERT INTO tbl (a, c) VALUES ('x', 'third');" },
+            // A STORED generated column is in the record at its position, a VIRTUAL one is not
+            { "STORED generated column next to VIRTUAL", @"
+CREATE TABLE tbl (a INTEGER, v AS (a * 2) VIRTUAL, s INTEGER AS (a * 3) STORED, z TEXT);
+INSERT INTO tbl (a, z) VALUES (1, 'one'), (2, 'two');" },
             // rtree rather than fts5: fts5's shadow tables include WITHOUT ROWID tables, which the dump can't select rowid from
             { "rtree virtual table and plain table", @"
 CREATE VIRTUAL TABLE boxes USING rtree(id, minX, maxX, minY, maxY);

@@ -35,6 +35,11 @@ public class ReaderBase : IDisposable
     /// </summary>
     public byte ReservedSpace { get; private set; }
 
+    /// <summary>
+    /// The number of pages in the database, used to reject page numbers past the end. 0 when unknown.
+    /// </summary>
+    public uint PageCount { get; internal set; }
+
     public ReaderBase(Stream stream)
     {
         if (stream == null)
@@ -99,7 +104,7 @@ public class ReaderBase : IDisposable
 
         bool res = data.SequenceEqual(comparison);
         if (!res && throwException)
-            throw new ArgumentException("The requested magic bytes did not match")
+            throw new SqliteCorruptException("the requested magic bytes did not match", structure: "magic bytes")
             {
                 // Note: This is the position after read
                 Data =
@@ -122,7 +127,7 @@ public class ReaderBase : IDisposable
         long dataLeft = Length - _stream.Position;
         if (dataLeft < sizeWanted)
         {
-            throw new ArgumentException("Source stream does not have enough data")
+            throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
             {
                 Data =
                 {
@@ -146,7 +151,7 @@ public class ReaderBase : IDisposable
         ulong newPosition = (ulong)_stream.Seek((long)position, SeekOrigin.Begin);
 
         if (newPosition != position)
-            throw new ArgumentException("Unable to seek to position")
+            throw new SqliteCorruptException("unable to seek to a position the file refers to", structure: "file length")
             {
                 Data = { { nameof(position), position } }
             };
@@ -154,8 +159,8 @@ public class ReaderBase : IDisposable
 
     internal void SeekPage(uint page, uint offset = 0)
     {
-        if (page == 0)
-            throw new ArgumentOutOfRangeException(nameof(page));
+        if (page == 0 || (PageCount > 0 && page > PageCount))
+            throw new SqliteCorruptException($"page number {page} is outside the database (1..{PageCount})", page, "page number");
 
         // Note: Pages are 1-indexed
         // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB

@@ -58,14 +58,31 @@ public class SqlParserSyntaxTests
         AssertColumn(def, 1, "c", "TEXT", typeof(string));
     }
 
-    [Fact]
-    public void GeneratedColumn()
+    [Theory]
+    [InlineData("b INTEGER GENERATED ALWAYS AS (a*2) VIRTUAL", true)]
+    [InlineData("b INTEGER AS (a*2)", true)] // VIRTUAL is the default
+    [InlineData("b INTEGER generated always as (a*2) stored", false)]
+    [InlineData("b INTEGER CHECK (CAST(b AS TEXT) <> '')", false)]
+    public void GeneratedColumn(string column, bool isVirtualGenerated)
     {
-        SqlTableDefinition def = Parse("CREATE TABLE t(a INTEGER, b INTEGER GENERATED ALWAYS AS (a*2) VIRTUAL)");
+        SqlTableDefinition def = Parse($"CREATE TABLE t(a INTEGER, {column})");
 
         Assert.Equal(2, def.Columns.Count);
         AssertColumn(def, 0, "a", "INTEGER", typeof(long));
         AssertColumn(def, 1, "b", "INTEGER", typeof(long));
+        Assert.False(def.Columns.ElementAt(0).IsVirtualGenerated);
+        Assert.Equal(isVirtualGenerated, def.Columns.ElementAt(1).IsVirtualGenerated);
+    }
+
+    [Fact]
+    public void VirtualGeneratedColumnHasNoValueByName()
+    {
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(
+            "CREATE TABLE t(a TEXT, b AS (a || '!'), c TEXT); INSERT INTO t (a, c) VALUES ('x', 'third');")));
+
+        Sqlite3Row row = db.GetTable("t").EnumerateRows().Single();
+        Assert.False(row.TryGetValueByName("b", out object value));
+        Assert.Null(value);
     }
 
     [Theory]
@@ -167,8 +184,8 @@ public class SqlParserSyntaxTests
     }
 
     /// <summary>
-    /// SQLite keeps CREATE statements verbatim (including comments) in sqlite_master.sql. Generated VIRTUAL columns
-    /// are left out: they are not stored in the record, and the reader does not compute them.
+    /// SQLite keeps CREATE statements verbatim (including comments) in sqlite_master.sql. Generated columns are
+    /// covered by the Core.Tests Structure_Tests.Schema scripts.
     /// </summary>
     private const string SchemaFeatures = @"
 CREATE TABLE checks(id INTEGER PRIMARY KEY, a INTEGER CHECK (a > 0), b TEXT DEFAULT 'x');
