@@ -39,7 +39,8 @@ internal sealed class ReaderBase : IDisposable
     public byte ReservedSpace { get; }
 
     /// <summary>
-    /// The number of pages in the database, used to reject page numbers past the end
+    /// The number of pages in the database, used to reject page numbers past the end. From the header when its size is
+    /// valid, otherwise from the file length, as in SQLite.
     /// </summary>
     public uint PageCount { get; }
 
@@ -54,12 +55,18 @@ internal sealed class ReaderBase : IDisposable
         TextEncoding = textEncoding;
         _encoding = encoding;
 
-        // Database Size in pages adjustment
         // https://www.sqlite.org/fileformat.html#in_header_database_size
-        uint expectedPages = (uint)(Length / PageSize);
+        // The in-header size is valid when it is not 0 and the version-valid-for number equals the change counter. SQLite
+        // then trusts it over the file length (pages after it are not part of the database, as after a rollback that
+        // did not truncate the file), and rejects a size larger than the file. Otherwise the file length decides. A
+        // partial last page counts as a page, as in SQLite's pager (which reads the missing bytes as zeros).
+        uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
+        bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
-        // TODO: Warn on mismatch
-        PageCount = Math.Max(expectedPages, header.DatabaseSizeInPages);
+        if (headerSizeValid && header.DatabaseSizeInPages > filePages)
+            throw new SqliteCorruptException($"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}", structure: "file length");
+
+        PageCount = headerSizeValid ? header.DatabaseSizeInPages : filePages;
     }
 
     /// <summary>

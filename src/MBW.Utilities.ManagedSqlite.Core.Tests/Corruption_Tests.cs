@@ -136,6 +136,32 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     [Fact]
     public void Header_UsableSizeBelow480() => AssertCorrupt("database header", p => p.SetReservedSpace(255));
 
+    // SQLite refuses a read version above 2 (a format newer than it knows) and payload fractions other than 64, 32, 32
+    [Fact]
+    public void Header_ReadVersionAbove2() => AssertCorrupt("database header", p => p.SetReadVersion(3));
+
+    [Fact]
+    public void Header_PayloadFractionNot64() => AssertCorrupt("database header", p => p.SetMaxEmbeddedPayloadFraction(65));
+
+    // The in-header database size is valid (SQLite wrote the change counter and version-valid-for fields), so it decides
+    // how many pages the database has: more than the file holds is corrupt, and pages after it are not read
+    [Fact]
+    public void Header_DatabaseSizeLargerThanFile() => AssertCorrupt("file length", p => p.SetDatabaseSizeInPages((uint)p.PageCount + 1));
+
+    [Fact]
+    public void Header_PagesAfterDatabaseSize_AreNotRead() => AssertCorrupt("page number", p => p.AppendPages(1).SetOverflowPointer(SmallRoot, 1, PastTheEnd));
+
+    // When the version-valid-for number differs from the change counter, the in-header size is stale and the file length decides
+    [Fact]
+    public void Header_DatabaseSizeIgnoredWhenNotValidFor()
+    {
+        DbPatcher patcher = new DbPatcher(Base);
+        byte[] data = patcher.SetVersionValidFor(patcher.ReadUInt32(24) + 1).SetDatabaseSizeInPages(PastTheEnd).Data;
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
+    }
+
     // File length
 
     [Fact]
@@ -149,6 +175,17 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
 
     [Fact]
     public void Truncated_LastPageMissing() => AssertCorrupt("file length", p => p.Truncate((p.PageCount - 1) * p.PageSize));
+
+    // A partial last page still counts as a page, so the file opens and a table that does not touch that page reads as
+    // before. (The last page holds Small's overflow; SQLite reads the missing bytes as zeros, which the reader does not yet.)
+    [Fact]
+    public void Truncated_InsideTheLastPage()
+    {
+        byte[] data = new DbPatcher(Base).Truncate(Base.Length - 1).Data;
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep");
+    }
 
     // B-tree page headers
 
