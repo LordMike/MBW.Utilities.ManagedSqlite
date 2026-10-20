@@ -10,7 +10,7 @@ internal static class ByteArrayReader
 {
     public static long ReadVarInt(byte[] data, int length, ref int pos)
     {
-        // See ReaderBase.ReadVarInt: 8 bytes of 7 bits each, then a 9th byte of 8 bits
+        // SQLite varint: 8 bytes of 7 bits each, then a 9th byte of 8 bits
         long res = 0;
         for (int i = 0; i < 8; i++)
         {

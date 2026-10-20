@@ -1,12 +1,11 @@
 using System.Collections.Generic;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
-using MBW.Utilities.ManagedSqlite.Core.Internal;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tests;
 
-public class ReaderBaseVarInt_Tests
+public class VarInt_Tests
 {
     private const byte Sentinel = 0xAB;
 
@@ -89,22 +88,6 @@ public class ReaderBaseVarInt_Tests
         encoded.CopyTo(data, 0);
         data[encoded.Length] = Sentinel;
 
-        using ReaderBase reader = new ReaderBase(new MemoryStream(data));
-
-        long actual = reader.ReadVarInt(out byte readBytes);
-
-        Assert.Equal(expectedValue, actual);
-        Assert.Equal(expectedLength, readBytes);
-        Assert.Equal(expectedLength, reader.Position);
-        Assert.Equal(Sentinel, reader.ReadByte());
-
-        // SkipVarInt must consume the same number of bytes
-        using ReaderBase skipReader = new ReaderBase(new MemoryStream(data));
-        skipReader.SkipVarInt();
-
-        Assert.Equal(expectedLength, skipReader.Position);
-
-        // The byte-array decoder used for pages and records must agree
         int pos = 0;
         Assert.Equal(expectedValue, ByteArrayReader.ReadVarInt(data, data.Length, ref pos));
         Assert.Equal(expectedLength, pos);

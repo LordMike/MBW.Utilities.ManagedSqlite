@@ -36,7 +36,7 @@ internal abstract class BTreePage
         // Page 1 begins with the 100 byte database header
         int pos = page == 1 ? DatabaseHeader.HeaderSize : 0;
 
-        BTreeHeader header = BTreeHeader.Parse(data, length, ref pos);
+        BTreeHeader header = new BTreeHeader(data, length, ref pos);
 
         // The cell pointer array follows the header, make sure it fits before reading it. ValidateCellOffsets checks the rest.
         if (pos + 2L * header.CellCount > reader.PageSize - reader.ReservedSpace)
