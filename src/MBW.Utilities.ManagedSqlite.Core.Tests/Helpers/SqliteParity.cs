@@ -21,7 +21,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// The dump holds everything the library promises to read: the text encoding, the page size, every sqlite_master entry (type, name,
 /// table name and SQL, in file order), and for every table its column names and its rows in enumeration order, each
 /// with its rowid and every column value with its storage class. A WITHOUT ROWID table has no rowid, so its rows are
-/// listed without one, in primary key order, which is SQLite's order. Virtual tables are listed but not read, since their
+/// listed without one, in primary key order, which is SQLite's order. VIRTUAL generated columns are left out, as SQLite
+/// computes them when read and does not store them. Virtual tables are listed but not read, since their
 /// contents are not in the file; their shadow tables are ordinary tables and are read. Views, indexes and triggers
 /// are listed only, as the library does not run queries.
 /// </para>
@@ -129,20 +130,25 @@ internal static class SqliteParity
     {
         string quoted = "\"" + name.Replace("\"", "\"\"") + "\"";
 
-        // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns
-        List<string> columns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
+        // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns. VIRTUAL
+        // generated columns (hidden = 2) are left out: they are not stored, and the library does not compute them.
+        HashSet<string> virtualGenerated = new HashSet<string>(
+            Query(connection, $"SELECT name FROM pragma_table_xinfo({Literal(name)}) WHERE hidden = 2").Select(s => (string)s[0]),
+            StringComparer.OrdinalIgnoreCase);
+        List<string> allColumns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
+        List<string> columns = allColumns.Where(c => !virtualGenerated.Contains(c)).ToList();
         AppendTableHeader(sb, name, columns);
 
         bool withoutRowId = (long)Query(connection, $"SELECT wr FROM pragma_table_list WHERE schema = 'main' AND name = {Literal(name)}").Single()[0] != 0;
         if (withoutRowId)
         {
             foreach (object[] row in Query(connection, $"SELECT * FROM {quoted}"))
-                AppendRow(sb, null, row);
+                AppendRow(sb, null, row.Where((_, i) => !virtualGenerated.Contains(allColumns[i])));
         }
         else
         {
             foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
-                AppendRow(sb, (long)row[0], row.Skip(1));
+                AppendRow(sb, (long)row[0], row.Skip(1).Where((_, i) => !virtualGenerated.Contains(allColumns[i])));
         }
     }
 
@@ -170,7 +176,8 @@ internal static class SqliteParity
         Sqlite3Table table = db.GetTable(name);
         string sql = table.SchemaDefinition.Sql;
         bool withoutRowId = sql != null && WithoutRowIdClause.IsMatch(sql);
-        List<string> columns = table.GetTableDefinition().Columns.OrderBy(s => s.Ordinal).Select(s => s.Name).ToList();
+        List<string> columns = table.GetTableDefinition().Columns.Where(s => !s.IsVirtualGenerated).OrderBy(s => s.Ordinal)
+            .Select(s => s.Name).ToList();
         AppendTableHeader(sb, name, columns);
 
         foreach (Sqlite3Row row in table.EnumerateRows())

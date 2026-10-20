@@ -118,6 +118,22 @@ CREATE TABLE ""my table"" (""select"" TEXT, ""a b"" INTEGER, ""q""""uote"" TEXT)
 CREATE TABLE ""order"" (id INTEGER PRIMARY KEY, ""group"" TEXT);
 INSERT INTO ""my table"" VALUES ('s', 1, 'q');
 INSERT INTO ""order"" VALUES (1, 'g'), (2, 'h');" },
+            // A VIRTUAL generated column is not in the record, so the columns after it sit one position left there
+            { "VIRTUAL generated column before stored columns", @"
+CREATE TABLE tbl (a, b TEXT GENERATED ALWAYS AS (a || '!') VIRTUAL, c, d INTEGER);
+INSERT INTO tbl (a, c, d) VALUES ('x', 'third', 4);" },
+            // Without VIRTUAL or STORED, a generated column is VIRTUAL
+            { "generated column in short AS form", @"
+CREATE TABLE tbl (a, b AS (a || '!'), c);
+INSERT INTO tbl (a, c) VALUES ('x', 'third');" },
+            // A STORED generated column is in the record at its position, a VIRTUAL one is not
+            { "STORED generated column next to VIRTUAL", @"
+CREATE TABLE tbl (a INTEGER, v AS (a * 2) VIRTUAL, s INTEGER AS (a * 3) STORED, z TEXT);
+INSERT INTO tbl (a, z) VALUES (1, 'one'), (2, 'two');" },
+            // The record is the key, then the other stored columns: k, v, w. The VIRTUAL column g takes no position.
+            { "WITHOUT ROWID VIRTUAL generated column before a stored column", @"
+CREATE TABLE tbl (v TEXT, g AS (v || '!') VIRTUAL, w INTEGER, k TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO tbl (v, w, k) VALUES ('first', 1, 'b'), ('second', 2, 'a');" },
             { "rtree virtual table and plain table", @"
 CREATE VIRTUAL TABLE boxes USING rtree(id, minX, maxX, minY, maxY);
 INSERT INTO boxes VALUES (1, 0, 10, 0, 10), (2, 5, 15, 5, 15), (3, -3, 3, -3, 3);

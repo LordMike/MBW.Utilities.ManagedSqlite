@@ -115,6 +115,9 @@ public static class SqlParser
         // Columns that may alias the rowid if they turn out to be the sole primary key
         HashSet<SqlTableColumn> rowIdAliasCandidates = new HashSet<SqlTableColumn>();
 
+        // VIRTUAL generated columns are not stored, so each one moves the later columns one position left in the record
+        int virtualGeneratedColumns = 0;
+
         for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
         {
             SqlNode columnSet = columns.Children[columnIndex];
@@ -183,6 +186,13 @@ public static class SqlParser
             SqlTableColumn sqlTableColumn = new SqlTableColumn(columnIndex, name, string.Join(" ", identifiedTypeStrings), identifiedType);
             def.AddColumn(sqlTableColumn);
 
+            sqlTableColumn.RecordIndex = columnIndex - virtualGeneratedColumns;
+            if (IsVirtualGenerated(columnSet))
+            {
+                sqlTableColumn.IsVirtualGenerated = true;
+                virtualGeneratedColumns++;
+            }
+
             // Is this a primary key?
             if (typeStrings.Contains("PRIMARY", StringComparer.OrdinalIgnoreCase) &&
                 typeStrings.Contains("KEY", StringComparer.OrdinalIgnoreCase))
@@ -208,18 +218,18 @@ public static class SqlParser
             def.ConfigureRowIdColumn(primaryKeyColumn);
         }
 
-        // A WITHOUT ROWID table's record holds the primary key columns first, in key order, then the other columns
-        // in declared order
+        // A WITHOUT ROWID table's record holds the primary key columns first, in key order and each once, then the
+        // other stored columns in declared order. VIRTUAL generated columns are not stored, and can't be in the key.
         if (withoutRowId)
         {
-            int recordOrdinal = 0;
+            int recordIndex = 0;
             foreach (SqlTableColumn column in primaryKeyColumns)
-                column.RecordOrdinal = recordOrdinal++;
+                column.RecordIndex = recordIndex++;
 
             foreach (SqlTableColumn column in def.Columns)
             {
-                if (!primaryKeyColumns.Contains(column))
-                    column.RecordOrdinal = recordOrdinal++;
+                if (!primaryKeyColumns.Contains(column) && !column.IsVirtualGenerated)
+                    column.RecordIndex = recordIndex++;
             }
         }
 
@@ -237,6 +247,21 @@ public static class SqlParser
         return declaredType.Count == 1 &&
                declaredType[0].Is(SqlToken.String) &&
                string.Equals(declaredType[0].GetString().Trim('"', '[', ']', '`', '\''), "INTEGER", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A generated column is "[GENERATED ALWAYS] AS (expr) [VIRTUAL | STORED]", and is VIRTUAL unless STORED is given.
+    /// https://www.sqlite.org/gencol.html
+    /// </summary>
+    private static bool IsVirtualGenerated(SqlNode columnSet)
+    {
+        for (int i = 1; i < columnSet.Children.Count; i++)
+        {
+            if (columnSet.Is(i, "AS") && columnSet.IsGroup(i + 1))
+                return !columnSet.Is(i + 2, "STORED");
+        }
+
+        return false;
     }
 
     private static bool IsColumnPrimaryKeyDesc(SqlNode columnSet)
