@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -45,70 +44,6 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     {
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(Base));
         return db.GetTable(table).SchemaDefinition.RootPage;
-    }
-
-    /// <summary>
-    /// Each case: the <see cref="SqliteCorruptException.Structure"/> it must report, so the case fails if a later,
-    /// unrelated check is what catches it, and the patch that damages the database
-    /// </summary>
-    private static readonly Dictionary<string, (string Structure, Action<DbPatcher> Patch)> Cases = new()
-    {
-        // Database header
-        ["header: bad magic"] = ("magic bytes", p => p.WriteByte(0, (byte)'X')),
-        // A page size is a power of two from 512 to 65536. The stored value 1 means 65536, read by Structure_Tests.
-        ["header: page size 0, below 512"] = ("database header", p => p.SetPageSizeField(0)),
-        ["header: page size 1000, not a power of two"] = ("database header", p => p.SetPageSizeField(1000)),
-        ["header: usable size below 480"] = ("database header", p => p.SetReservedSpace(255)),
-
-        // File length
-        ["truncated: empty file"] = ("file length", p => p.Truncate(0)),
-        ["truncated: inside the header"] = ("file length", p => p.Truncate(50)),
-        ["truncated: after the schema page"] = ("file length", p => p.Truncate(p.PageSize)),
-        ["truncated: last page missing"] = ("file length", p => p.Truncate((p.PageCount - 1) * p.PageSize)),
-
-        // B-tree page headers
-        ["page type: unknown"] = ("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01)),
-        ["page type: index page inside a table b-tree"] = ("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A)),
-        ["cell count: pointer array past the end of the page"] = ("b-tree page header", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF)),
-        // Page 1's b-tree header follows the 100 byte database header: 100 + 8 + 2 * 250 = 608 is past the page
-        ["cell count: pointer array past the end of the schema page"] = ("b-tree page header", p => p.SetCellCount(MasterRoot, 250)),
-        // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells
-        ["cell count: pointers overlap the cells"] = ("cell pointer array", p => p.SetCellCount(SmallRoot, 249)),
-
-        // Child pointers
-        // As in SQLite, the depth limit is what stops a cycle. Root and left page alternate, so the walk gives up at
-        // the root's first child pointer.
-        ["cycle: right-most pointer back to the root"] = ("interior cell child pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot)),
-        ["child pointer: past the end"] = ("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd)),
-        // Every interior page has a right-most child
-        ["right-most pointer: 0"] = ("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0)),
-        ["schema root page: 0"] = ("page number", p => SetDeepRootPageInSchema(p, 0)),
-        // The 1-byte integer 0xFF is -1
-        ["schema root page: -1"] = ("page number", p => SetDeepRootPageInSchema(p, 0xFF)),
-
-        // Row 1 is the last cell on Small's page. Its payload size (the 1-byte varint 7, before the rowid varint and
-        // the record) becomes 127, which no longer fits in the page.
-        ["leaf cell: payload past the end of the page"] = ("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 0x7F)),
-
-        // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
-        ["record: header larger than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 0x7F)),
-        // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 127 is a 57 byte text, past any value that fits.
-        ["record: serial type larger than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 127)),
-        // Serial type 21 is a 4 byte text, one byte more than the payload holds
-        ["record: values longer than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 21)),
-
-        // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
-        ["overflow: chain ends early"] = ("overflow chain", p => p.SetOverflowPointer(SmallRoot, 1, 0)),
-        ["overflow: pointer past the end"] = ("page number", p => p.SetOverflowPointer(SmallRoot, 1, PastTheEnd)),
-    };
-
-    public static TheoryData<string> CaseNames()
-    {
-        TheoryData<string> res = new TheoryData<string>();
-        foreach (string name in Cases.Keys)
-            res.Add(name);
-
-        return res;
     }
 
     /// <summary>
@@ -172,11 +107,13 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
             Assert.IsAssignableFrom<SqliteException>(ex);
     }
 
-    [Theory]
-    [MemberData(nameof(CaseNames))]
-    public void Corruption_ThrowsSqliteCorruptException(string name)
+    /// <summary>
+    /// Damages a copy of the database with <paramref name="patch"/>, reads everything, and asserts it fails with a
+    /// <see cref="SqliteCorruptException"/> for <paramref name="structure"/>. Checking the structure makes a case fail
+    /// if a later, unrelated check is what catches it.
+    /// </summary>
+    private static void AssertCorrupt(string structure, Action<DbPatcher> patch)
     {
-        (string structure, Action<DbPatcher> patch) = Cases[name];
         DbPatcher patcher = new DbPatcher(Base);
         patch(patcher);
 
@@ -184,6 +121,98 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
 
         Assert.Equal(structure, Assert.IsType<SqliteCorruptException>(ex).Structure);
     }
+
+    // Database header
+
+    [Fact]
+    public void Header_BadMagic() => AssertCorrupt("magic bytes", p => p.WriteByte(0, (byte)'X'));
+
+    // A page size is a power of two from 512 to 65536. The stored value 1 means 65536, read by Structure_Tests.
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1000)]
+    public void Header_InvalidPageSize(ushort pageSize) => AssertCorrupt("database header", p => p.SetPageSizeField(pageSize));
+
+    [Fact]
+    public void Header_UsableSizeBelow480() => AssertCorrupt("database header", p => p.SetReservedSpace(255));
+
+    // File length
+
+    [Fact]
+    public void Truncated_EmptyFile() => AssertCorrupt("file length", p => p.Truncate(0));
+
+    [Fact]
+    public void Truncated_InsideTheHeader() => AssertCorrupt("file length", p => p.Truncate(50));
+
+    [Fact]
+    public void Truncated_AfterTheSchemaPage() => AssertCorrupt("file length", p => p.Truncate(p.PageSize));
+
+    [Fact]
+    public void Truncated_LastPageMissing() => AssertCorrupt("file length", p => p.Truncate((p.PageCount - 1) * p.PageSize));
+
+    // B-tree page headers
+
+    [Fact]
+    public void PageType_Unknown() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01));
+
+    [Fact]
+    public void PageType_IndexPageInsideTableBTree() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A));
+
+    [Fact]
+    public void CellCount_PointerArrayPastEndOfPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF));
+
+    // Page 1's b-tree header follows the 100 byte database header: 100 + 8 + 2 * 250 = 608 is past the page
+    [Fact]
+    public void CellCount_PointerArrayPastEndOfSchemaPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(MasterRoot, 250));
+
+    // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells
+    [Fact]
+    public void CellCount_PointersOverlapCells() => AssertCorrupt("cell pointer array", p => p.SetCellCount(SmallRoot, 249));
+
+    // Child pointers
+
+    // As in SQLite, the depth limit is what stops a cycle. Root and left page alternate, so the walk gives up at the
+    // root's first child pointer.
+    [Fact]
+    public void Cycle_RightMostPointerBackToRoot() => AssertCorrupt("interior cell child pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot));
+
+    [Fact]
+    public void ChildPointer_PastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd));
+
+    // Every interior page has a right-most child
+    [Fact]
+    public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0));
+
+    // 0xFF is the 1-byte integer -1
+    [Theory]
+    [InlineData(0)]
+    [InlineData(0xFF)]
+    public void SchemaRootPage_Invalid(byte rootPage) => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, rootPage));
+
+    // Row 1 is the last cell on Small's page. Its payload size (the 1-byte varint 7, before the rowid varint and the
+    // record) becomes 127, which no longer fits in the page.
+    [Fact]
+    public void LeafCell_PayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 0x7F));
+
+    // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
+
+    [Fact]
+    public void Record_HeaderLargerThanPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 0x7F));
+
+    // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 127 is a 57 byte text, past any value that
+    // fits, and 21 is a 4 byte text, one byte more than the payload holds.
+    [Theory]
+    [InlineData(127)]
+    [InlineData(21)]
+    public void Record_SerialTypeTooLargeForPayload(byte serialType) => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, serialType));
+
+    // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
+
+    [Fact]
+    public void Overflow_ChainEndsEarly() => AssertCorrupt("overflow chain", p => p.SetOverflowPointer(SmallRoot, 1, 0));
+
+    [Fact]
+    public void Overflow_PointerPastTheEnd() => AssertCorrupt("page number", p => p.SetOverflowPointer(SmallRoot, 1, PastTheEnd));
 
     [Fact]
     public void Corruption_OtherTablesStillReadLikeSqlite()
