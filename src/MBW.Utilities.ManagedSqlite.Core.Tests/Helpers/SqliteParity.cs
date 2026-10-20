@@ -19,7 +19,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// <para>
 /// The dump holds everything the library promises to read: the text encoding, the page size, every sqlite_master entry (type, name,
 /// table name and SQL, in file order), and for every table its column names and its rows in enumeration order, each
-/// with its rowid and every column value with its storage class. Virtual tables are listed but not read, since their
+/// with its rowid and every column value with its storage class. VIRTUAL generated columns are left out, as SQLite
+/// computes them when read and does not store them. Virtual tables are listed but not read, since their
 /// contents are not in the file; their shadow tables are ordinary tables and are read. Views, indexes and triggers
 /// are listed only, as the library does not run queries.
 /// </para>
@@ -37,6 +38,26 @@ internal static class SqliteParity
             actual = DumpWithLibrary(stream);
 
         Assert.Equal(expected, actual);
+    }
+
+    /// <summary>
+    /// Asserts that this library reads the rows of <paramref name="tables"/> from <paramref name="db"/> as SQLite reads
+    /// them from the database <paramref name="script"/> builds. For a damaged copy of that database, whose other tables
+    /// must still read.
+    /// </summary>
+    public static void AssertTablesSameAsSqlite(string script, Sqlite3Database db, params string[] tables)
+    {
+        using SqliteConnection connection = Run(script);
+
+        StringBuilder expected = new StringBuilder();
+        StringBuilder actual = new StringBuilder();
+        foreach (string table in tables)
+        {
+            AppendTableWithSqlite(expected, connection, table);
+            AppendTableWithLibrary(actual, db, table);
+        }
+
+        Assert.Equal(expected.ToString(), actual.ToString());
     }
 
     /// <summary>
@@ -98,19 +119,26 @@ internal static class SqliteParity
             AppendSchemaEntry(sb, (string)entry[0], (string)entry[1], (string)entry[2], entry[3] as string);
 
         foreach (object[] entry in schema.Where(s => IsReadableTable((string)s[0], s[3] as string)))
-        {
-            string name = (string)entry[1];
-            string quoted = "\"" + name.Replace("\"", "\"\"") + "\"";
-
-            // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns
-            List<string> columns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
-            AppendTableHeader(sb, name, columns);
-
-            foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
-                AppendRow(sb, (long)row[0], row.Skip(1));
-        }
+            AppendTableWithSqlite(sb, connection, (string)entry[1]);
 
         return sb.ToString();
+    }
+
+    private static void AppendTableWithSqlite(StringBuilder sb, SqliteConnection connection, string name)
+    {
+        string quoted = "\"" + name.Replace("\"", "\"\"") + "\"";
+
+        // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns. VIRTUAL
+        // generated columns (hidden = 2) are left out: they are not stored, and the library does not compute them.
+        HashSet<string> virtualGenerated = new HashSet<string>(
+            Query(connection, $"SELECT name FROM pragma_table_xinfo('{name.Replace("'", "''")}') WHERE hidden = 2").Select(s => (string)s[0]),
+            StringComparer.OrdinalIgnoreCase);
+        List<string> allColumns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
+        List<string> columns = allColumns.Where(c => !virtualGenerated.Contains(c)).ToList();
+        AppendTableHeader(sb, name, columns);
+
+        foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
+            AppendRow(sb, (long)row[0], row.Skip(1).Where((_, i) => !virtualGenerated.Contains(allColumns[i])));
     }
 
     public static string DumpWithLibrary(Stream stream)
@@ -127,21 +155,25 @@ internal static class SqliteParity
             AppendSchemaEntry(sb, entry.Type, entry.Name, entry.TableName, entry.Sql);
 
         foreach (Sqlite3SchemaRow entry in schema.Where(s => IsReadableTable(s.Type, s.Sql)))
-        {
-            Sqlite3Table table = db.GetTable(entry.Name);
-            List<string> columns = table.GetTableDefinition().Columns.OrderBy(s => s.Ordinal).Select(s => s.Name).ToList();
-            AppendTableHeader(sb, entry.Name, columns);
-
-            foreach (Sqlite3Row row in table.EnumerateRows())
-            {
-                // By name, so a rowid alias column reads the rowid as SQLite does. A column missing from the record
-                // (added by ALTER TABLE after the row was written) reads as NULL.
-                IEnumerable<object> values = columns.Select(c => row.TryGetValueByName(c, out object value) ? value : null);
-                AppendRow(sb, row.RowId, values);
-            }
-        }
+            AppendTableWithLibrary(sb, db, entry.Name);
 
         return sb.ToString();
+    }
+
+    private static void AppendTableWithLibrary(StringBuilder sb, Sqlite3Database db, string name)
+    {
+        Sqlite3Table table = db.GetTable(name);
+        List<string> columns = table.GetTableDefinition().Columns.Where(s => !s.IsVirtualGenerated).OrderBy(s => s.Ordinal)
+            .Select(s => s.Name).ToList();
+        AppendTableHeader(sb, name, columns);
+
+        foreach (Sqlite3Row row in table.EnumerateRows())
+        {
+            // By name, so a rowid alias column reads the rowid as SQLite does. A column missing from the record
+            // (added by ALTER TABLE after the row was written) reads as NULL.
+            IEnumerable<object> values = columns.Select(c => row.TryGetValueByName(c, out object value) ? value : null);
+            AppendRow(sb, row.RowId, values);
+        }
     }
 
     private static bool IsReadableTable(string type, string sql)

@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
@@ -32,13 +34,22 @@ public sealed class Sqlite3Database : IDisposable
         _reader = new ReaderBase(file);
         _propertyStore = new Dictionary<string, object>();
 
-        Initialize();
-        InitializeMasterTable();
+        try
+        {
+            Initialize();
+            InitializeMasterTable();
+        }
+        catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
+        {
+            throw new SqliteCorruptException("unable to read the database header or schema", innerException: e);
+        }
     }
 
     private void Initialize()
     {
         Header = DatabaseHeader.Parse(_reader);
+
+        ValidateHeader(Header);
 
         // Database Size in pages adjustment
         // https://www.sqlite.org/fileformat.html#in_header_database_size
@@ -49,6 +60,24 @@ public sealed class Sqlite3Database : IDisposable
         _sizeInPages = Math.Max(expectedPages, Header.DatabaseSizeInPages);
 
         _reader.ApplySqliteDatabaseHeader(Header, _settings);
+        _reader.PageCount = _sizeInPages;
+    }
+
+    private static void ValidateHeader(DatabaseHeader header)
+    {
+        // https://www.sqlite.org/fileformat.html#page_size
+        // A power of two between 512 and 65536. DatabaseHeader.Parse has already mapped the stored value 1 to 65536.
+        uint pageSize = header.PageSize;
+        bool validPageSize = pageSize >= 512 && pageSize <= 65536 && (pageSize & (pageSize - 1)) == 0;
+
+        if (!validPageSize)
+            throw new SqliteCorruptException($"invalid page size {pageSize}", structure: "database header");
+
+        // https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
+        // The usable size of a page may not be less than 480
+        uint usableSize = pageSize - header.ReservedSpaceAtEndOfPage;
+        if (usableSize < 480)
+            throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {pageSize}, reserved space {header.ReservedSpaceAtEndOfPage})", structure: "database header");
     }
 
     private void InitializeMasterTable()

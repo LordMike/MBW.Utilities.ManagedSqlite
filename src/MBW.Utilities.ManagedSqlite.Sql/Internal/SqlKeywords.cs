@@ -27,6 +27,10 @@ internal static class SqlKeywords
         "CONSTRAINT", "PRIMARY", "NOT", "NULL", "UNIQUE", "CHECK", "DEFAULT", "COLLATE", "REFERENCES", "GENERATED", "AS"
     };
 
+    /// <summary>
+    /// Type names reported as <see cref="SqlTableColumn.TypeName"/>. The parser does not use the types here: the
+    /// detected type follows SQLite's affinity rules instead.
+    /// </summary>
     public static (string[] words, Type type)[] TypeKeywords =
         new[] {
             // integer, numeric
