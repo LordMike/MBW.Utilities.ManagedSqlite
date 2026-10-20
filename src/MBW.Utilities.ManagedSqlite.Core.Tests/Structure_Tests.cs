@@ -105,9 +105,10 @@ INSERT INTO lower VALUES (1, 'x');" },
             { "WITHOUT ROWID TEXT key", @"
 CREATE TABLE tbl (v, k TEXT PRIMARY KEY) WITHOUT ROWID;
 INSERT INTO tbl VALUES (2, 'b'), ('x', 'a'), (NULL, 'c');" },
-            // The record holds the primary key columns first, in key order, then the others in declared order
-            { "WITHOUT ROWID composite key in another order", @"
-CREATE TABLE tbl (v TEXT, b INTEGER, a TEXT, PRIMARY KEY (a, b)) WITHOUT ROWID;
+            // The record holds the primary key columns first, in key order and each once (SQLite drops the repeated a),
+            // then the others in declared order
+            { "WITHOUT ROWID composite key in another order, with a repeated column", @"
+CREATE TABLE tbl (v TEXT, b INTEGER, a TEXT, PRIMARY KEY (a, b, a)) WITHOUT ROWID;
 INSERT INTO tbl VALUES ('first', 2, 'y'), ('second', 1, 'y'), ('third', 9, 'x');" },
             // The virtual table is only listed, and its shadow tables are read, docs_idx and docs_config being WITHOUT ROWID
             { "fts5 shadow tables", @"

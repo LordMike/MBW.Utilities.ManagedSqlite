@@ -43,6 +43,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     private static readonly uint DeepFirstLeaf = new DbPatcher(Base).GetChildPointer(DeepLeft, 0);
     private static readonly uint SmallRoot = RootPage("Small");
     private static readonly uint KeyedRoot = RootPage("Keyed");
+    private static readonly uint KeyedFirstLeaf = new DbPatcher(Base).GetChildPointer(KeyedRoot, 0);
     private static readonly uint PastTheEnd = (uint)new DbPatcher(Base).PageCount + 1;
 
     private static uint RootPage(string table)
@@ -201,6 +202,12 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     // record) becomes 127, which no longer fits in the page.
     [Fact]
     public void LeafCell_PayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 0x7F));
+
+    // The first key is the last cell on Keyed's first leaf, a 60 byte cell at offset 452. Its payload size (the 1-byte
+    // varint 59, before the record) becomes 100, which is still below the index page overflow threshold of 102 and no
+    // longer fits in the page.
+    [Fact]
+    public void WithoutRowId_LeafCellPayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _) - 1, 100));
 
     // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
 

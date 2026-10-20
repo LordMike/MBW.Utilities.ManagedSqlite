@@ -1,3 +1,4 @@
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
@@ -24,6 +25,9 @@ internal class BTreeIndexPage : BTreePage
     {
         Cells = new Cell[CellOffsets.Length];
 
+        // The usable size of a page, the page size less the reserved space at the end of each page
+        int U = (int)Reader.PageSize - Reader.ReservedSpace;
+
         for (int i = 0; i < Cells.Length; i++)
         {
             int pos = CellOffsets[i];
@@ -41,6 +45,10 @@ internal class BTreeIndexPage : BTreePage
                 pos += (int)bytesInCell;
                 overflowPage = ByteArrayReader.ReadUInt32(data, length, ref pos);
             }
+
+            long cellEnd = (long)CellOffsets[i] + headerSize + bytesInCell + (bytes > bytesInCell ? sizeof(uint) : 0);
+            if (bytes < 0 || cellEnd > U)
+                throw new SqliteCorruptException($"cell with payload size {bytes} at offset {CellOffsets[i]} extends past the end of the page", Page, IsLeaf ? "b-tree leaf cell" : "b-tree interior cell");
 
             Cells[i] = new Cell
             {
