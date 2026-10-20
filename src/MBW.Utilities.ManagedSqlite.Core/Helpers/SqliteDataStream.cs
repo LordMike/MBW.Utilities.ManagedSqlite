@@ -52,8 +52,7 @@ internal class SqliteDataStream : ReadonlyStream
         // Read as much as possible on this page
         int canRead = (int)Math.Min((uint)count, _dataLengthRemaining);
 
-        _reader.SeekPage(_currentPage, _dataOffset);
-        _reader.Read(buffer, offset, canRead);
+        _reader.ReadFromPage(_currentPage, _dataOffset, buffer, offset, canRead);
 
         // Current page tracking
         _dataOffset += (uint)canRead;
@@ -68,9 +67,9 @@ internal class SqliteDataStream : ReadonlyStream
         {
             _currentPage = _nextPage;
 
-            // Overflow pages begin with a 4 byte header pointing to the next page
-            _reader.SeekPage(_currentPage);
-            _nextPage = _reader.ReadUInt32();
+            // Overflow pages begin with a 4 byte header pointing to the next page. Reading it loads the page, so the
+            // data that follows is served from memory.
+            _nextPage = _reader.ReadUInt32FromPage(_currentPage, 0);
 
             _dataOffset = sizeof(uint);
             _dataLengthRemaining = (uint)Math.Min(_reader.PageSize - _dataOffset - _reader.ReservedSpace, _fullLengthRemaining);

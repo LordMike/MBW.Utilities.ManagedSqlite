@@ -24,6 +24,11 @@ internal sealed class ReaderBase : IDisposable
 
     private byte[]? _pageBuffer;
 
+    /// <summary>
+    /// The page <see cref="_pageBuffer"/> holds, 0 while it holds none
+    /// </summary>
+    private uint _pageBufferPage;
+
     public DatabaseHeader Header { get; }
 
     /// <summary>
@@ -159,10 +164,42 @@ internal sealed class ReaderBase : IDisposable
         if (_pageBuffer == null || _pageBuffer.Length != PageSize)
             _pageBuffer = new byte[PageSize];
 
+        _pageBufferPage = 0;
         if (Read(_pageBuffer, 0, (int)PageSize) != PageSize)
             throw new EndOfStreamException();
 
+        _pageBufferPage = page;
         return _pageBuffer;
+    }
+
+    /// <summary>
+    /// Copies <paramref name="count"/> bytes from <paramref name="offset"/> on <paramref name="page"/> into
+    /// <paramref name="buffer"/>. The bytes come from the page buffer, which is filled when it holds another page, so
+    /// the rows of a leaf page cost one read of the page and no seek and read of the stream per row.
+    /// </summary>
+    internal void ReadFromPage(uint page, uint offset, byte[] buffer, int bufferOffset, int count)
+    {
+        if (offset + (ulong)count > PageSize)
+        {
+            SeekPage(page, offset);
+            if (Read(buffer, bufferOffset, count) != count)
+                throw new EndOfStreamException();
+            return;
+        }
+
+        byte[] data = page == _pageBufferPage && _pageBuffer != null ? _pageBuffer : ReadPage(page);
+        Buffer.BlockCopy(data, (int)offset, buffer, bufferOffset, count);
+    }
+
+    /// <summary>
+    /// Reads a big-endian 32-bit integer from <paramref name="page"/>, through the page buffer.
+    /// </summary>
+    internal uint ReadUInt32FromPage(uint page, uint offset)
+    {
+        ReadFromPage(page, offset, _uint32Buffer, 0, 4);
+
+        int pos = 0;
+        return ByteArrayReader.ReadUInt32(_uint32Buffer, 4, ref pos);
     }
 
     public uint ReadUInt32()
