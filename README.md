@@ -27,7 +27,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
     
     // Get the data of column 0 on row 0
     Sqlite3Row row = rows.First();
-    object data = rows.ColumnData[0];
+    object data = row.ColumnData[0];
 
     // Using the SQL package also provides a TryGetValueByName(), this package also tries to detect row-id substitutes
     row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
@@ -46,7 +46,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
 ## Notes
 
 * This is not an ADO.Net substitute, it will not support SQL statements or use indexes - it will only provide access to the data in a database.
-* All of the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
+* All the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
 * The library has limited support for handling cases where the primary key of a table is the [row-id](https://www.sqlite.org/lang_createtable.html#rowid). 
 * Interestingly, SQLite3 allows _any_ value in _any_ column. So you may get different types out of the raw files, should you encounter an app that does this.
 
