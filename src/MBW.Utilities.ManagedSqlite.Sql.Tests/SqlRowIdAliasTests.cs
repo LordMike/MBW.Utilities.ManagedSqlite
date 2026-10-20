@@ -16,7 +16,6 @@ public class SqlRowIdAliasTests
     {
         "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (v TEXT, id INTEGER PRIMARY KEY)",
-        "CREATE TABLE t (v TEXT, id INTEGER PRIMARY KEY)",
         "CREATE TABLE t (id integer primary key, v text)",
         "CREATE TABLE t (id InTeGeR PRIMARY KEY AUTOINCREMENT, v TEXT)",
         "CREATE TABLE t (id INTEGER PRIMARY KEY ASC, v TEXT)",
