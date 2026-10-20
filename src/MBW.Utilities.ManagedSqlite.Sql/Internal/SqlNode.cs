@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using Superpower.Model;
 
 namespace MBW.Utilities.ManagedSqlite.Sql.Internal;
@@ -8,7 +9,10 @@ internal class SqlNode
 {
     public Token<SqlToken> Token { get; set; }
 
-    public List<SqlNode> Children { get; set; }
+    /// <summary>
+    /// The child nodes of a group, null for a token node
+    /// </summary>
+    public List<SqlNode>? Children { get; set; }
 
     public SqlNode()
     {
@@ -39,21 +43,25 @@ internal class SqlNode
         return !IsGroup() && Token.Kind == SqlToken.String && Token.Span.EqualsValueIgnoreCase(text);
     }
 
+    [MemberNotNullWhen(true, nameof(Children))]
     public bool Is(int index, SqlToken type)
     {
         return IsGroup() && Children.Count > index && Children[index].Is(type);
     }
 
+    [MemberNotNullWhen(true, nameof(Children))]
     public bool Is(int index, string text)
     {
         return IsGroup() && Children.Count > index && Children[index].Is(text);
     }
 
+    [MemberNotNullWhen(true, nameof(Children))]
     public bool IsGroup()
     {
         return Children != null;
     }
 
+    [MemberNotNullWhen(true, nameof(Children))]
     public bool IsGroup(int index)
     {
         return IsGroup() && Children.Count > index && Children[index].IsGroup();

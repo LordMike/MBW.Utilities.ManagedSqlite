@@ -4,16 +4,18 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 public class Sqlite3SchemaRow
 {
-    public Sqlite3Database Database { get; internal set; }
-    public string Type { get; internal set; }
+    // Database, Type, Name and TableName are always assigned by Sqlite3Database and Sqlite3MasterTable, the only code
+    // that creates rows; the null! initializers are placeholders until then.
+    public Sqlite3Database Database { get; internal set; } = null!;
+    public string Type { get; internal set; } = null!;
 
-    public string Name { get; internal set; }
+    public string Name { get; internal set; } = null!;
 
-    public string TableName { get; internal set; }
+    public string TableName { get; internal set; } = null!;
 
     public uint RootPage { get; internal set; }
 
-    public string Sql { get; internal set; }
+    public string? Sql { get; internal set; }
 
     /// <summary>
     /// True if this is a virtual table (<c>CREATE VIRTUAL TABLE ... USING module(...)</c>).

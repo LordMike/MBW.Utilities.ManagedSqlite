@@ -21,9 +21,12 @@ public class ReaderBase : IDisposable
 
     public SqliteEncoding TextEncoding { get; private set; }
 
-    private Encoding _encoding;
+    /// <summary>
+    /// Null until <see cref="ApplySqliteDatabaseHeader"/> has run
+    /// </summary>
+    private Encoding? _encoding;
 
-    private byte[] _pageBuffer;
+    private byte[]? _pageBuffer;
 
     public uint PageSize { get; private set; }
 

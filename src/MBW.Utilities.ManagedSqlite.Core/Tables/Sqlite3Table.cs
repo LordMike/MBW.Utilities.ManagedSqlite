@@ -28,8 +28,8 @@ public class Sqlite3Table
 
     public IEnumerable<Sqlite3Row> EnumerateRows()
     {
-        byte[] buffer = null;
-        long[] serialTypes = null;
+        byte[]? buffer = null;
+        long[]? serialTypes = null;
 
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
@@ -83,7 +83,7 @@ public class Sqlite3Table
         return res;
     }
 
-    private object[] DecodeRecord(byte[] payload, int length, ref long[] serialTypes)
+    private object?[] DecodeRecord(byte[] payload, int length, ref long[]? serialTypes)
     {
         serialTypes ??= new long[16];
 
@@ -101,7 +101,7 @@ public class Sqlite3Table
             serialTypes[columns++] = ByteArrayReader.ReadVarInt(payload, length, ref pos);
         }
 
-        object[] rowData = new object[columns];
+        object?[] rowData = new object?[columns];
         for (int i = 0; i < columns; i++)
         {
             long serialType = serialTypes[i];

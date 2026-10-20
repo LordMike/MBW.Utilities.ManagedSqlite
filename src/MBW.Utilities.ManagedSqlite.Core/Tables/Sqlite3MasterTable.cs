@@ -18,7 +18,7 @@ internal class Sqlite3MasterTable
 
             other.Database = db;
 
-            row.TryGetOrdinal(0, out string str);
+            row.TryGetOrdinal(0, out string? str);
             other.Type = str;
 
             row.TryGetOrdinal(1, out str);

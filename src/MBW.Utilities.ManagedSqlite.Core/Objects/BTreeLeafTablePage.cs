@@ -10,7 +10,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects;
 /// </summary>
 internal class BTreeLeafTablePage : BTreePage
 {
-    public Cell[] Cells { get; private set; }
+    // Assigned by ParseInternal, which BTreePage.Parse calls right after construction
+    public Cell[] Cells { get; private set; } = null!;
 
     public BTreeLeafTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
         : base(reader, page, header, cellOffsets)
