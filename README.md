@@ -27,7 +27,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
     
     // Get the data of column 0 on row 0
     Sqlite3Row row = rows.First();
-    object data = rows.ColumnData[0];
+    object data = row.ColumnData[0];
 
     // Using the SQL package also provides a TryGetValueByName(), this package also tries to detect row-id substitutes
     row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
@@ -46,9 +46,27 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
 ## Notes
 
 * This is not an ADO.Net substitute, it will not support SQL statements or use indexes - it will only provide access to the data in a database.
-* All of the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
-* The library has limited support for handling cases where the primary key of a table is the [row-id](https://www.sqlite.org/lang_createtable.html#rowid). 
+* All the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
 * Interestingly, SQLite3 allows _any_ value in _any_ column. So you may get different types out of the raw files, should you encounter an app that does this.
+
+## Known limitations
+
+The goal is to read a database file exactly as SQLite itself reads it. These are the known places where it does not, or where it deliberately does less.
+
+### Out of scope
+
+* **Read-only.** There is no way to write, update or delete data.
+* **No SQL execution.** Queries, views, triggers and expressions are not run. Rows are read in the order they are stored (rowid order, or primary key order for WITHOUT ROWID tables), and indexes are listed but never used.
+* **Virtual tables cannot be read.** Their rows are produced by a SQLite extension (such as fts5 or rtree) at query time, not stored in the file, so `GetTable()` throws `NotSupportedException`. Their shadow tables (for fts5: `<name>_content`, `<name>_data` and so on) are ordinary tables and can be read.
+* **VIRTUAL generated columns have no value.** SQLite computes them from their expression each time they are read, and nothing is stored in the file. STORED generated columns are stored and read normally.
+* **Only the main database file is read.** Changes still in a `-wal` file (WAL mode) or a hot `-journal` are not seen. Checkpoint the database, or open it with SQLite once, before reading it here.
+* **No locking.** Reading a file while another process writes to it can return inconsistent data.
+
+### Differences from SQLite
+
+* **Column DEFAULTs are not applied.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column. SQLite returns the column's DEFAULT for it, but this library returns no value (`null`).
+* **Declared type names are matched as whole words.** SQLite's [affinity rules](https://www.sqlite.org/datatype3.html#determination_of_column_affinity) match substrings, so a type such as `FLOATING POINT` or `CHARINT` gets REAL or INTEGER affinity in SQLite, but is not recognized here (`byte[]`).
+* **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs
 * Format changes: https://www.sqlite.org/formatchng.html
