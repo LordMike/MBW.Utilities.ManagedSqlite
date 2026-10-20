@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -40,7 +41,13 @@ internal class SqliteDataStream : ReadonlyStream
     {
         // Check if we're EOF
         if (_dataLengthRemaining == 0)
+        {
+            // The overflow chain ended before the payload did
+            if (_fullLengthRemaining > 0 && count > 0)
+                throw new SqliteCorruptException($"the overflow chain ended with {_fullLengthRemaining} bytes of the payload left", _currentPage, "overflow chain");
+
             return 0;
+        }
 
         // Read as much as possible on this page
         int canRead = (int)Math.Min((uint)count, _dataLengthRemaining);
