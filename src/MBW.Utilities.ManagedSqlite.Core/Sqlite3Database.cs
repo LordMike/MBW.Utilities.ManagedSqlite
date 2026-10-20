@@ -14,15 +14,13 @@ namespace MBW.Utilities.ManagedSqlite.Core;
 
 public sealed class Sqlite3Database : IDisposable
 {
-    private readonly Sqlite3Settings _settings;
     private readonly ReaderBase _reader;
-    private Dictionary<string, object> _propertyStore;
+    private readonly Dictionary<string, object> _propertyStore;
 
-    private uint _sizeInPages;
+    private readonly Sqlite3MasterTable _masterTable;
+    private readonly Sqlite3SchemaRow _masterSchemaRow;
 
-    internal DatabaseHeader Header { get; private set; }
-    private Sqlite3MasterTable _masterTable;
-    private Sqlite3SchemaRow _masterSchemaRow;
+    internal DatabaseHeader Header => _reader.Header;
 
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
@@ -31,14 +29,12 @@ public sealed class Sqlite3Database : IDisposable
         if (file == null)
             throw new ArgumentNullException(nameof(file));
 
-        _settings = settings ?? new Sqlite3Settings();
-        _reader = new ReaderBase(file);
         _propertyStore = new Dictionary<string, object>();
 
         try
         {
-            Initialize();
-            InitializeMasterTable();
+            _reader = ReaderBase.Open(file, settings ?? new Sqlite3Settings());
+            _masterTable = OpenMasterTable(out _masterSchemaRow);
         }
         catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
         {
@@ -46,56 +42,17 @@ public sealed class Sqlite3Database : IDisposable
         }
     }
 
-    [MemberNotNull(nameof(Header))]
-    private void Initialize()
-    {
-        Header = DatabaseHeader.Parse(_reader);
-
-        ValidateHeader(Header);
-
-        // Database Size in pages adjustment
-        // https://www.sqlite.org/fileformat.html#in_header_database_size
-
-        uint expectedPages = (uint)(_reader.Length / Header.PageSize);
-
-        // TODO: Warn on mismatch
-        _sizeInPages = Math.Max(expectedPages, Header.DatabaseSizeInPages);
-
-        _reader.ApplySqliteDatabaseHeader(Header, _settings);
-        _reader.PageCount = _sizeInPages;
-    }
-
-    private static void ValidateHeader(DatabaseHeader header)
-    {
-        // https://www.sqlite.org/fileformat.html#page_size
-        // A power of two between 512 and 65536. DatabaseHeader.Parse has already mapped the stored value 1 to 65536.
-        uint pageSize = header.PageSize;
-        bool validPageSize = pageSize >= 512 && pageSize <= 65536 && (pageSize & (pageSize - 1)) == 0;
-
-        if (!validPageSize)
-            throw new SqliteCorruptException($"invalid page size {pageSize}", structure: "database header");
-
-        // https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
-        // The usable size of a page may not be less than 480
-        uint usableSize = pageSize - header.ReservedSpaceAtEndOfPage;
-        if (usableSize < 480)
-            throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {pageSize}, reserved space {header.ReservedSpaceAtEndOfPage})", structure: "database header");
-    }
-
-    [MemberNotNull(nameof(_masterTable), nameof(_masterSchemaRow))]
-    private void InitializeMasterTable()
+    private Sqlite3MasterTable OpenMasterTable(out Sqlite3SchemaRow schemaRow)
     {
         // Parse table on Page 1, the sqlite_master table
         BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
         // Fake the schema for the sqlite_master table
-        Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
+        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
             "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);");
 
-        _masterSchemaRow = schemaRow;
-
         Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
-        _masterTable = new Sqlite3MasterTable(this, table);
+        return new Sqlite3MasterTable(this, table);
     }
 
     /// <summary>
@@ -168,6 +125,6 @@ public sealed class Sqlite3Database : IDisposable
 
     public void Dispose()
     {
-        _reader?.Dispose();
+        _reader.Dispose();
     }
 }
