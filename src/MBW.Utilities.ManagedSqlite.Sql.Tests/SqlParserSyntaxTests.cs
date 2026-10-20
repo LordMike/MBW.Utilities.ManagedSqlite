@@ -124,6 +124,26 @@ public class SqlParserSyntaxTests
         Assert.True(def.TryGetColumn(expectedName, out _));
     }
 
+    /// <summary>
+    /// SQLite lets any character outside ASCII be part of an unquoted identifier, and only space, tab, line feed, form
+    /// feed and carriage return are whitespace (a vertical tab only inside a run of it), so a no-break space joins the
+    /// identifier it touches.
+    /// </summary>
+    [Theory]
+    [InlineData("CREATE TABLE t(a€ INTEGER, b² TEXT)", "a€", "INTEGER", "b²")]
+    [InlineData("CREATE TABLE t(a😀 INTEGER, 日本 TEXT)", "a😀", "INTEGER", "日本")]
+    [InlineData("CREATE TABLE t(_a$1 INTEGER, b TEXT)", "_a$1", "INTEGER", "b")]
+    [InlineData("CREATE TABLE t(a\u00A0INTEGER, \u000Bb\u000CTEXT)", "a\u00A0INTEGER", "", "b")]
+    public void UnquotedIdentifierCharacters(string sql, string first, string firstType, string second)
+    {
+        SqlTableDefinition def = Parse(sql);
+
+        Assert.Equal(2, def.Columns.Count);
+        Assert.Equal(first, def.Columns.ElementAt(0).Name);
+        Assert.Equal(firstType, def.Columns.ElementAt(0).TypeName);
+        Assert.Equal(second, def.Columns.ElementAt(1).Name);
+    }
+
     [Fact]
     public void EscapedQuotesInTableName()
     {
@@ -150,6 +170,8 @@ public class SqlParserSyntaxTests
     [InlineData("CREATE TABLE t(a))")]
     [InlineData("a, b")]
     [InlineData("CREATE TABLE t(a), b")]
+    [InlineData("CREATE TABLE t(a INTEGER,\u000Bb TEXT)")]
+    [InlineData("CREATE TABLE t(a\u007Fb INTEGER)")]
     [InlineData("CREATE TABLE t(a TEXT DEFAULT 'unterminated)")]
     [InlineData("CREATE TABLE t(\"unterminated TEXT)")]
     [InlineData("CREATE TABLE t([unterminated TEXT)")]
@@ -196,6 +218,8 @@ CREATE TABLE comments( -- the id
 INSERT INTO comments VALUES (7, 'seven');
 CREATE TABLE ""quo""""ted""(""col""""two"" TEXT, 'sq''col' INTEGER, `bt``col` REAL);
 INSERT INTO ""quo""""ted"" VALUES ('two', 2, 2.5);
+CREATE TABLE unquoted_unicode(a€ INTEGER, b² TEXT, c😀 REAL, 日本 BLOB, nbsp INTEGER); -- the last column is one untyped column named ""nbsp<U+00A0>INTEGER"", because a no-break space is an identifier character
+INSERT INTO unquoted_unicode VALUES (1, 'two', 3.5, x'04', 'five');
 CREATE VIEW checks_view AS SELECT a FROM checks;";
 
     [Fact]
