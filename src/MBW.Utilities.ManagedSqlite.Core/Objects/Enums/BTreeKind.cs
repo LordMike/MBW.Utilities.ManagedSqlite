@@ -5,6 +5,10 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 /// </summary>
 internal enum BTreeKind
 {
-    Table,
-    Index
+    /// <summary>
+    /// Never a valid kind, so a caller that passes an uninitialized value is caught
+    /// </summary>
+    Unknown = 0,
+    Table = 1,
+    Index = 2
 }

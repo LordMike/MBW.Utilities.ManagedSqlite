@@ -29,6 +29,9 @@ internal abstract class BTreePage
     /// <param name="parent">The kind of b-tree the page is a child in, so a page of the other kind is corruption. Null for a root page.</param>
     internal static BTreePage Parse(ReaderBase reader, uint page, BTreeKind? parent = null)
     {
+        if (parent == BTreeKind.Unknown)
+            throw new ArgumentOutOfRangeException(nameof(parent), parent, "Pass Table or Index for a child page, or null for a root page");
+
         // Read the page once, and parse it from memory
         byte[] data = reader.ReadPage(page);
         int length = (int)reader.PageSize;
