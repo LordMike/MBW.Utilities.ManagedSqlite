@@ -11,7 +11,7 @@ public class SqliteException : Exception
     {
     }
 
-    internal SqliteException(string message, Exception innerException) : base(message, innerException)
+    internal SqliteException(string message, Exception? innerException) : base(message, innerException)
     {
     }
 }

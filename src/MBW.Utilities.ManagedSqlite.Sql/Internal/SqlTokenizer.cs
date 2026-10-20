@@ -42,15 +42,16 @@ internal static class SqlTokenizer
         Span.MatchedBy(Span.EqualToIgnoreCase("0x").IgnoreThen(Character.HexDigit.AtLeastOnce()));
 
     // 1, 1.5, 1., .5, 1e6, 1.5E-3
+    // Only the matched span is used, never the parsed values, so OptionalOrDefault<char[]> is typed to match the other branches
     private static TextParser<TextSpan> NumericLiteral { get; } =
         Span.MatchedBy(
-            Digits.IgnoreThen(Character.EqualTo('.').IgnoreThen(Character.Digit.Many()).OptionalOrDefault())
+            Digits.IgnoreThen(Character.EqualTo('.').IgnoreThen(Character.Digit.Many()).OptionalOrDefault<char[]>())
                 .Or(Character.EqualTo('.').IgnoreThen(Digits).Try())
                 .IgnoreThen(Character.In('e', 'E')
                     .IgnoreThen(Character.In('+', '-').Optional())
                     .IgnoreThen(Digits)
                     .Try()
-                    .OptionalOrDefault()));
+                    .OptionalOrDefault<char[]>()));
 
     // Multi-character operators are tried before their single-character prefixes
     private static TextParser<TextSpan> Operator { get; } =

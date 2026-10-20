@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Sql.Internal;
 using Superpower.Model;
@@ -8,7 +10,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql;
 
 internal static class SqlParser
 {
-    private static bool TryParseTokenList(TokenList<SqlToken> list, out SqlNode rootNode)
+    private static bool TryParseTokenList(TokenList<SqlToken> list, [NotNullWhen(true)] out SqlNode? rootNode)
     {
         rootNode = null;
 
@@ -67,7 +69,7 @@ internal static class SqlParser
         return true;
     }
 
-    public static bool TryParse(string sql, out SqlTableDefinition tableDefinition)
+    public static bool TryParse(string? sql, [NotNullWhen(true)] out SqlTableDefinition? tableDefinition)
     {
         tableDefinition = null;
 
@@ -86,7 +88,7 @@ internal static class SqlParser
         }
     }
 
-    private static bool TryParseInternal(string sql, out SqlTableDefinition tableDefinition)
+    private static bool TryParseInternal(string sql, [NotNullWhen(true)] out SqlTableDefinition? tableDefinition)
     {
         tableDefinition = null;
 
@@ -96,7 +98,7 @@ internal static class SqlParser
         if (!tokens.HasValue)
             return false;
 
-        if (!TryParseTokenList(tokens.Value, out SqlNode node))
+        if (!TryParseTokenList(tokens.Value, out SqlNode? node))
             return false;
 
         // Check if this is a create table
@@ -105,9 +107,11 @@ internal static class SqlParser
 
         SqlTableDefinition def = new SqlTableDefinition(node.GetString(2));
 
+        // GetGroup only returns group nodes, which always have Children
         SqlNode columns = node.GetGroup(3);
+        Debug.Assert(columns.IsGroup());
         int primaryKeyComponents = 0;
-        SqlTableColumn primaryKeyColumn = null;
+        SqlTableColumn? primaryKeyColumn = null;
 
         // Columns that may alias the rowid if they turn out to be the sole primary key
         HashSet<SqlTableColumn> rowIdAliasCandidates = new HashSet<SqlTableColumn>();
@@ -115,7 +119,7 @@ internal static class SqlParser
         // VIRTUAL generated columns are not stored, so each one moves the later columns one position left in the record
         int virtualGeneratedColumns = 0;
 
-        for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
+        for (int columnIndex = 0; columnIndex < columns.Children!.Count; columnIndex++)
         {
             SqlNode columnSet = columns.Children[columnIndex];
             if (columnSet.Children == null || !columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
@@ -129,9 +133,11 @@ internal static class SqlParser
             {
                 if (columnSet.Is(0, "PRIMARY") && columnSet.Is(1, "KEY") && columnSet.IsGroup(2))
                 {
+                    // GetGroup only returns group nodes, which always have Children
                     SqlNode pkColumns = columnSet.GetGroup(2);
+                    Debug.Assert(pkColumns.IsGroup());
 
-                    foreach (SqlNode pkColumn in pkColumns.Children)
+                    foreach (SqlNode pkColumn in pkColumns.Children!)
                     {
                         if (pkColumn.Is(SqlToken.String))
                             name = pkColumn.GetString();
@@ -140,7 +146,7 @@ internal static class SqlParser
                         else
                             return false;
 
-                        if (!def.TryGetColumn(name, out SqlTableColumn columnObject))
+                        if (!def.TryGetColumn(name, out SqlTableColumn? columnObject))
                             continue;
 
                         columnObject.IsPartOfPrimaryKey = true;
@@ -202,7 +208,7 @@ internal static class SqlParser
         }
 
         // Identify row-id substitutes
-        if (primaryKeyComponents == 1 && rowIdAliasCandidates.Contains(primaryKeyColumn) && !IsWithoutRowId(node))
+        if (primaryKeyComponents == 1 && primaryKeyColumn != null && rowIdAliasCandidates.Contains(primaryKeyColumn) && !IsWithoutRowId(node))
         {
             def.ConfigureRowIdColumn(primaryKeyColumn);
         }
@@ -257,7 +263,9 @@ internal static class SqlParser
     /// </summary>
     private static bool IsVirtualGenerated(SqlNode columnSet)
     {
-        for (int i = 1; i < columnSet.Children.Count; i++)
+        Debug.Assert(columnSet.IsGroup());
+
+        for (int i = 1; i < columnSet.Children!.Count; i++)
         {
             if (columnSet.Is(i, "AS") && columnSet.IsGroup(i + 1))
                 return !columnSet.Is(i + 2, "STORED");
@@ -268,7 +276,9 @@ internal static class SqlParser
 
     private static bool IsColumnPrimaryKeyDesc(SqlNode columnSet)
     {
-        for (int i = 1; i < columnSet.Children.Count; i++)
+        Debug.Assert(columnSet.IsGroup());
+
+        for (int i = 1; i < columnSet.Children!.Count; i++)
         {
             if (columnSet.Is(i, "PRIMARY") && columnSet.Is(i + 1, "KEY"))
                 return columnSet.Is(i + 2, "DESC");
@@ -280,7 +290,9 @@ internal static class SqlParser
     private static bool IsWithoutRowId(SqlNode createStatement)
     {
         // Table options follow the column definitions group
-        for (int i = 4; i < createStatement.Children.Count; i++)
+        Debug.Assert(createStatement.IsGroup());
+
+        for (int i = 4; i < createStatement.Children!.Count; i++)
         {
             if (createStatement.Is(i, "WITHOUT") && createStatement.Is(i + 1, "ROWID"))
                 return true;

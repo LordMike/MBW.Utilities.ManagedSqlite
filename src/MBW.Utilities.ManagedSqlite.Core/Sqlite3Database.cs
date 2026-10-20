@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -25,7 +26,7 @@ public sealed class Sqlite3Database : IDisposable
 
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
-    public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
+    public Sqlite3Database(Stream file, Sqlite3Settings? settings = null)
     {
         if (file == null)
             throw new ArgumentNullException(nameof(file));
@@ -45,6 +46,7 @@ public sealed class Sqlite3Database : IDisposable
         }
     }
 
+    [MemberNotNull(nameof(Header))]
     private void Initialize()
     {
         Header = DatabaseHeader.Parse(_reader);
@@ -80,21 +82,15 @@ public sealed class Sqlite3Database : IDisposable
             throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {pageSize}, reserved space {header.ReservedSpaceAtEndOfPage})", structure: "database header");
     }
 
+    [MemberNotNull(nameof(_masterTable), nameof(_masterSchemaRow))]
     private void InitializeMasterTable()
     {
         // Parse table on Page 1, the sqlite_master table
         BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
         // Fake the schema for the sqlite_master table
-        Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow
-        {
-            Database = this,
-            Type = "table",
-            Name = "sqlite_master",
-            TableName = "sqlite_master",
-            RootPage = rootBtree.Page,
-            Sql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);"
-        };
+        Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
+            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);");
 
         _masterSchemaRow = schemaRow;
 
@@ -107,9 +103,9 @@ public sealed class Sqlite3Database : IDisposable
     /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
-    public bool TryGetTable(string name, out Sqlite3Table table)
+    public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
     {
-        Sqlite3SchemaRow tbl = FindTable(name);
+        Sqlite3SchemaRow? tbl = FindTable(name);
 
         if (tbl == null || tbl.IsVirtual)
         {
@@ -128,7 +124,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
     public Sqlite3Table GetTable(string name)
     {
-        Sqlite3SchemaRow tbl = FindTable(name);
+        Sqlite3SchemaRow? tbl = FindTable(name);
 
         if (tbl == null)
             throw new KeyNotFoundException("Unable to find table named " + name);
@@ -139,7 +135,7 @@ public sealed class Sqlite3Database : IDisposable
         return OpenTable(tbl);
     }
 
-    private Sqlite3SchemaRow FindTable(string name)
+    private Sqlite3SchemaRow? FindTable(string name)
     {
         if (string.Equals(name, "sqlite_master", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(name, "sqlite_schema", StringComparison.OrdinalIgnoreCase))
