@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Diagnostics.CodeAnalysis;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
@@ -11,7 +12,10 @@ public sealed class SqlTableDefinition
 
     public string TableName { get; }
     public IReadOnlyCollection<SqlTableColumn> Columns { get; }
-    public SqlTableColumn RowIdColumn { get; private set; }
+    /// <summary>
+    /// The column that aliases the rowid (an <c>INTEGER PRIMARY KEY</c>), or null if the table has none
+    /// </summary>
+    public SqlTableColumn? RowIdColumn { get; private set; }
 
     internal SqlTableDefinition(string name)
     {
@@ -33,7 +37,7 @@ public sealed class SqlTableDefinition
         RowIdColumn = column;
     }
 
-    public bool TryGetColumn(string name, out SqlTableColumn column)
+    public bool TryGetColumn(string name, [NotNullWhen(true)] out SqlTableColumn? column)
     {
         return _columnIndex.TryGetValue(name, out column);
     }

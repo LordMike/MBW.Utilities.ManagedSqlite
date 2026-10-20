@@ -1,4 +1,5 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Helpers;
+﻿using System.Diagnostics.CodeAnalysis;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
@@ -11,13 +12,14 @@ internal class BTreeInteriorTablePage : BTreePage
 {
     public Cell[] Cells { get; private set; }
 
-    public BTreeInteriorTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
+    public BTreeInteriorTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets, byte[] data, int length)
         : base(reader, page, header, cellOffsets)
     {
-
+        ParseCells(data, length);
     }
 
-    protected override void ParseInternal(byte[] data, int length)
+    [MemberNotNull(nameof(Cells))]
+    private void ParseCells(byte[] data, int length)
     {
         Cells = new Cell[CellOffsets.Length];
 
