@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
-public class SqlTableDefinition
+public sealed class SqlTableDefinition
 {
     private readonly List<SqlTableColumn> _columns;
     private readonly Dictionary<string, SqlTableColumn> _columnIndex;
@@ -13,7 +13,7 @@ public class SqlTableDefinition
     public IReadOnlyCollection<SqlTableColumn> Columns { get; }
     public SqlTableColumn RowIdColumn { get; private set; }
 
-    public SqlTableDefinition(string name)
+    internal SqlTableDefinition(string name)
     {
         TableName = name;
         _columns = new List<SqlTableColumn>();
