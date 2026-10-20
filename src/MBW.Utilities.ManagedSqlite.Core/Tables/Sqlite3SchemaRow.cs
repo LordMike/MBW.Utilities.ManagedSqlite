@@ -2,8 +2,12 @@ using System;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3SchemaRow
+public sealed class Sqlite3SchemaRow
 {
+    internal Sqlite3SchemaRow()
+    {
+    }
+
     public Sqlite3Database Database { get; internal set; }
     public string Type { get; internal set; }
 

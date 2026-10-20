@@ -10,7 +10,7 @@ using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 
-public class ReaderBase : IDisposable
+internal class ReaderBase : IDisposable
 {
     public long Length { get; }
 

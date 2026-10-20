@@ -7,11 +7,11 @@ namespace MBW.Utilities.ManagedSqlite.Core.Exceptions;
 /// </summary>
 public class SqliteException : Exception
 {
-    public SqliteException(string message) : base(message)
+    internal SqliteException(string message) : base(message)
     {
     }
 
-    public SqliteException(string message, Exception innerException) : base(message, innerException)
+    internal SqliteException(string message, Exception innerException) : base(message, innerException)
     {
     }
 }
