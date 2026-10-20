@@ -24,9 +24,18 @@ internal static class SqlParser
 
             if (tmp.Value.Kind == SqlToken.Comma)
             {
-                // Commas are only meaningful inside parentheses
+                // Outside parentheses a comma only separates the table options after the column list, as in
+                // "(...) STRICT, WITHOUT ROWID". It carries no structure there, so it is dropped when it follows a
+                // complete option; anywhere else at the top level it is an error, as in SQLite.
                 if (stack.Count < 2)
+                {
+                    List<SqlNode>? top = stack.Peek().Children;
+                    SqlNode? last = top?.Count > 0 ? top[top.Count - 1] : null;
+                    if (last != null && (last.Is("ROWID") || last.Is("STRICT")))
+                        continue;
+
                     return false;
+                }
 
                 stack.Pop();
 
