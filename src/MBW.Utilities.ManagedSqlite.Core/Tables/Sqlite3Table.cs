@@ -175,8 +175,12 @@ public sealed class Sqlite3Table
                     rowData[i] = ByteArrayReader.ReadInteger(payload, length, ref pos, 8);
                     break;
                 case 7:
-                    rowData[i] = BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(payload, length, ref pos, 8));
+                {
+                    // SQLite never writes a NaN (it stores NULL instead), and reads one as NULL (serialGet in vdbeaux.c)
+                    double real = BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(payload, length, ref pos, 8));
+                    rowData[i] = double.IsNaN(real) ? null : (object)real;
                     break;
+                }
                 case 8:
                     // Serial types 8 and 9: integer constants 0 and 1, no payload bytes
                     rowData[i] = 0L;
