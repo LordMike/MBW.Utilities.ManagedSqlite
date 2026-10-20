@@ -5,6 +5,7 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.RegularExpressions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
@@ -19,7 +20,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// <para>
 /// The dump holds everything the library promises to read: the text encoding, the page size, every sqlite_master entry (type, name,
 /// table name and SQL, in file order), and for every table its column names and its rows in enumeration order, each
-/// with its rowid and every column value with its storage class. Virtual tables are listed but not read, since their
+/// with its rowid and every column value with its storage class. A WITHOUT ROWID table has no rowid, so its rows are
+/// listed without one, in primary key order, which is SQLite's order. Virtual tables are listed but not read, since their
 /// contents are not in the file; their shadow tables are ordinary tables and are read. Views, indexes and triggers
 /// are listed only, as the library does not run queries.
 /// </para>
@@ -106,8 +108,17 @@ internal static class SqliteParity
             List<string> columns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
             AppendTableHeader(sb, name, columns);
 
-            foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
-                AppendRow(sb, (long)row[0], row.Skip(1));
+            bool withoutRowId = (long)Query(connection, $"SELECT wr FROM pragma_table_list WHERE schema = 'main' AND name = {Literal(name)}").Single()[0] != 0;
+            if (withoutRowId)
+            {
+                foreach (object[] row in Query(connection, $"SELECT * FROM {quoted}"))
+                    AppendRow(sb, null, row);
+            }
+            else
+            {
+                foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
+                    AppendRow(sb, (long)row[0], row.Skip(1));
+            }
         }
 
         return sb.ToString();
@@ -129,6 +140,7 @@ internal static class SqliteParity
         foreach (Sqlite3SchemaRow entry in schema.Where(s => IsReadableTable(s.Type, s.Sql)))
         {
             Sqlite3Table table = db.GetTable(entry.Name);
+            bool withoutRowId = entry.Sql != null && WithoutRowIdClause.IsMatch(entry.Sql);
             List<string> columns = table.GetTableDefinition().Columns.OrderBy(s => s.Ordinal).Select(s => s.Name).ToList();
             AppendTableHeader(sb, entry.Name, columns);
 
@@ -137,12 +149,18 @@ internal static class SqliteParity
                 // By name, so a rowid alias column reads the rowid as SQLite does. A column missing from the record
                 // (added by ALTER TABLE after the row was written) reads as NULL.
                 IEnumerable<object> values = columns.Select(c => row.TryGetValueByName(c, out object value) ? value : null);
-                AppendRow(sb, row.RowId, values);
+                AppendRow(sb, withoutRowId ? null : row.RowId, values);
             }
         }
 
         return sb.ToString();
     }
+
+    /// <summary>
+    /// The WITHOUT ROWID table option, after the column list's closing parenthesis. The library does not expose it, and
+    /// SQLite's own answer (pragma_table_list) must not leak into the library's dump.
+    /// </summary>
+    private static readonly Regex WithoutRowIdClause = new Regex(@"\)[^)]*\bWITHOUT\s+ROWID\b[^)]*$", RegexOptions.IgnoreCase);
 
     private static bool IsReadableTable(string type, string sql)
     {
@@ -160,9 +178,9 @@ internal static class SqliteParity
         sb.Append("table ").Append(Quote(name)).Append(" (").Append(string.Join(", ", columns.Select(Quote))).AppendLine(")");
     }
 
-    private static void AppendRow(StringBuilder sb, long rowId, IEnumerable<object> values)
+    private static void AppendRow(StringBuilder sb, long? rowId, IEnumerable<object> values)
     {
-        sb.Append("  row ").Append(rowId).Append(": ").AppendLine(string.Join(", ", values.Select(FormatValue)));
+        sb.Append("  row").Append(rowId.HasValue ? " " + rowId.Value.ToString(CultureInfo.InvariantCulture) : "").Append(": ").AppendLine(string.Join(", ", values.Select(FormatValue)));
     }
 
     private static string FormatValue(object value)
@@ -185,6 +203,8 @@ internal static class SqliteParity
                 return value.GetType().Name + " " + Convert.ToString(value, CultureInfo.InvariantCulture);
         }
     }
+
+    private static string Literal(string value) => "'" + value.Replace("'", "''") + "'";
 
     private static string Quote(string value)
     {

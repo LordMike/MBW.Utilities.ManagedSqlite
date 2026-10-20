@@ -42,7 +42,7 @@ public static class SqlExtensions
         if (!tableDefinition.TryGetColumn(columnName, out SqlTableColumn column))
             return false;
 
-        if (row.ColumnData.Length <= column.Ordinal)
+        if (row.ColumnData.Length <= column.RecordOrdinal)
             return false;
 
         // Special case for row-id
@@ -53,7 +53,7 @@ public static class SqlExtensions
             return true;
         }
 
-        value = row.ColumnData[column.Ordinal];
+        value = row.ColumnData[column.RecordOrdinal];
 
         // SQLite writes REAL values without a fractional part as integers, and turns them back into REAL when read
         // through a column with REAL affinity

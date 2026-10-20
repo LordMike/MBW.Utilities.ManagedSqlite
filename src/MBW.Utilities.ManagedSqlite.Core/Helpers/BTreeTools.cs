@@ -51,4 +51,51 @@ internal static class BTreeTools
                 throw new ArgumentException("Did not receive a compatible BTreePage", nameof(node));
         }
     }
+
+    /// <summary>
+    /// Yields the cells of an index b-tree in key order, as the page and the index of the cell on it. Interior cells
+    /// carry entries too: each one sorts after its left child's entries and before the next child's, and the right-most
+    /// child comes last.
+    /// </summary>
+    public static IEnumerable<KeyValuePair<BTreeIndexPage, int>> WalkIndexBTreeCells(BTreeIndexPage root)
+    {
+        // Depth-first, keeping the interior pages and the index of the next child to visit
+        Stack<KeyValuePair<BTreeIndexPage, int>> stack = new Stack<KeyValuePair<BTreeIndexPage, int>>();
+        stack.Push(new KeyValuePair<BTreeIndexPage, int>(root, 0));
+
+        while (stack.Count > 0)
+        {
+            KeyValuePair<BTreeIndexPage, int> top = stack.Pop();
+            BTreeIndexPage page = top.Key;
+            int child = top.Value;
+
+            if (page.IsLeaf)
+            {
+                for (int i = 0; i < page.Cells.Length; i++)
+                    yield return new KeyValuePair<BTreeIndexPage, int>(page, i);
+
+                continue;
+            }
+
+            // The left child of cell child - 1 is done, so that cell is next
+            if (child > 0 && child <= page.Cells.Length)
+                yield return new KeyValuePair<BTreeIndexPage, int>(page, child - 1);
+
+            uint childPage;
+            if (child < page.Cells.Length)
+                childPage = page.Cells[child].LeftPagePointer;
+            else if (child == page.Cells.Length && page.Header.RightMostPointer > 0)
+                childPage = page.Header.RightMostPointer;
+            else
+                continue;
+
+            // Come back for the next child after this one
+            stack.Push(new KeyValuePair<BTreeIndexPage, int>(page, child + 1));
+
+            if (BTreePage.Parse(page.Reader, childPage) is not BTreeIndexPage subPage)
+                throw new ArgumentException("Did not receive a compatible BTreePage", nameof(root));
+
+            stack.Push(new KeyValuePair<BTreeIndexPage, int>(subPage, 0));
+        }
+    }
 }

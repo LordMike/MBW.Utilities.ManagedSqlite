@@ -26,7 +26,21 @@ public class Sqlite3Table
         RootPage = rootPage;
     }
 
+    /// <summary>
+    /// Enumerates the table's rows in the order SQLite stores them: rowid order, or primary key order for a WITHOUT
+    /// ROWID table. Each row's <see cref="Sqlite3Row.ColumnData"/> is its record as stored; for a WITHOUT ROWID table
+    /// that is the primary key columns first, then the others, see <see cref="Sqlite3Row"/>.
+    /// </summary>
     public IEnumerable<Sqlite3Row> EnumerateRows()
+    {
+        // A WITHOUT ROWID table is stored in an index b-tree
+        if (RootPage is BTreeIndexPage indexRoot)
+            return EnumerateWithoutRowIdRows(indexRoot);
+
+        return EnumerateRowIdRows();
+    }
+
+    private IEnumerable<Sqlite3Row> EnumerateRowIdRows()
     {
         byte[] buffer = null;
         long[] serialTypes = null;
@@ -36,42 +50,70 @@ public class Sqlite3Table
             BTreeLeafTablePage.Cell[] cells = leaf.Cells;
             for (int i = 0; i < cells.Length; i++)
             {
-                // Read the whole payload once, then decode it from memory
-                int payloadSize = checked((int)cells[i].DataSize);
-                byte[] payload;
-                if (payloadSize <= MaxReusedBufferSize)
-                {
-                    if (buffer == null || buffer.Length < payloadSize)
-                        buffer = new byte[RoundUpToPowerOfTwo(payloadSize)];
+                BTreeLeafTablePage.Cell cell = cells[i];
+                byte[] payload = ReadPayload(leaf, leaf.CellOffsets[i] + (uint)cell.CellHeaderSize, cell.DataSize,
+                    cell.DataSizeInCell, cell.FirstOverflowPage, ref buffer);
 
-                    payload = buffer;
-                }
-                else
-                {
-                    payload = new byte[payloadSize];
-                }
-
-                uint dataOffset = leaf.CellOffsets[i] + (uint)cells[i].CellHeaderSize;
-                if (cells[i].FirstOverflowPage == 0)
-                {
-                    // All data is on this page
-                    _reader.SeekPage(leaf.Page, dataOffset);
-                    if (_reader.Read(payload, 0, payloadSize) != payloadSize)
-                        throw new EndOfStreamException();
-                }
-                else
-                {
-                    // The data continues on overflow pages
-                    using SqliteDataStream dataStream = new SqliteDataStream(_reader, leaf.Page, dataOffset,
-                        cells[i].DataSizeInCell, cells[i].FirstOverflowPage, cells[i].DataSize);
-
-                    if (dataStream.ReadFully(payload, 0, payloadSize) != payloadSize)
-                        throw new EndOfStreamException();
-                }
-
-                yield return new Sqlite3Row(this, cells[i].RowId, DecodeRecord(payload, payloadSize, ref serialTypes));
+                yield return new Sqlite3Row(this, cell.RowId, DecodeRecord(payload, (int)cell.DataSize, ref serialTypes));
             }
         }
+    }
+
+    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(BTreeIndexPage root)
+    {
+        byte[] buffer = null;
+        long[] serialTypes = null;
+
+        foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells(root))
+        {
+            BTreeIndexPage page = entry.Key;
+            BTreeIndexPage.Cell cell = page.Cells[entry.Value];
+            byte[] payload = ReadPayload(page, page.CellOffsets[entry.Value] + (uint)cell.CellHeaderSize, cell.DataSize,
+                cell.DataSizeInCell, cell.FirstOverflowPage, ref buffer);
+
+            // There is no rowid
+            yield return new Sqlite3Row(this, 0, DecodeRecord(payload, (int)cell.DataSize, ref serialTypes));
+        }
+    }
+
+    /// <summary>
+    /// Reads a cell's whole payload once, so it can be decoded from memory. Small payloads go into
+    /// <paramref name="buffer"/>, which is grown as needed and reused for the next cell.
+    /// </summary>
+    private byte[] ReadPayload(BTreePage page, uint dataOffset, long dataSize, uint dataSizeInCell, uint firstOverflowPage, ref byte[] buffer)
+    {
+        int payloadSize = checked((int)dataSize);
+        byte[] payload;
+        if (payloadSize <= MaxReusedBufferSize)
+        {
+            if (buffer == null || buffer.Length < payloadSize)
+                buffer = new byte[RoundUpToPowerOfTwo(payloadSize)];
+
+            payload = buffer;
+        }
+        else
+        {
+            payload = new byte[payloadSize];
+        }
+
+        if (firstOverflowPage == 0)
+        {
+            // All data is on this page
+            _reader.SeekPage(page.Page, dataOffset);
+            if (_reader.Read(payload, 0, payloadSize) != payloadSize)
+                throw new EndOfStreamException();
+        }
+        else
+        {
+            // The data continues on overflow pages
+            using SqliteDataStream dataStream = new SqliteDataStream(_reader, page.Page, dataOffset,
+                dataSizeInCell, firstOverflowPage, dataSize);
+
+            if (dataStream.ReadFully(payload, 0, payloadSize) != payloadSize)
+                throw new EndOfStreamException();
+        }
+
+        return payload;
     }
 
     private static int RoundUpToPowerOfTwo(int value)

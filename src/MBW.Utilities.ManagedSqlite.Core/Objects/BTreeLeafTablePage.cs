@@ -1,5 +1,4 @@
-﻿using System;
-using MBW.Utilities.ManagedSqlite.Core.Helpers;
+﻿using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
@@ -32,46 +31,7 @@ internal class BTreeLeafTablePage : BTreePage
             int rowIdSize = pos - CellOffsets[i] - bytesSize;
 
             uint overflowPage = 0;
-
-            // Calculate overflow size
-            long P = bytes;
-
-            // let U be the usable size of a database page, the total page size less the reserved space at the end of each page
-            int U = (int)Reader.PageSize - Reader.ReservedSpace;
-
-            // X is U-35 for table btree leaf pages or ((U-12)*64/255)-23 for index pages.
-            int X = U - 35;
-
-            // M is always ((U-12)*32/255)-23.
-            int M = (U - 12) * 32 / 255 - 23;
-
-            // Let K be M+((P-M)%(U-4)).
-            int K = (int)(M + ((P - M) % (U - 4)));
-
-            // If P<=X then all P bytes of payload are stored directly on the btree page without overflow.
-            // If P>X and K<=X then the first K bytes of P are stored on the btree page and the remaining P-K bytes are stored on overflow pages.
-            // If P>X and K>X then the first M bytes of P are stored on the btree page and the remaining P-M bytes are stored on overflow pages.
-            // The number of bytes stored on the leaf page is never less than M.
-
-            uint bytesInCell;
-
-            if (P <= X)
-            {
-                // All data is in cell
-                bytesInCell = (uint)P;
-            }
-            else if (P > X && K <= X)
-            {
-                bytesInCell = (uint)K;
-            }
-            else if (P > X && K > X)
-            {
-                bytesInCell = (uint)M;
-            }
-            else
-            {
-                throw new InvalidOperationException("We're not supposed to be here");
-            }
+            uint bytesInCell = PayloadSizeOnPage(bytes, true);
 
             if (bytes > bytesInCell)
             {

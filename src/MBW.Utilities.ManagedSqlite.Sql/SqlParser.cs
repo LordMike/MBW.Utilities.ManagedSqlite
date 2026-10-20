@@ -109,6 +109,9 @@ public static class SqlParser
         int primaryKeyComponents = 0;
         SqlTableColumn primaryKeyColumn = null;
 
+        // The primary key columns in key order, each once
+        List<SqlTableColumn> primaryKeyColumns = new List<SqlTableColumn>();
+
         // Columns that may alias the rowid if they turn out to be the sole primary key
         HashSet<SqlTableColumn> rowIdAliasCandidates = new HashSet<SqlTableColumn>();
 
@@ -124,9 +127,11 @@ public static class SqlParser
             string name;
             if (isConstraint)
             {
-                if (columnSet.Is(0, "PRIMARY") && columnSet.Is(1, "KEY") && columnSet.IsGroup(2))
+                // A table-constraint may be named: CONSTRAINT name PRIMARY KEY (...)
+                int pk = columnSet.Is(0, "CONSTRAINT") ? 2 : 0;
+                if (columnSet.Is(pk, "PRIMARY") && columnSet.Is(pk + 1, "KEY") && columnSet.IsGroup(pk + 2))
                 {
-                    SqlNode pkColumns = columnSet.GetGroup(2);
+                    SqlNode pkColumns = columnSet.GetGroup(pk + 2);
 
                     foreach (SqlNode pkColumn in pkColumns.Children)
                     {
@@ -144,6 +149,8 @@ public static class SqlParser
 
                         primaryKeyComponents++;
                         primaryKeyColumn = columnObject;
+                        if (!primaryKeyColumns.Contains(columnObject))
+                            primaryKeyColumns.Add(columnObject);
                     }
                 }
 
@@ -183,6 +190,7 @@ public static class SqlParser
                 sqlTableColumn.IsPartOfPrimaryKey = true;
                 primaryKeyComponents++;
                 primaryKeyColumn = sqlTableColumn;
+                primaryKeyColumns.Add(sqlTableColumn);
             }
 
             // A column declared as exactly "INTEGER" may alias the rowid. As a quirk, SQLite does not
@@ -192,10 +200,27 @@ public static class SqlParser
                 rowIdAliasCandidates.Add(sqlTableColumn);
         }
 
+        bool withoutRowId = IsWithoutRowId(node);
+
         // Identify row-id substitutes
-        if (primaryKeyComponents == 1 && rowIdAliasCandidates.Contains(primaryKeyColumn) && !IsWithoutRowId(node))
+        if (primaryKeyComponents == 1 && rowIdAliasCandidates.Contains(primaryKeyColumn) && !withoutRowId)
         {
             def.ConfigureRowIdColumn(primaryKeyColumn);
+        }
+
+        // A WITHOUT ROWID table's record holds the primary key columns first, in key order, then the other columns
+        // in declared order
+        if (withoutRowId)
+        {
+            int recordOrdinal = 0;
+            foreach (SqlTableColumn column in primaryKeyColumns)
+                column.RecordOrdinal = recordOrdinal++;
+
+            foreach (SqlTableColumn column in def.Columns)
+            {
+                if (!primaryKeyColumns.Contains(column))
+                    column.RecordOrdinal = recordOrdinal++;
+            }
         }
 
         tableDefinition = def;
