@@ -19,7 +19,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// <para>
 /// The dump holds everything the library promises to read: the text encoding, the page size, every sqlite_master entry (type, name,
 /// table name and SQL, in file order), and for every table its column names and its rows in enumeration order, each
-/// with its rowid and every column value with its storage class. Virtual tables are listed but not read, since their
+/// with its rowid and every column value with its storage class. VIRTUAL generated columns are left out, as SQLite
+/// computes them when read and does not store them. Virtual tables are listed but not read, since their
 /// contents are not in the file; their shadow tables are ordinary tables and are read. Views, indexes and triggers
 /// are listed only, as the library does not run queries.
 /// </para>
@@ -102,12 +103,17 @@ internal static class SqliteParity
             string name = (string)entry[1];
             string quoted = "\"" + name.Replace("\"", "\"\"") + "\"";
 
-            // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns
-            List<string> columns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
+            // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns. VIRTUAL
+            // generated columns (hidden = 2) are left out: they are not stored, and the library does not compute them.
+            HashSet<string> virtualGenerated = new HashSet<string>(
+                Query(connection, $"SELECT name FROM pragma_table_xinfo('{name.Replace("'", "''")}') WHERE hidden = 2").Select(s => (string)s[0]),
+                StringComparer.OrdinalIgnoreCase);
+            List<string> allColumns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
+            List<string> columns = allColumns.Where(c => !virtualGenerated.Contains(c)).ToList();
             AppendTableHeader(sb, name, columns);
 
             foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
-                AppendRow(sb, (long)row[0], row.Skip(1));
+                AppendRow(sb, (long)row[0], row.Skip(1).Where((_, i) => !virtualGenerated.Contains(allColumns[i])));
         }
 
         return sb.ToString();
@@ -129,7 +135,8 @@ internal static class SqliteParity
         foreach (Sqlite3SchemaRow entry in schema.Where(s => IsReadableTable(s.Type, s.Sql)))
         {
             Sqlite3Table table = db.GetTable(entry.Name);
-            List<string> columns = table.GetTableDefinition().Columns.OrderBy(s => s.Ordinal).Select(s => s.Name).ToList();
+            List<string> columns = table.GetTableDefinition().Columns.Where(s => !s.IsVirtualGenerated).OrderBy(s => s.Ordinal)
+                .Select(s => s.Name).ToList();
             AppendTableHeader(sb, entry.Name, columns);
 
             foreach (Sqlite3Row row in table.EnumerateRows())
