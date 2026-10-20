@@ -24,9 +24,13 @@ internal static class SqlParser
 
             if (tmp.Value.Kind == SqlToken.Comma)
             {
-                // Commas are only meaningful inside parentheses
+                // Inside parentheses a comma separates the group's items. At the top level it separates table options
+                // (CREATE TABLE t (...) STRICT, WITHOUT ROWID), and is kept as a token that the option scan skips.
                 if (stack.Count < 2)
-                    return false;
+                {
+                    stack.Peek().AddChild(new SqlNode(tmp.Value));
+                    continue;
+                }
 
                 stack.Pop();
 
@@ -289,7 +293,7 @@ internal static class SqlParser
 
     private static bool IsWithoutRowId(SqlNode createStatement)
     {
-        // Table options follow the column definitions group
+        // Table options follow the column definitions group, separated by commas: STRICT, WITHOUT ROWID
         Debug.Assert(createStatement.IsGroup());
 
         for (int i = 4; i < createStatement.Children!.Count; i++)

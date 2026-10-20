@@ -149,7 +149,6 @@ public class SqlParserSyntaxTests
     [InlineData("CREATE TABLE t)")]
     [InlineData("CREATE TABLE t(a))")]
     [InlineData("a, b")]
-    [InlineData("CREATE TABLE t(a), b")]
     [InlineData("CREATE TABLE t(a TEXT DEFAULT 'unterminated)")]
     [InlineData("CREATE TABLE t(\"unterminated TEXT)")]
     [InlineData("CREATE TABLE t([unterminated TEXT)")]
@@ -176,6 +175,7 @@ public class SqlParserSyntaxTests
     [InlineData("CREATE TABLE t(PRIMARY KEY ((a)))")]
     [InlineData("CREATE TABLE t(a ?, b :x, c @y, d $z)")]
     [InlineData("CREATE TABLE t(a TEXT ! b)")]
+    [InlineData("CREATE TABLE t(a), b")]
     public void MalformedDoesNotThrow(string sql)
     {
         // These are not valid SQLite, the parser may accept or reject them, but it must not throw

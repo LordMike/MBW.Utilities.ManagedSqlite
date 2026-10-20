@@ -22,7 +22,8 @@ public class SqlRowIdAliasTests
         "CREATE TABLE t (id INTEGER CONSTRAINT pk PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id))",
         "CREATE TABLE t (id integer, v TEXT, primary key (id))",
-        "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id DESC))"
+        "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id DESC))",
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) STRICT"
     };
 
     private static readonly string[] NotAlias =
@@ -37,7 +38,10 @@ public class SqlRowIdAliasTests
         "CREATE TABLE t (id INT, v TEXT, PRIMARY KEY (id))",
         "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id, v))",
         "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) WITHOUT ROWID",
-        "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id)) without rowid"
+        "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id)) without rowid",
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) STRICT, WITHOUT ROWID",
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) WITHOUT ROWID, STRICT",
+        "CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) without rowid,strict"
     };
 
     public static IEnumerable<object[]> AliasSql() => Alias.Select(s => new object[] { s });
