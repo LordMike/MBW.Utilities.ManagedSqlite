@@ -17,6 +17,11 @@ public sealed class SqlTableDefinition
     /// </summary>
     public SqlTableColumn? RowIdColumn { get; private set; }
 
+    /// <summary>
+    /// True when the SQL declares the table WITHOUT ROWID
+    /// </summary>
+    internal bool IsWithoutRowId { get; set; }
+
     internal SqlTableDefinition(string name)
     {
         TableName = name;

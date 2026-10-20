@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Sql;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tests;
@@ -19,7 +20,8 @@ public class Corruption_Tests
 {
     /// <summary>
     /// 512 byte pages and 300 byte rows give one row per leaf page, so Deep is a 3-level b-tree (root interior ->
-    /// interior -> leaf). Small fits on one leaf page, and its row 2 overflows into a chain of overflow pages.
+    /// interior -> leaf). Small fits on one leaf page, and its row 2 overflows into a chain of overflow pages. Keyed is
+    /// a WITHOUT ROWID table, an index b-tree whose root is an interior page over several leaves.
     /// </summary>
     private const string Script = @"
 PRAGMA page_size = 512;
@@ -27,7 +29,10 @@ CREATE TABLE Deep (Id INTEGER PRIMARY KEY, Payload TEXT);
 WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 120)
 INSERT INTO Deep SELECT i, printf('%300d', i) FROM n;
 CREATE TABLE Small (Id INTEGER PRIMARY KEY, Name TEXT, Data BLOB);
-INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'three', x'0102');";
+INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'three', x'0102');
+CREATE TABLE Keyed (Name TEXT PRIMARY KEY, Payload TEXT) WITHOUT ROWID;
+WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 40)
+INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     private static readonly TimeSpan Timeout = TimeSpan.FromSeconds(15);
 
@@ -38,6 +43,8 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     private static readonly uint DeepLeft = new DbPatcher(Base).GetChildPointer(DeepRoot, 0);
     private static readonly uint DeepFirstLeaf = new DbPatcher(Base).GetChildPointer(DeepLeft, 0);
     private static readonly uint SmallRoot = RootPage("Small");
+    private static readonly uint KeyedRoot = RootPage("Keyed");
+    private static readonly uint KeyedFirstLeaf = new DbPatcher(Base).GetChildPointer(KeyedRoot, 0);
     private static readonly uint PastTheEnd = (uint)new DbPatcher(Base).PageCount + 1;
 
     private static uint RootPage(string table)
@@ -158,6 +165,22 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     [Fact]
     public void PageType_IndexPageInsideTableBTree() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A));
 
+    /// <summary>
+    /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
+    /// an interior table page. The root page alone can't tell, so the check is in the Sql package, which knows the SQL.
+    /// </summary>
+    [Theory]
+    [InlineData("Small", 0x0A)]
+    [InlineData("Keyed", 0x05)]
+    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType)
+    {
+        byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
+        SqliteParity.AssertSqliteReportsCorrupt(data, table);
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        Assert.Equal("b-tree page header", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Structure);
+    }
+
     [Fact]
     public void CellCount_PointerArrayPastEndOfPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF));
 
@@ -179,6 +202,9 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     [Fact]
     public void ChildPointer_PastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd));
 
+    [Fact]
+    public void WithoutRowId_ChildPointerPastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(KeyedRoot, 0, PastTheEnd));
+
     // Every interior page has a right-most child
     [Fact]
     public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0));
@@ -193,6 +219,12 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     // record) becomes 127, which no longer fits in the page.
     [Fact]
     public void LeafCell_PayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 0x7F));
+
+    // The first key is the last cell on Keyed's first leaf, a 60 byte cell at offset 452. Its payload size (the 1-byte
+    // varint 59, before the record) becomes 100, which is still below the index page overflow threshold of 102 and no
+    // longer fits in the page.
+    [Fact]
+    public void WithoutRowId_LeafCellPayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _) - 1, 100));
 
     // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
 
