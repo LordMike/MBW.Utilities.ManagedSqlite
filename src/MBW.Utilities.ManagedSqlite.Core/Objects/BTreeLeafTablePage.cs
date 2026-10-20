@@ -1,5 +1,4 @@
 ﻿using System;
-using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -12,20 +11,19 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects;
 /// </summary>
 internal class BTreeLeafTablePage : BTreePage
 {
-    public Cell[] Cells { get; private set; }
+    public Cell[] Cells { get; }
 
     public BTreeLeafTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets, byte[] data, int length)
         : base(reader, page, header, cellOffsets)
     {
-        ParseCells(data, length);
+        Cells = ParseCells(data, length);
     }
 
-    [MemberNotNull(nameof(Cells))]
-    private void ParseCells(byte[] data, int length)
+    private Cell[] ParseCells(byte[] data, int length)
     {
-        Cells = new Cell[CellOffsets.Length];
+        Cell[] cells = new Cell[CellOffsets.Length];
 
-        for (int i = 0; i < Cells.Length; i++)
+        for (int i = 0; i < cells.Length; i++)
         {
             int pos = CellOffsets[i];
 
@@ -87,7 +85,7 @@ internal class BTreeLeafTablePage : BTreePage
             if (bytes < 0 || cellEnd > U)
                 throw new SqliteCorruptException($"cell with payload size {bytes} at offset {CellOffsets[i]} extends past the end of the page", Page, "b-tree leaf cell");
 
-            Cells[i] = new Cell
+            cells[i] = new Cell
             {
                 CellHeaderSize = (byte)(bytesSize + rowIdSize),
                 DataSize = bytes,
@@ -96,6 +94,8 @@ internal class BTreeLeafTablePage : BTreePage
                 FirstOverflowPage = overflowPage
             };
         }
+
+        return cells;
     }
 
     public struct Cell
