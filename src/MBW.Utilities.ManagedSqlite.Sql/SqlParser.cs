@@ -112,6 +112,9 @@ public static class SqlParser
         // Columns that may alias the rowid if they turn out to be the sole primary key
         HashSet<SqlTableColumn> rowIdAliasCandidates = new HashSet<SqlTableColumn>();
 
+        // VIRTUAL generated columns are not stored, so each one moves the later columns one position left in the record
+        int virtualGeneratedColumns = 0;
+
         for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
         {
             SqlNode columnSet = columns.Children[columnIndex];
@@ -176,6 +179,13 @@ public static class SqlParser
             SqlTableColumn sqlTableColumn = new SqlTableColumn(columnIndex, name, string.Join(" ", identifiedTypeStrings), identifiedType);
             def.AddColumn(sqlTableColumn);
 
+            sqlTableColumn.RecordIndex = columnIndex - virtualGeneratedColumns;
+            if (IsVirtualGenerated(columnSet))
+            {
+                sqlTableColumn.IsVirtualGenerated = true;
+                virtualGeneratedColumns++;
+            }
+
             // Is this a primary key?
             if (typeStrings.Contains("PRIMARY", StringComparer.OrdinalIgnoreCase) &&
                 typeStrings.Contains("KEY", StringComparer.OrdinalIgnoreCase))
@@ -212,6 +222,21 @@ public static class SqlParser
         return declaredType.Count == 1 &&
                declaredType[0].Is(SqlToken.String) &&
                string.Equals(declaredType[0].GetString().Trim('"', '[', ']', '`', '\''), "INTEGER", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// A generated column is "[GENERATED ALWAYS] AS (expr) [VIRTUAL | STORED]", and is VIRTUAL unless STORED is given.
+    /// https://www.sqlite.org/gencol.html
+    /// </summary>
+    private static bool IsVirtualGenerated(SqlNode columnSet)
+    {
+        for (int i = 1; i < columnSet.Children.Count; i++)
+        {
+            if (columnSet.Is(i, "AS") && columnSet.IsGroup(i + 1))
+                return !columnSet.Is(i + 2, "STORED");
+        }
+
+        return false;
     }
 
     private static bool IsColumnPrimaryKeyDesc(SqlNode columnSet)
