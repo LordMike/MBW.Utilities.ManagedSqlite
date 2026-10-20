@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
@@ -30,9 +31,19 @@ public static class SqlExtensions
         return def;
     }
 
+    /// <exception cref="SqliteCorruptException">The SQL declares the table WITHOUT ROWID and its root page is a table
+    /// b-tree page, or the other way around</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
-        return table.SchemaDefinition.GetTableDefinition();
+        SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
+
+        // SQLite reports a root page of the other b-tree kind as corrupt, so a record is never decoded with the other
+        // kind's column order
+        if (definition.IsWithoutRowId != table.IsWithoutRowId)
+            throw new SqliteCorruptException($"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
+                table.SchemaDefinition.RootPage, "b-tree page header");
+
+        return definition;
     }
 
     public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
