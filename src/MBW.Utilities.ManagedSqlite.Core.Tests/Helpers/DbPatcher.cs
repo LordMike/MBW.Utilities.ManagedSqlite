@@ -65,19 +65,22 @@ internal sealed class DbPatcher
         return WriteUInt32(PageOffset(page) + GetCellOffset(page, cell), value);
     }
 
-    // Leaf table cells and records
+    // Leaf cells and records
 
     /// <summary>
-    /// The file offset of a leaf cell's record (its record header size varint), and the payload size
+    /// The file offset of a leaf cell's record (its record header size varint), and the payload size. A leaf table
+    /// cell has a rowid between the two, a leaf index cell does not.
     /// </summary>
     public int GetRecordOffset(uint page, int cell, out long payloadSize)
     {
-        if (Data[BTreeHeaderOffset(page)] != 0x0D)
-            throw new InvalidOperationException($"Page {page} is not a leaf table page");
+        byte type = Data[BTreeHeaderOffset(page)];
+        if (type != 0x0D && type != 0x0A)
+            throw new InvalidOperationException($"Page {page} is not a leaf page");
 
         int pos = PageOffset(page) + GetCellOffset(page, cell);
         payloadSize = ReadVarInt(ref pos);
-        ReadVarInt(ref pos); // rowid
+        if (type == 0x0D)
+            ReadVarInt(ref pos); // rowid
 
         return pos;
     }

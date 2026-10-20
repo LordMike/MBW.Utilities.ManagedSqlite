@@ -22,7 +22,8 @@ public class SqlRowIdAliasTests
         "CREATE TABLE t (id INTEGER CONSTRAINT pk PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id))",
         "CREATE TABLE t (id integer, v TEXT, primary key (id))",
-        "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id DESC))"
+        "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id DESC))",
+        "CREATE TABLE t (id INTEGER, v TEXT, CONSTRAINT pk PRIMARY KEY (id))"
     };
 
     private static readonly string[] NotAlias =
@@ -43,9 +44,7 @@ public class SqlRowIdAliasTests
     public static IEnumerable<object[]> AliasSql() => Alias.Select(s => new object[] { s });
     public static IEnumerable<object[]> NotAliasSql() => NotAlias.Select(s => new object[] { s });
 
-    // WITHOUT ROWID tables are not supported by the Core reader
-    public static IEnumerable<object[]> ParitySql() =>
-        Alias.Concat(NotAlias).Where(s => !s.Contains("without rowid", System.StringComparison.OrdinalIgnoreCase)).Select(s => new object[] { s });
+    public static IEnumerable<object[]> ParitySql() => Alias.Concat(NotAlias).Select(s => new object[] { s });
 
     [Theory]
     [MemberData(nameof(AliasSql))]
@@ -72,7 +71,8 @@ public class SqlRowIdAliasTests
     }
 
     /// <summary>
-    /// An alias reads the rowid (42, -7 as written), a non-alias reads the stored value, with rowids 1 and 2 either way.
+    /// An alias reads the rowid (42, -7 as written), a non-alias reads the stored value, with rowids 1 and 2
+    /// either way, or none in a WITHOUT ROWID table.
     /// </summary>
     [Theory]
     [MemberData(nameof(ParitySql))]

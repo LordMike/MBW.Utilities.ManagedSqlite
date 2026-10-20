@@ -52,6 +52,18 @@ CREATE TABLE t (Value TEXT);
 INSERT INTO t (rowid, Value) VALUES (-9223372036854775808, 'min'), (-5, 'negative'), (-1, 'minus one'), (0, 'zero'),
     (127, 'max 1 byte'), (128, 'min 2 bytes'), (72057594037927935, 'max 8 bytes'), (72057594037927936, 'min 9 bytes'),
     (9223372036854775807, 'max');" },
+        // An index b-tree, keys inserted out of order, with enough rows for interior pages, whose cells hold rows too
+        { "WITHOUT ROWID 3000 rows, 3 levels", @"
+PRAGMA page_size = 512;
+CREATE TABLE t (k TEXT PRIMARY KEY, v INTEGER) WITHOUT ROWID;
+WITH RECURSIVE seq(x) AS (SELECT 0 UNION ALL SELECT x + 1 FROM seq WHERE x < 2999)
+INSERT INTO t SELECT printf('key %05d', (x * 7919) % 3000), x FROM seq;" },
+        // Index pages keep less of a payload locally than table pages, so these keys overflow in leaf and interior cells
+        { "WITHOUT ROWID overflow pages", @"
+PRAGMA page_size = 512;
+CREATE TABLE t (k TEXT PRIMARY KEY, v BLOB) WITHOUT ROWID;
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 200)
+INSERT INTO t SELECT printf('%04d', x) || printf('%.*c', x * 3, 'k'), CASE WHEN x = 100 THEN zeroblob(20000) ELSE x END FROM seq;" },
         { "deleted rows leave freeblocks and free pages", @"
 PRAGMA page_size = 512;
 CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
@@ -90,6 +102,18 @@ CREATE TABLE MixedCaseTable (Id INTEGER PRIMARY KEY, Value TEXT);
 CREATE TABLE lower (Id INTEGER PRIMARY KEY, Value TEXT);
 INSERT INTO MixedCaseTable VALUES (1, 'one'), (2, 'two');
 INSERT INTO lower VALUES (1, 'x');" },
+            { "WITHOUT ROWID TEXT key", @"
+CREATE TABLE tbl (v, k TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO tbl VALUES (2, 'b'), ('x', 'a'), (NULL, 'c');" },
+            // The record holds the primary key columns first, in key order and each once (SQLite drops the repeated a),
+            // then the others in declared order
+            { "WITHOUT ROWID composite key in another order, with a repeated column", @"
+CREATE TABLE tbl (v TEXT, b INTEGER, a TEXT, PRIMARY KEY (a, b, a)) WITHOUT ROWID;
+INSERT INTO tbl VALUES ('first', 2, 'y'), ('second', 1, 'y'), ('third', 9, 'x');" },
+            // The virtual table is only listed, and its shadow tables are read, docs_idx and docs_config being WITHOUT ROWID
+            { "fts5 shadow tables", @"
+CREATE VIRTUAL TABLE docs USING fts5(title, body);
+INSERT INTO docs VALUES ('hello world', 'first'), ('second row', 'hello again');" },
             { "quoted names with spaces and keywords", @"
 CREATE TABLE ""my table"" (""select"" TEXT, ""a b"" INTEGER, ""q""""uote"" TEXT);
 CREATE TABLE ""order"" (id INTEGER PRIMARY KEY, ""group"" TEXT);
@@ -107,7 +131,10 @@ INSERT INTO tbl (a, c) VALUES ('x', 'third');" },
             { "STORED generated column next to VIRTUAL", @"
 CREATE TABLE tbl (a INTEGER, v AS (a * 2) VIRTUAL, s INTEGER AS (a * 3) STORED, z TEXT);
 INSERT INTO tbl (a, z) VALUES (1, 'one'), (2, 'two');" },
-            // rtree rather than fts5: fts5's shadow tables include WITHOUT ROWID tables, which the dump can't select rowid from
+            // The record is the key, then the other stored columns: k, v, w. The VIRTUAL column g takes no position.
+            { "WITHOUT ROWID VIRTUAL generated column before a stored column", @"
+CREATE TABLE tbl (v TEXT, g AS (v || '!') VIRTUAL, w INTEGER, k TEXT PRIMARY KEY) WITHOUT ROWID;
+INSERT INTO tbl (v, w, k) VALUES ('first', 1, 'b'), ('second', 2, 'a');" },
             { "rtree virtual table and plain table", @"
 CREATE VIRTUAL TABLE boxes USING rtree(id, minX, maxX, minY, maxY);
 INSERT INTO boxes VALUES (1, 0, 10, 0, 10), (2, 5, 15, 5, 15), (3, -3, 3, -3, 3);
