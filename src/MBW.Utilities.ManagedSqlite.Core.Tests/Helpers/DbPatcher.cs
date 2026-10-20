@@ -42,24 +42,7 @@ internal sealed class DbPatcher
 
     public DbPatcher SetCellCount(uint page, ushort count) => WriteUInt16(BTreeHeaderOffset(page) + 3, count);
 
-    public uint GetRightMostPointer(uint page)
-    {
-        RequireInterior(page);
-        return ReadUInt32(BTreeHeaderOffset(page) + 8);
-    }
-
-    // Writing the field is allowed on any page, so a leaf can be turned into an interior page
     public DbPatcher SetRightMostPointer(uint page, uint value) => WriteUInt32(BTreeHeaderOffset(page) + 8, value);
-
-    /// <summary>
-    /// Turns a page into an interior table page without cells, whose only child is <paramref name="rightMostPointer"/>
-    /// </summary>
-    public DbPatcher MakeEmptyInterior(uint page, uint rightMostPointer)
-    {
-        SetPageType(page, 0x05);
-        SetCellCount(page, 0);
-        return SetRightMostPointer(page, rightMostPointer);
-    }
 
     /// <summary>
     /// The page-relative offset of a cell, from the cell pointer array

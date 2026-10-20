@@ -28,10 +28,6 @@ internal static class BTreeTools
         if (node is not BTreeInteriorTablePage)
             throw new ArgumentException("Did not receive a compatible BTreePage", nameof(node));
 
-        // Every page may appear only once in a b-tree. Tracking them all stops cycles (a child pointing back to
-        // itself or an ancestor) and pages shared between parents, both of which would otherwise never end.
-        HashSet<uint> visited = new HashSet<uint> { node.Page };
-
         // Depth-first, keeping the interior pages and the index of the next child to visit
         Stack<KeyValuePair<BTreeInteriorTablePage, int>> stack = new Stack<KeyValuePair<BTreeInteriorTablePage, int>>();
         stack.Push(new KeyValuePair<BTreeInteriorTablePage, int>((BTreeInteriorTablePage)node, 0));
@@ -61,7 +57,7 @@ internal static class BTreeTools
             // Come back for the next child after this one. The stack now holds this page and its ancestors.
             stack.Push(new KeyValuePair<BTreeInteriorTablePage, int>(interior, child + 1));
 
-            BTreePage subPage = ParseChild(interior, childPage, structure, visited, stack.Count - 1);
+            BTreePage subPage = ParseChild(interior, childPage, structure, stack.Count - 1);
             if (subPage is BTreeLeafTablePage leaf)
                 yield return leaf;
             else if (subPage is BTreeInteriorTablePage subInterior)
@@ -71,19 +67,16 @@ internal static class BTreeTools
         }
     }
 
-    private static BTreePage ParseChild(BTreeInteriorTablePage parent, uint childPage, string structure, HashSet<uint> visited, int depth)
+    private static BTreePage ParseChild(BTreeInteriorTablePage parent, uint childPage, string structure, int depth)
     {
         uint pageCount = parent.Reader.PageCount;
 
-        // Page 1 is always the root of sqlite_master, so it is never a child
-        if (childPage <= 1 || (pageCount > 0 && childPage > pageCount))
-            throw new SqliteCorruptException($"child page {childPage} is outside the database (2..{pageCount})", parent.Page, structure);
+        if (childPage == 0 || (pageCount > 0 && childPage > pageCount))
+            throw new SqliteCorruptException($"child page {childPage} is outside the database (1..{pageCount})", parent.Page, structure);
 
+        // Like SQLite, this is also what stops a cycle (a child pointing back to itself or an ancestor)
         if (depth + 1 >= MaxDepth)
             throw new SqliteCorruptException($"the b-tree is deeper than {MaxDepth} levels", parent.Page, structure);
-
-        if (!visited.Add(childPage))
-            throw new SqliteCorruptException($"child page {childPage} was already visited in this b-tree (cycle or shared page)", parent.Page, structure);
 
         return BTreePage.Parse(parent.Reader, childPage, true);
     }

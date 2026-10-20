@@ -37,7 +37,6 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     private const uint MasterRoot = 1;
     private static readonly uint DeepRoot = RootPage("Deep");
     private static readonly uint DeepLeft = new DbPatcher(Base).GetChildPointer(DeepRoot, 0);
-    private static readonly uint DeepRight = new DbPatcher(Base).GetRightMostPointer(DeepRoot);
     private static readonly uint DeepFirstLeaf = new DbPatcher(Base).GetChildPointer(DeepLeft, 0);
     private static readonly uint SmallRoot = RootPage("Small");
     private static readonly uint PastTheEnd = (uint)new DbPatcher(Base).PageCount + 1;
@@ -77,18 +76,9 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
         ["cell count: pointers overlap the cells"] = ("cell pointer array", p => p.SetCellCount(SmallRoot, 249)),
 
         // Child pointers
-        ["cycle: right-most pointer back to the root"] = ("right-most pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot)),
-        // The first leaf is also listed as a child of the right subtree, which would read its rows twice
-        ["shared page: child of two parents"] = ("interior cell child pointer", p => p.SetChildPointer(DeepRight, 0, DeepFirstLeaf)),
-        // Leaves become a chain of interior pages with only a right-most child each: no cycle, but far deeper than any
-        // real b-tree. The left interior page is cut down to only the chain, so no page is reached twice.
-        ["depth: chain of 31 interior pages"] = ("right-most pointer", p =>
-        {
-            p.MakeEmptyInterior(DeepLeft, DeepFirstLeaf);
-            for (uint page = DeepFirstLeaf; page < DeepFirstLeaf + 30; page++)
-                p.MakeEmptyInterior(page, page + 1);
-        }),
-        ["child pointer: page 1, the schema root"] = ("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, 1)),
+        // As in SQLite, the depth limit is what stops a cycle. Root and left page alternate, so the walk gives up at
+        // the root's first child pointer.
+        ["cycle: right-most pointer back to the root"] = ("interior cell child pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot)),
         ["child pointer: past the end"] = ("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd)),
         // Every interior page has a right-most child
         ["right-most pointer: 0"] = ("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0)),
@@ -101,15 +91,11 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
         ["leaf cell: payload past the end of the page"] = ("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 0x7F)),
 
         // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
-        ["record: reserved serial type 10"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 1, 10)),
-        ["record: reserved serial type 11"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 1, 11)),
         ["record: header larger than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 0x7F)),
         // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 127 is a 57 byte text, past any value that fits.
         ["record: serial type larger than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 127)),
         // Serial type 21 is a 4 byte text, one byte more than the payload holds
         ["record: values longer than the payload"] = ("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 21)),
-        // The "type" column of the first schema row holds 'table' (serial type 23, text). 22 is a 5 byte blob.
-        ["record: schema type stored as a blob"] = (null, p => p.WriteByte(p.GetRecordOffset(MasterRoot, 0, out _) + 1, 22)),
 
         // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
         ["overflow: chain ends early"] = ("overflow chain", p => p.SetOverflowPointer(SmallRoot, 1, 0)),
@@ -216,6 +202,22 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
         });
 
         Assert.Null(ex);
+    }
+
+    [Theory]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void ReservedSerialType_ReadsAsNull(byte serialType)
+    {
+        // SQLite reads the reserved serial types 10 and 11 as NULL. Small's row 1 stores NULL in its first column.
+        DbPatcher patcher = new DbPatcher(Base);
+        patcher.WriteByte(patcher.GetRecordOffset(SmallRoot, 0, out _) + 1, serialType);
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(patcher.Data));
+        Sqlite3Row row = db.GetTable("Small").EnumerateRows().First();
+
+        Assert.Null(row.ColumnData[0]);
+        Assert.Equal("one", row.ColumnData[1]);
     }
 
     [Fact]

@@ -141,8 +141,6 @@ public class Sqlite3Table
             long serialType = ByteArrayReader.ReadVarInt(payload, length, ref pos);
             if (serialType < 0 || serialType > maxSerialType)
                 throw new SqliteCorruptException($"serial type {serialType} of row {rowId} does not fit in the payload", page, "record header");
-            if (serialType == 10 || serialType == 11)
-                throw new SqliteCorruptException($"serial type {serialType} of row {rowId} is reserved", page, "record header");
 
             dataSize += SerialTypeSize(serialType);
             serialTypes[columns++] = serialType;
@@ -159,6 +157,9 @@ public class Sqlite3Table
             switch (serialType)
             {
                 case 0:
+                case 10:
+                case 11:
+                    // 10 and 11 are reserved. SQLite reads them as NULL with no payload bytes, and so does this.
                     rowData[i] = null;
                     break;
                 case 1:
@@ -183,9 +184,6 @@ public class Sqlite3Table
                 case 9:
                     rowData[i] = 1L;
                     break;
-                case 10:
-                case 11:
-                    throw new ArgumentOutOfRangeException();
                 default:
                 {
                     long size = (serialType - 12) / 2;
@@ -221,6 +219,8 @@ public class Sqlite3Table
             case 0:
             case 8:
             case 9:
+            case 10:
+            case 11:
                 return 0;
             case 1:
             case 2:
