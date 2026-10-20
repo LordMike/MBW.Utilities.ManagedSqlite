@@ -65,7 +65,6 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 ### Differences from SQLite
 
 * **Column DEFAULTs are not applied.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column. SQLite returns the column's DEFAULT for it, but this library returns no value (`null`).
-* **Declared type names are matched as whole words.** SQLite's [affinity rules](https://www.sqlite.org/datatype3.html#determination_of_column_affinity) match substrings, so a type such as `FLOATING POINT` or `CHARINT` gets REAL or INTEGER affinity in SQLite, but is not recognized here (`byte[]`).
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs
@@ -73,52 +72,17 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 * File format: https://www.sqlite.org/fileformat.html
 
 ## Data types mapping
-Source: https://www.techonthenet.com/sqlite/datatypes.php
 
-Note: Sqlite only has 5 data types: https://sqlite.org/datatype3.html
+SQLite has five storage classes, and a column's declared type only sets its [affinity](https://www.sqlite.org/datatype3.html#determination_of_column_affinity). `SqlTableColumn.DetectedType` follows SQLite's rules, checked in this order against the declared type name (case-insensitive, matching anywhere in the name):
 
-The following translate to `string`.
-```
-CHAR(size)			-- Equivalent to TEXT (size is ignored)
-VARCHAR(size)		-- Equivalent to TEXT (size is ignored)
-TINYTEXT(size)		-- Equivalent to TEXT (size is ignored)
-TEXT(size)			-- Equivalent to TEXT (size is ignored)
-MEDIUMTEXT(size)	-- Equivalent to TEXT (size is ignored)
-LONGTEXT(size)		-- Equivalent to TEXT (size is ignored)
-NCHAR(size)			-- Equivalent to TEXT (size is ignored)
-NVARCHAR(size)		-- Equivalent to TEXT (size is ignored)
-CLOB(size)			-- Equivalent to TEXT (size is ignored)
-```
+| Declared type contains | Affinity | `DetectedType` | Examples |
+|---|---|---|---|
+| `INT` | INTEGER | `long` | `INT`, `INTEGER`, `BIGINT`, `TINYINT`, `INT8`, `POINT` |
+| `CHAR`, `CLOB` or `TEXT` | TEXT | `string` | `TEXT`, `VARCHAR(255)`, `NCHAR`, `CLOB` |
+| `BLOB`, or no type at all | BLOB | `byte[]` | `BLOB`, a column with no type |
+| `REAL`, `FLOA` or `DOUB` | REAL | `double` | `REAL`, `FLOAT`, `DOUBLE PRECISION`, `FLOAT8` |
+| anything else | NUMERIC | `long` | `NUMERIC`, `DECIMAL(10,5)`, `BOOLEAN`, `DATE`, `DATETIME`, `GUID` |
 
-The following translate to `long`.
-```
-TINYINT				-- Equivalent to INTEGER
-SMALLINT			-- Equivalent to INTEGER
-MEDIUMINT			-- Equivalent to INTEGER
-INT					-- Equivalent to INTEGER
-INTEGER				-- Equivalent to INTEGER
-BIGINT				-- Equivalent to INTEGER
-INT2				-- Equivalent to INTEGER
-INT4				-- Equivalent to INTEGER
-INT8				-- Equivalent to INTEGER
-NUMERIC				-- Equivalent to NUMERIC
-DECIMAL				-- Equivalent to NUMERIC
-BOOLEAN				-- Equivalent to NUMERIC
-DATE				-- Equivalent to NUMERIC
-DATETIME			-- Equivalent to NUMERIC
-TIMESTAMP			-- Equivalent to NUMERIC
-TIME				-- Equivalent to NUMERIC
-```
+Because the rules are checked in order, `FLOATING POINT` contains `INT` and gets INTEGER affinity, as in SQLite. A size such as `VARCHAR(255)` is ignored.
 
-The following translate to `double`.
-```
-REAL				-- Equivalent to REAL
-DOUBLE				-- Equivalent to REAL
-DOUBLE PRECISION	-- Equivalent to REAL
-FLOAT				-- Equivalent to REAL
-```
-
-The following translate to `byte[]`.
-```
-BLOB				-- Equivalent to NONE
-```
+SQLite allows any value in any column, so a row can still hold a value of a different type than `DetectedType`. Values are returned as they are stored, except that reading a column by name returns a whole-number value in a REAL column as a `double`, as SQLite does.
