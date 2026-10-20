@@ -3,7 +3,15 @@
   <PropertyGroup>
     <IsPackable>true</IsPackable>
     <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
+    <Nullable>enable</Nullable>
     <Description>SQLite3 library in managed C# that can read sqlite db files. This package contains core components used to read the binary databases.</Description>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Sql" />
+    <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Core.Tests" />
+    <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Sql.Tests" />
+    <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Reader" />
+  </ItemGroup>
 
 </Project>

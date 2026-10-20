@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -11,33 +12,29 @@ using MBW.Utilities.ManagedSqlite.Core.Tables;
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
-public class Sqlite3Database : IDisposable
+public sealed class Sqlite3Database : IDisposable
 {
-    private readonly Sqlite3Settings _settings;
     private readonly ReaderBase _reader;
-    private Dictionary<string, object> _propertyStore;
+    private readonly Dictionary<string, object> _propertyStore;
 
-    private uint _sizeInPages;
+    private readonly Sqlite3MasterTable _masterTable;
+    private readonly Sqlite3SchemaRow _masterSchemaRow;
 
-    public DatabaseHeader Header { get; private set; }
-    private Sqlite3MasterTable _masterTable;
-    private Sqlite3SchemaRow _masterSchemaRow;
+    internal DatabaseHeader Header => _reader.Header;
 
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
-    public Sqlite3Database(Stream file, Sqlite3Settings settings = null)
+    public Sqlite3Database(Stream file, Sqlite3Settings? settings = null)
     {
         if (file == null)
             throw new ArgumentNullException(nameof(file));
 
-        _settings = settings ?? new Sqlite3Settings();
-        _reader = new ReaderBase(file);
         _propertyStore = new Dictionary<string, object>();
 
         try
         {
-            Initialize();
-            InitializeMasterTable();
+            _reader = ReaderBase.Open(file, settings ?? new Sqlite3Settings());
+            _masterTable = OpenMasterTable(out _masterSchemaRow);
         }
         catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
         {
@@ -45,61 +42,17 @@ public class Sqlite3Database : IDisposable
         }
     }
 
-    private void Initialize()
-    {
-        Header = DatabaseHeader.Parse(_reader);
-
-        ValidateHeader(Header);
-
-        // Database Size in pages adjustment
-        // https://www.sqlite.org/fileformat.html#in_header_database_size
-
-        uint expectedPages = (uint)(_reader.Length / Header.PageSize);
-
-        // TODO: Warn on mismatch
-        _sizeInPages = Math.Max(expectedPages, Header.DatabaseSizeInPages);
-
-        _reader.ApplySqliteDatabaseHeader(Header, _settings);
-        _reader.PageCount = _sizeInPages;
-    }
-
-    private static void ValidateHeader(DatabaseHeader header)
-    {
-        // https://www.sqlite.org/fileformat.html#page_size
-        // A power of two between 512 and 65536. DatabaseHeader.Parse has already mapped the stored value 1 to 65536.
-        uint pageSize = header.PageSize;
-        bool validPageSize = pageSize >= 512 && pageSize <= 65536 && (pageSize & (pageSize - 1)) == 0;
-
-        if (!validPageSize)
-            throw new SqliteCorruptException($"invalid page size {pageSize}", structure: "database header");
-
-        // https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
-        // The usable size of a page may not be less than 480
-        uint usableSize = pageSize - header.ReservedSpaceAtEndOfPage;
-        if (usableSize < 480)
-            throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {pageSize}, reserved space {header.ReservedSpaceAtEndOfPage})", structure: "database header");
-    }
-
-    private void InitializeMasterTable()
+    private Sqlite3MasterTable OpenMasterTable(out Sqlite3SchemaRow schemaRow)
     {
         // Parse table on Page 1, the sqlite_master table
         BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
         // Fake the schema for the sqlite_master table
-        Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow
-        {
-            Database = this,
-            Type = "table",
-            Name = "sqlite_master",
-            TableName = "sqlite_master",
-            RootPage = rootBtree.Page,
-            Sql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);"
-        };
-
-        _masterSchemaRow = schemaRow;
+        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
+            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);");
 
         Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
-        _masterTable = new Sqlite3MasterTable(this, table);
+        return new Sqlite3MasterTable(this, table);
     }
 
     /// <summary>
@@ -107,9 +60,9 @@ public class Sqlite3Database : IDisposable
     /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
-    public bool TryGetTable(string name, out Sqlite3Table table)
+    public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
     {
-        Sqlite3SchemaRow tbl = FindTable(name);
+        Sqlite3SchemaRow? tbl = FindTable(name);
 
         if (tbl == null || tbl.IsVirtual)
         {
@@ -128,7 +81,7 @@ public class Sqlite3Database : IDisposable
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
     public Sqlite3Table GetTable(string name)
     {
-        Sqlite3SchemaRow tbl = FindTable(name);
+        Sqlite3SchemaRow? tbl = FindTable(name);
 
         if (tbl == null)
             throw new KeyNotFoundException("Unable to find table named " + name);
@@ -139,7 +92,7 @@ public class Sqlite3Database : IDisposable
         return OpenTable(tbl);
     }
 
-    private Sqlite3SchemaRow FindTable(string name)
+    private Sqlite3SchemaRow? FindTable(string name)
     {
         if (string.Equals(name, "sqlite_master", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(name, "sqlite_schema", StringComparison.OrdinalIgnoreCase))
@@ -172,6 +125,6 @@ public class Sqlite3Database : IDisposable
 
     public void Dispose()
     {
-        _reader?.Dispose();
+        _reader.Dispose();
     }
 }

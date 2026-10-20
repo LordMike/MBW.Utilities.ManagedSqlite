@@ -10,22 +10,19 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects;
 /// </summary>
 internal class BTreeLeafTablePage : BTreePage
 {
-    public Cell[] Cells { get; private set; }
+    public Cell[] Cells { get; }
 
-    public BTreeLeafTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
+    public BTreeLeafTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets, byte[] data, int length)
         : base(reader, page, header, cellOffsets)
     {
-
+        Cells = ParseCells(data, length);
     }
 
-    protected override void ParseInternal(byte[] data, int length)
+    private Cell[] ParseCells(byte[] data, int length)
     {
-        Cells = new Cell[CellOffsets.Length];
+        Cell[] cells = new Cell[CellOffsets.Length];
 
-        // The usable size of a page, the page size less the reserved space at the end of each page
-        int U = (int)Reader.PageSize - Reader.ReservedSpace;
-
-        for (int i = 0; i < Cells.Length; i++)
+        for (int i = 0; i < cells.Length; i++)
         {
             int pos = CellOffsets[i];
 
@@ -35,7 +32,11 @@ internal class BTreeLeafTablePage : BTreePage
             int rowIdSize = pos - CellOffsets[i] - bytesSize;
 
             uint overflowPage = 0;
+
             uint bytesInCell = PayloadSizeOnPage(bytes, true);
+
+            // The usable size of a page, the page size less the reserved space at the end of each page
+            int U = (int)Reader.PageSize - Reader.ReservedSpace;
 
             if (bytes > bytesInCell)
             {
@@ -48,7 +49,7 @@ internal class BTreeLeafTablePage : BTreePage
             if (bytes < 0 || cellEnd > U)
                 throw new SqliteCorruptException($"cell with payload size {bytes} at offset {CellOffsets[i]} extends past the end of the page", Page, "b-tree leaf cell");
 
-            Cells[i] = new Cell
+            cells[i] = new Cell
             {
                 CellHeaderSize = (byte)(bytesSize + rowIdSize),
                 DataSize = bytes,
@@ -57,6 +58,8 @@ internal class BTreeLeafTablePage : BTreePage
                 FirstOverflowPage = overflowPage
             };
         }
+
+        return cells;
     }
 
     public struct Cell

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 
@@ -11,9 +12,10 @@ public static class SqlExtensions
 
     public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
     {
-        Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
+        // A null value caches that the SQL could not be parsed
+        Dictionary<Sqlite3SchemaRow, SqlTableDefinition?> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition?>());
 
-        if (!definitionCache.TryGetValue(schema, out SqlTableDefinition definition))
+        if (!definitionCache.TryGetValue(schema, out SqlTableDefinition? definition))
         {
             if (!SqlParser.TryParse(schema.Sql, out definition))
                 definitionCache[schema] = null;
@@ -44,13 +46,13 @@ public static class SqlExtensions
         return definition;
     }
 
-    public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object value)
+    public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
     {
         value = null;
 
         SqlTableDefinition tableDefinition = row.Table.GetTableDefinition();
 
-        if (!tableDefinition.TryGetColumn(columnName, out SqlTableColumn column))
+        if (!tableDefinition.TryGetColumn(columnName, out SqlTableColumn? column))
             return false;
 
         // SQLite computes a VIRTUAL generated column when it is read, nothing is stored for it
@@ -78,11 +80,11 @@ public static class SqlExtensions
         return true;
     }
 
-    public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, out T value)
+    public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, [MaybeNullWhen(false)] out T value)
     {
         value = default;
 
-        if (!row.TryGetValueByName(columnName, out object tmp))
+        if (!row.TryGetValueByName(columnName, out object? tmp))
             return false;
 
         // TODO: Is null a success case?

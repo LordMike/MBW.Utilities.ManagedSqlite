@@ -1,14 +1,16 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Sql.Internal;
 using Superpower.Model;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
-public static class SqlParser
+internal static class SqlParser
 {
-    private static bool TryParseTokenList(TokenList<SqlToken> list, out SqlNode rootNode)
+    private static bool TryParseTokenList(TokenList<SqlToken> list, [NotNullWhen(true)] out SqlNode? rootNode)
     {
         rootNode = null;
 
@@ -67,7 +69,7 @@ public static class SqlParser
         return true;
     }
 
-    public static bool TryParse(string sql, out SqlTableDefinition tableDefinition)
+    public static bool TryParse(string? sql, [NotNullWhen(true)] out SqlTableDefinition? tableDefinition)
     {
         tableDefinition = null;
 
@@ -86,7 +88,7 @@ public static class SqlParser
         }
     }
 
-    private static bool TryParseInternal(string sql, out SqlTableDefinition tableDefinition)
+    private static bool TryParseInternal(string sql, [NotNullWhen(true)] out SqlTableDefinition? tableDefinition)
     {
         tableDefinition = null;
 
@@ -96,7 +98,7 @@ public static class SqlParser
         if (!tokens.HasValue)
             return false;
 
-        if (!TryParseTokenList(tokens.Value, out SqlNode node))
+        if (!TryParseTokenList(tokens.Value, out SqlNode? node))
             return false;
 
         // Check if this is a create table
@@ -105,9 +107,11 @@ public static class SqlParser
 
         SqlTableDefinition def = new SqlTableDefinition(node.GetString(2));
 
+        // GetGroup only returns group nodes, which always have Children
         SqlNode columns = node.GetGroup(3);
+        Debug.Assert(columns.IsGroup());
         int primaryKeyComponents = 0;
-        SqlTableColumn primaryKeyColumn = null;
+        SqlTableColumn? primaryKeyColumn = null;
 
         // The primary key columns in key order, each once
         List<SqlTableColumn> primaryKeyColumns = new List<SqlTableColumn>();
@@ -118,7 +122,7 @@ public static class SqlParser
         // VIRTUAL generated columns are not stored, so each one moves the later columns one position left in the record
         int virtualGeneratedColumns = 0;
 
-        for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
+        for (int columnIndex = 0; columnIndex < columns.Children!.Count; columnIndex++)
         {
             SqlNode columnSet = columns.Children[columnIndex];
             if (columnSet.Children == null || !columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
@@ -134,9 +138,11 @@ public static class SqlParser
                 int pk = columnSet.Is(0, "CONSTRAINT") ? 2 : 0;
                 if (columnSet.Is(pk, "PRIMARY") && columnSet.Is(pk + 1, "KEY") && columnSet.IsGroup(pk + 2))
                 {
+                    // GetGroup only returns group nodes, which always have Children
                     SqlNode pkColumns = columnSet.GetGroup(pk + 2);
+                    Debug.Assert(pkColumns.IsGroup());
 
-                    foreach (SqlNode pkColumn in pkColumns.Children)
+                    foreach (SqlNode pkColumn in pkColumns.Children!)
                     {
                         if (pkColumn.Is(SqlToken.String))
                             name = pkColumn.GetString();
@@ -145,7 +151,7 @@ public static class SqlParser
                         else
                             return false;
 
-                        if (!def.TryGetColumn(name, out SqlTableColumn columnObject))
+                        if (!def.TryGetColumn(name, out SqlTableColumn? columnObject))
                             continue;
 
                         columnObject.IsPartOfPrimaryKey = true;
@@ -169,8 +175,6 @@ public static class SqlParser
             string[] typeStrings = columnSet.Children.Skip(1).Where(s => s.Is(SqlToken.String))
                 .Select(s => s.GetString()).ToArray();
 
-            // Defaults
-            Type identifiedType = typeof(byte[]);
             string[] identifiedTypeStrings = typeStrings;
 
             foreach ((string[] words, Type type) candidate in SqlKeywords.TypeKeywords)
@@ -178,10 +182,11 @@ public static class SqlParser
                 if (!typeStrings.Take(candidate.words.Length).SequenceEqual(candidate.words, StringComparer.OrdinalIgnoreCase))
                     continue;
 
-                identifiedType = candidate.type;
                 identifiedTypeStrings = candidate.words;
                 break;
             }
+
+            Type identifiedType = GetAffinityType(columnSet);
 
             SqlTableColumn sqlTableColumn = new SqlTableColumn(columnIndex, name, string.Join(" ", identifiedTypeStrings), identifiedType);
             def.AddColumn(sqlTableColumn);
@@ -214,7 +219,7 @@ public static class SqlParser
         def.IsWithoutRowId = withoutRowId;
 
         // Identify row-id substitutes
-        if (primaryKeyComponents == 1 && rowIdAliasCandidates.Contains(primaryKeyColumn) && !withoutRowId)
+        if (primaryKeyComponents == 1 && primaryKeyColumn != null && rowIdAliasCandidates.Contains(primaryKeyColumn) && !withoutRowId)
         {
             def.ConfigureRowIdColumn(primaryKeyColumn);
         }
@@ -238,12 +243,40 @@ public static class SqlParser
         return true;
     }
 
-    private static bool IsDeclaredAsInteger(SqlNode columnSet)
+    private static List<SqlNode> GetDeclaredType(SqlNode columnSet)
     {
         // The declared type is everything between the column name and the first column-constraint
-        List<SqlNode> declaredType = columnSet.Children.Skip(1)
+        return columnSet.Children.Skip(1)
             .TakeWhile(s => !(s.Is(SqlToken.String) && SqlKeywords.ColumnConstraintKeywords.Contains(s.GetString())))
             .ToList();
+    }
+
+    /// <summary>
+    /// The CLR type of the column's affinity, which SQLite determines from substrings of the declared type, by the first
+    /// rule that matches. https://www.sqlite.org/datatype3.html#determination_of_column_affinity
+    /// </summary>
+    private static Type GetAffinityType(SqlNode columnSet)
+    {
+        string declaredType = string.Join(" ", GetDeclaredType(columnSet).Where(s => s.Is(SqlToken.String)).Select(s => s.GetString()));
+
+        bool Contains(string value) => declaredType.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        if (Contains("INT"))
+            return typeof(long);
+        if (Contains("CHAR") || Contains("CLOB") || Contains("TEXT"))
+            return typeof(string);
+        if (Contains("BLOB") || declaredType.Length == 0)
+            return typeof(byte[]);
+        if (Contains("REAL") || Contains("FLOA") || Contains("DOUB"))
+            return typeof(double);
+
+        // NUMERIC affinity, reported as long although SQLite may store a real, text or blob there
+        return typeof(long);
+    }
+
+    private static bool IsDeclaredAsInteger(SqlNode columnSet)
+    {
+        List<SqlNode> declaredType = GetDeclaredType(columnSet);
 
         return declaredType.Count == 1 &&
                declaredType[0].Is(SqlToken.String) &&
@@ -256,7 +289,9 @@ public static class SqlParser
     /// </summary>
     private static bool IsVirtualGenerated(SqlNode columnSet)
     {
-        for (int i = 1; i < columnSet.Children.Count; i++)
+        Debug.Assert(columnSet.IsGroup());
+
+        for (int i = 1; i < columnSet.Children!.Count; i++)
         {
             if (columnSet.Is(i, "AS") && columnSet.IsGroup(i + 1))
                 return !columnSet.Is(i + 2, "STORED");
@@ -267,7 +302,9 @@ public static class SqlParser
 
     private static bool IsColumnPrimaryKeyDesc(SqlNode columnSet)
     {
-        for (int i = 1; i < columnSet.Children.Count; i++)
+        Debug.Assert(columnSet.IsGroup());
+
+        for (int i = 1; i < columnSet.Children!.Count; i++)
         {
             if (columnSet.Is(i, "PRIMARY") && columnSet.Is(i + 1, "KEY"))
                 return columnSet.Is(i + 2, "DESC");
@@ -279,7 +316,9 @@ public static class SqlParser
     private static bool IsWithoutRowId(SqlNode createStatement)
     {
         // Table options follow the column definitions group
-        for (int i = 4; i < createStatement.Children.Count; i++)
+        Debug.Assert(createStatement.IsGroup());
+
+        for (int i = 4; i < createStatement.Children!.Count; i++)
         {
             if (createStatement.Is(i, "WITHOUT") && createStatement.Is(i + 1, "ROWID"))
                 return true;

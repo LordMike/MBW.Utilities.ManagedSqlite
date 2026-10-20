@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
@@ -8,7 +8,7 @@ using MBW.Utilities.ManagedSqlite.Core.Objects;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3Table
+public sealed class Sqlite3Table
 {
     /// <summary>
     /// Payloads larger than this are read into a temporary buffer, so one huge row does not keep a huge buffer alive
@@ -72,8 +72,8 @@ public class Sqlite3Table
 
     private IEnumerable<Sqlite3Row> EnumerateRowIdRows()
     {
-        byte[] buffer = null;
-        long[] serialTypes = null;
+        byte[]? buffer = null;
+        long[]? serialTypes = null;
 
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
@@ -91,8 +91,8 @@ public class Sqlite3Table
 
     private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(BTreeIndexPage root)
     {
-        byte[] buffer = null;
-        long[] serialTypes = null;
+        byte[]? buffer = null;
+        long[]? serialTypes = null;
 
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells(root))
         {
@@ -111,7 +111,7 @@ public class Sqlite3Table
     /// <paramref name="buffer"/>, which is grown as needed and reused for the next cell. <paramref name="rowId"/> names
     /// the row in error messages, and is null in a WITHOUT ROWID table.
     /// </summary>
-    private byte[] ReadPayload(BTreePage page, long? rowId, uint dataOffset, long dataSize, uint dataSizeInCell, uint firstOverflowPage, ref byte[] buffer)
+    private byte[] ReadPayload(BTreePage page, long? rowId, uint dataOffset, long dataSize, uint dataSizeInCell, uint firstOverflowPage, ref byte[]? buffer)
     {
         // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
         long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
@@ -168,7 +168,7 @@ public class Sqlite3Table
         return res;
     }
 
-    private object[] DecodeRecord(uint page, long? rowId, byte[] payload, int length, ref long[] serialTypes)
+    private object?[] DecodeRecord(uint page, long? rowId, byte[] payload, int length, ref long[]? serialTypes)
     {
         serialTypes ??= new long[16];
 
@@ -199,7 +199,7 @@ public class Sqlite3Table
         if (pos != headerSize || headerSize + dataSize != length)
             throw new SqliteCorruptException($"record of {RowName(rowId)} has a {pos} byte header (declared {headerSize}) and {dataSize} bytes of values, but the payload is {length} bytes", page, "record header");
 
-        object[] rowData = new object[columns];
+        object?[] rowData = new object?[columns];
         for (int i = 0; i < columns; i++)
         {
             long serialType = serialTypes[i];
