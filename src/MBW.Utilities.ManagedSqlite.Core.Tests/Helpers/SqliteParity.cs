@@ -89,7 +89,10 @@ internal static class SqliteParity
         using SqliteConnection connection = Run(script);
 
         StringBuilder expected = new StringBuilder();
-        foreach (object[] table in Query(connection, "SELECT name, wr FROM pragma_table_list WHERE schema = 'main' AND type = 'table' AND name NOT LIKE 'sqlite~_%' ESCAPE '~' ORDER BY name"))
+        // Shadow tables of virtual tables are ordinary tables, which the library reads; sorted here, with the same
+        // comparer as the library's side, as SQLite's BINARY order is byte order of the UTF-8 text.
+        foreach (object[] table in Query(connection, "SELECT name, wr FROM pragma_table_list WHERE schema = 'main' AND type IN ('table', 'shadow') AND name NOT LIKE 'sqlite~_%' ESCAPE '~'")
+                     .OrderBy(t => (string)t[0], StringComparer.Ordinal))
         {
             string name = (string)table[0];
             string literal = "'" + name.Replace("'", "''") + "'";
@@ -100,7 +103,7 @@ internal static class SqliteParity
             string rowIdAlias = (long)table[1] == 0 && pkColumns.Count == 1 && !pkHasIndex ? (string)pkColumns[0][0] : null;
 
             AppendSchemaTable(expected, name, rowIdAlias, columns.Select(c =>
-                ((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim(), (long)c[2] > 0, (long)c[3] == 2)));
+                ((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim().ToUpperInvariant(), (long)c[2] > 0, (long)c[3] == 2)));
         }
 
         StringBuilder actual = new StringBuilder();
