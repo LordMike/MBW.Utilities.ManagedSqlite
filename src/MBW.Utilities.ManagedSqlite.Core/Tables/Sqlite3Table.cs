@@ -56,8 +56,8 @@ public sealed class Sqlite3Table
         // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
         long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
 
-        byte[] buffer = null;
-        long[] serialTypes = null;
+        byte[]? buffer = null;
+        long[]? serialTypes = null;
 
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
@@ -119,7 +119,7 @@ public sealed class Sqlite3Table
         return res;
     }
 
-    private object[] DecodeRecord(uint page, long rowId, byte[] payload, int length, ref long[] serialTypes)
+    private object?[] DecodeRecord(uint page, long rowId, byte[] payload, int length, ref long[]? serialTypes)
     {
         serialTypes ??= new long[16];
 
@@ -150,7 +150,7 @@ public sealed class Sqlite3Table
         if (pos != headerSize || headerSize + dataSize != length)
             throw new SqliteCorruptException($"record of row {rowId} has a {pos} byte header (declared {headerSize}) and {dataSize} bytes of values, but the payload is {length} bytes", page, "record header");
 
-        object[] rowData = new object[columns];
+        object?[] rowData = new object?[columns];
         for (int i = 0; i < columns; i++)
         {
             long serialType = serialTypes[i];
