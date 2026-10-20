@@ -3,33 +3,34 @@ using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
-internal struct BTreeHeader
+internal readonly struct BTreeHeader
 {
-    public BTreeType Type;
+    public BTreeType Type { get; }
 
-    public ushort FirstFreeBlock;
+    public ushort FirstFreeBlock { get; }
 
-    public ushort CellCount;
+    public ushort CellCount { get; }
 
-    public ushort CellContentBegin;
+    public ushort CellContentBegin { get; }
 
-    public byte CellContentFragmentedFreeBytes;
+    public byte CellContentFragmentedFreeBytes { get; }
 
-    public uint RightMostPointer;
+    public uint RightMostPointer { get; }
 
-    public static BTreeHeader Parse(byte[] page, int length, ref int pos)
+    /// <summary>
+    /// Parses the b-tree page header at <paramref name="pos"/>, and advances it past the header
+    /// </summary>
+    public BTreeHeader(byte[] page, int length, ref int pos)
     {
-        BTreeHeader res = new BTreeHeader();
+        Type = (BTreeType)ByteArrayReader.ReadByte(page, length, ref pos);
+        FirstFreeBlock = ByteArrayReader.ReadUInt16(page, length, ref pos);
+        CellCount = ByteArrayReader.ReadUInt16(page, length, ref pos);
+        CellContentBegin = ByteArrayReader.ReadUInt16(page, length, ref pos);
+        CellContentFragmentedFreeBytes = ByteArrayReader.ReadByte(page, length, ref pos);
 
-        res.Type = (BTreeType)ByteArrayReader.ReadByte(page, length, ref pos);
-        res.FirstFreeBlock = ByteArrayReader.ReadUInt16(page, length, ref pos);
-        res.CellCount = ByteArrayReader.ReadUInt16(page, length, ref pos);
-        res.CellContentBegin = ByteArrayReader.ReadUInt16(page, length, ref pos);
-        res.CellContentFragmentedFreeBytes = ByteArrayReader.ReadByte(page, length, ref pos);
-
-        if (res.Type == BTreeType.InteriorIndexBtreePage || res.Type == BTreeType.InteriorTableBtreePage)
-            res.RightMostPointer = ByteArrayReader.ReadUInt32(page, length, ref pos);
-
-        return res;
+        if (Type == BTreeType.InteriorIndexBtreePage || Type == BTreeType.InteriorTableBtreePage)
+            RightMostPointer = ByteArrayReader.ReadUInt32(page, length, ref pos);
+        else
+            RightMostPointer = 0;
     }
 }

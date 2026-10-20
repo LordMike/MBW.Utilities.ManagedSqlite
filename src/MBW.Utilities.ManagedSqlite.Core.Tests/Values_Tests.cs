@@ -109,6 +109,34 @@ INSERT INTO tbl VALUES (replace(hex(zeroblob(75000)), '0', 'x'));");
         SqliteParity.AssertSameAsSqlite($"CREATE TABLE tbl (v BLOB); INSERT INTO tbl VALUES (randomblob({size}));");
     }
 
+    /// <summary>
+    /// SQLite picks a column's affinity from substrings of its declared type, in this order: "INT" is INTEGER; "CHAR",
+    /// "CLOB" or "TEXT" is TEXT; "BLOB", or no type, is BLOB; "REAL", "FLOA" or "DOUB" is REAL; anything else is NUMERIC
+    /// (https://www.sqlite.org/datatype3.html#determination_of_column_affinity). Every column gets the same values: an
+    /// integer, an integral real, integral and fractional numeric text, other text and a blob. SQLite stores them
+    /// differently per affinity, and with REAL affinity writes integral values as integers that must read back as REAL.
+    /// </summary>
+    [Theory]
+    [InlineData("REAL in FLOAT8", "FLOAT8")]
+    [InlineData("REAL in REALVAL", "REALVAL")]
+    [InlineData("REAL in DOUBLEX", "DOUBLEX")]
+    [InlineData("REAL in a multi-word name", "LONG DOUBLE")]
+    [InlineData("REAL with a size", "FLOAT(10)")]
+    [InlineData("REAL in lower case", "floatval")]
+    [InlineData("INT before CHAR", "CHARINT")]
+    [InlineData("INT before FLOA", "FLOATING POINT")]
+    [InlineData("INT before DOUB", "DOUBLE INT")]
+    [InlineData("INT in POINT", "POINT")]
+    [InlineData("BLOB before FLOA", "FLOAT BLOB")]
+    [InlineData("NUMERIC for STRINGY", "STRINGY")]
+    [InlineData("NUMERIC for STRING", "STRING")]
+    [InlineData("BLOB for no type", "")]
+    public void DeclaredTypeAffinity(string name, string declaredType)
+    {
+        _ = name;
+        SqliteParity.AssertSameAsSqlite($"CREATE TABLE tbl (v {declaredType}); INSERT INTO tbl VALUES (3), (3.0), ('3'), ('1.5'), ('x'), (X'00');");
+    }
+
     public static TheoryData<string, string> NullAndMixedCases()
     {
         return new TheoryData<string, string>

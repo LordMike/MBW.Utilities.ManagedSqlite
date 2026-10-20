@@ -2,7 +2,7 @@
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
-public class SqlTableColumn
+public sealed class SqlTableColumn
 {
     /// <summary>
     /// The column's position in the declared column list, as in <c>SELECT *</c>
@@ -28,7 +28,7 @@ public class SqlTableColumn
     /// </summary>
     internal int RecordIndex { get; set; }
 
-    public SqlTableColumn(int ordinal, string name, string typeName, Type detectedType)
+    internal SqlTableColumn(int ordinal, string name, string typeName, Type detectedType)
     {
         Ordinal = ordinal;
         Name = name;
