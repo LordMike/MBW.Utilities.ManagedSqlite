@@ -3,7 +3,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3Row
+public sealed class Sqlite3Row
 {
     public Sqlite3Table Table { get; }
     public long RowId { get; }

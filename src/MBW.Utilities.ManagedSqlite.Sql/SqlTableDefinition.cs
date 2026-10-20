@@ -5,7 +5,7 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
-public class SqlTableDefinition
+public sealed class SqlTableDefinition
 {
     private readonly List<SqlTableColumn> _columns;
     private readonly Dictionary<string, SqlTableColumn> _columnIndex;
@@ -17,7 +17,7 @@ public class SqlTableDefinition
     /// </summary>
     public SqlTableColumn? RowIdColumn { get; private set; }
 
-    public SqlTableDefinition(string name)
+    internal SqlTableDefinition(string name)
     {
         TableName = name;
         _columns = new List<SqlTableColumn>();

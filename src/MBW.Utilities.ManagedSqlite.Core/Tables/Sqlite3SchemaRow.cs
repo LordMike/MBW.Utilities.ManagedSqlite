@@ -2,8 +2,12 @@ using System;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-public class Sqlite3SchemaRow
+public sealed class Sqlite3SchemaRow
 {
+    internal Sqlite3SchemaRow()
+    {
+    }
+
     // Database, Type, Name and TableName are always assigned by Sqlite3Database and Sqlite3MasterTable, the only code
     // that creates rows; the null! initializers are placeholders until then.
     public Sqlite3Database Database { get; internal set; } = null!;

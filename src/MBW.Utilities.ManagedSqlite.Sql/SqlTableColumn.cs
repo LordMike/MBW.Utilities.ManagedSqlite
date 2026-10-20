@@ -2,7 +2,7 @@
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
-public class SqlTableColumn
+public sealed class SqlTableColumn
 {
     public int Ordinal { get; }
     public string Name { get; }
@@ -22,7 +22,7 @@ public class SqlTableColumn
     /// </summary>
     internal int RecordIndex { get; set; }
 
-    public SqlTableColumn(int ordinal, string name, string typeName, Type detectedType)
+    internal SqlTableColumn(int ordinal, string name, string typeName, Type detectedType)
     {
         Ordinal = ordinal;
         Name = name;

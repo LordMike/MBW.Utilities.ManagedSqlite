@@ -3,7 +3,7 @@ using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
-public class DatabaseHeader
+internal class DatabaseHeader
 {
     public const int HeaderSize = 100;
 
