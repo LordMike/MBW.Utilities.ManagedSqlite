@@ -44,4 +44,16 @@ public class Settings_Tests
         Assert.Equal(SqliteEncoding.UTF8, db.TextEncoding);
         Assert.Equal((SqliteEncoding)0, db.Header.TextEncoding);
     }
+
+    [Fact]
+    public void TestEncoding_OnlyLowByteIsRead()
+    {
+        // SQLite 3.45 reads a header encoding of 0x00000101 as UTF-8, because it only uses the field's low byte
+        byte[] bytes = SqliteParity.Build("CREATE TABLE t (a INTEGER);");
+        bytes[58] = 1;
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(bytes));
+
+        Assert.Equal(SqliteEncoding.UTF8, db.TextEncoding);
+    }
 }

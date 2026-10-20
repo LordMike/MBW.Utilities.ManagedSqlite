@@ -1,6 +1,6 @@
 namespace MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
-public enum SqliteEncoding : uint
+public enum SqliteEncoding : byte
 {
     // ReSharper disable once InconsistentNaming
     UTF8 = 1,

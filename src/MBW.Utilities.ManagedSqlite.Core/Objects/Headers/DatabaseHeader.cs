@@ -106,7 +106,8 @@ internal sealed class DatabaseHeader
         SchemaFormat = ByteArrayReader.ReadUInt32(data, length, ref pos);
         DefaultPageCacheSize = ByteArrayReader.ReadUInt32(data, length, ref pos);
         Value7 = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        TextEncoding = (SqliteEncoding)ByteArrayReader.ReadUInt32(data, length, ref pos);
+        // The field is 4 bytes, but SQLite reads only its low byte (then masks it to the low two bits)
+        TextEncoding = (SqliteEncoding)(byte)ByteArrayReader.ReadUInt32(data, length, ref pos);
         UserVersion = ByteArrayReader.ReadUInt32(data, length, ref pos);
         IncrementalVacuumMode = ByteArrayReader.ReadUInt32(data, length, ref pos);
         ApplicationId = ByteArrayReader.ReadUInt32(data, length, ref pos);
