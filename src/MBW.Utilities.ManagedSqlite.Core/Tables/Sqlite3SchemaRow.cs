@@ -4,22 +4,26 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 public sealed class Sqlite3SchemaRow
 {
-    internal Sqlite3SchemaRow()
+    internal Sqlite3SchemaRow(Sqlite3Database database, string type, string name, string tableName, uint rootPage, string? sql)
     {
+        Database = database;
+        Type = type;
+        Name = name;
+        TableName = tableName;
+        RootPage = rootPage;
+        Sql = sql;
     }
 
-    // Database, Type, Name and TableName are always assigned by Sqlite3Database and Sqlite3MasterTable, the only code
-    // that creates rows; the null! initializers are placeholders until then.
-    public Sqlite3Database Database { get; internal set; } = null!;
-    public string Type { get; internal set; } = null!;
+    public Sqlite3Database Database { get; }
+    public string Type { get; }
 
-    public string Name { get; internal set; } = null!;
+    public string Name { get; }
 
-    public string TableName { get; internal set; } = null!;
+    public string TableName { get; }
 
-    public uint RootPage { get; internal set; }
+    public uint RootPage { get; }
 
-    public string? Sql { get; internal set; }
+    public string? Sql { get; }
 
     /// <summary>
     /// True if this is a virtual table (<c>CREATE VIRTUAL TABLE ... USING module(...)</c>).

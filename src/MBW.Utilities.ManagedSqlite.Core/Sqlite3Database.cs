@@ -89,15 +89,8 @@ public sealed class Sqlite3Database : IDisposable
         BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
         // Fake the schema for the sqlite_master table
-        Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow
-        {
-            Database = this,
-            Type = "table",
-            Name = "sqlite_master",
-            TableName = "sqlite_master",
-            RootPage = rootBtree.Page,
-            Sql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);"
-        };
+        Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
+            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);");
 
         _masterSchemaRow = schemaRow;
 

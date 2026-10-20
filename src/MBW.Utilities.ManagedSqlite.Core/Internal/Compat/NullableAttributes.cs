@@ -22,6 +22,15 @@ namespace System.Diagnostics.CodeAnalysis
 
         public bool ReturnValue { get; }
     }
+
+    /// <summary>The method does not return when the parameter has the value <see cref="ParameterValue"/>.</summary>
+    [AttributeUsage(AttributeTargets.Parameter)]
+    internal sealed class DoesNotReturnIfAttribute : Attribute
+    {
+        public DoesNotReturnIfAttribute(bool parameterValue) => ParameterValue = parameterValue;
+
+        public bool ParameterValue { get; }
+    }
 }
 #endif
 

@@ -50,7 +50,6 @@ internal abstract class BTreePage
             cellOffsets[i] = ByteArrayReader.ReadUInt16(data, length, ref pos);
         }
 
-        BTreePage res;
         switch (header.Type)
         {
             case BTreeType.InteriorIndexBtreePage:
@@ -60,48 +59,45 @@ internal abstract class BTreePage
 
                 throw new SqliteException($"Page {page} is an index b-tree page. Index b-trees (indexes and WITHOUT ROWID tables) are not supported");
             case BTreeType.InteriorTableBtreePage:
-                res = new BTreeInteriorTablePage(reader, page, header, cellOffsets);
-                break;
             case BTreeType.LeafTableBtreePage:
-                res = new BTreeLeafTablePage(reader, page, header, cellOffsets);
                 break;
             default:
                 throw new SqliteCorruptException($"unknown b-tree page type {(byte)header.Type}", page, "b-tree page header");
         }
 
-        res.ValidateCellOffsets();
+        ValidateCellOffsets(reader, page, header, cellOffsets);
 
+        // The page constructors parse the cells
         try
         {
-            res.ParseInternal(data, length);
+            if (header.Type == BTreeType.InteriorTableBtreePage)
+                return new BTreeInteriorTablePage(reader, page, header, cellOffsets, data, length);
+
+            return new BTreeLeafTablePage(reader, page, header, cellOffsets, data, length);
         }
         catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
         {
             throw new SqliteCorruptException("unable to read a cell", page, "b-tree cell", e);
         }
-
-        return res;
     }
 
-    private void ValidateCellOffsets()
+    private static void ValidateCellOffsets(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
     {
         // https://www.sqlite.org/fileformat.html#b_tree_pages
         // The cell pointer array follows the page header, and every cell lies after it and inside the usable area
-        uint headerStart = Page == 1 ? (uint)DatabaseHeader.HeaderSize : 0;
-        uint headerSize = Header.Type == BTreeType.InteriorTableBtreePage ? 12u : 8u;
-        uint cellsStart = headerStart + headerSize + 2u * Header.CellCount;
-        uint usableSize = (uint)(Reader.PageSize - Reader.ReservedSpace);
+        uint headerStart = page == 1 ? (uint)DatabaseHeader.HeaderSize : 0;
+        uint headerSize = header.Type == BTreeType.InteriorTableBtreePage ? 12u : 8u;
+        uint cellsStart = headerStart + headerSize + 2u * header.CellCount;
+        uint usableSize = (uint)(reader.PageSize - reader.ReservedSpace);
 
         if (cellsStart > usableSize)
-            throw new SqliteCorruptException($"cell count {Header.CellCount} does not fit in the page", Page, "b-tree page header");
+            throw new SqliteCorruptException($"cell count {header.CellCount} does not fit in the page", page, "b-tree page header");
 
-        foreach (ushort offset in CellOffsets)
+        foreach (ushort offset in cellOffsets)
         {
             // A cell needs at least 4 bytes (an interior cell's child pointer, or a leaf cell's two varints and a record header)
             if (offset < cellsStart || offset + 4u > usableSize)
-                throw new SqliteCorruptException($"cell offset {offset} is outside the cell content area ({cellsStart}..{usableSize})", Page, "cell pointer array");
+                throw new SqliteCorruptException($"cell offset {offset} is outside the cell content area ({cellsStart}..{usableSize})", page, "cell pointer array");
         }
     }
-
-    protected abstract void ParseInternal(byte[] data, int length);
 }

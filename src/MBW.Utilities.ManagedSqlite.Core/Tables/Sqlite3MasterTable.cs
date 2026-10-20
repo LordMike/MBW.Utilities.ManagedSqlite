@@ -14,26 +14,13 @@ internal class Sqlite3MasterTable
 
         foreach (Sqlite3Row row in rows)
         {
-            Sqlite3SchemaRow other = new Sqlite3SchemaRow();
+            row.TryGetOrdinal(0, out string? type);
+            row.TryGetOrdinal(1, out string? name);
+            row.TryGetOrdinal(2, out string? tableName);
+            row.TryGetOrdinal(3, out long rootPage);
+            row.TryGetOrdinal(4, out string? sql);
 
-            other.Database = db;
-
-            row.TryGetOrdinal(0, out string? str);
-            other.Type = str;
-
-            row.TryGetOrdinal(1, out str);
-            other.Name = str;
-
-            row.TryGetOrdinal(2, out str);
-            other.TableName = str;
-
-            row.TryGetOrdinal(3, out long lng);
-            other.RootPage = (uint)lng;
-
-            row.TryGetOrdinal(4, out str);
-            other.Sql = str;
-
-            Tables.Add(other);
+            Tables.Add(new Sqlite3SchemaRow(db, type, name, tableName, (uint)rootPage, sql));
         }
     }
 }
