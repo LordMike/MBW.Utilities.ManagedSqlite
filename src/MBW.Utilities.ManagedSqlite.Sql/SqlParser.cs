@@ -211,6 +211,7 @@ public static class SqlParser
         }
 
         bool withoutRowId = IsWithoutRowId(node);
+        def.IsWithoutRowId = withoutRowId;
 
         // Identify row-id substitutes
         if (primaryKeyComponents == 1 && rowIdAliasCandidates.Contains(primaryKeyColumn) && !withoutRowId)

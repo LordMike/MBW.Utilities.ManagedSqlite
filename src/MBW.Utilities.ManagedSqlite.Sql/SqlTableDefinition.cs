@@ -13,6 +13,11 @@ public class SqlTableDefinition
     public IReadOnlyCollection<SqlTableColumn> Columns { get; }
     public SqlTableColumn RowIdColumn { get; private set; }
 
+    /// <summary>
+    /// True when the SQL declares the table WITHOUT ROWID
+    /// </summary>
+    internal bool IsWithoutRowId { get; set; }
+
     public SqlTableDefinition(string name)
     {
         TableName = name;

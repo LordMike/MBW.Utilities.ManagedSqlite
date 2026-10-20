@@ -20,6 +20,14 @@ public class Sqlite3Table
     private BTreePage RootPage { get; }
     public Sqlite3SchemaRow SchemaDefinition { get; }
 
+    /// <summary>
+    /// True when the table's root page is an index b-tree page, which is how SQLite stores a WITHOUT ROWID table. A
+    /// rowid table's root page is a table b-tree page. This comes from the root page alone: the core does not parse
+    /// the schema SQL, so it can't tell when the two disagree, which SQLite reports as corrupt. The Sql package checks
+    /// that when it pairs a table with its definition.
+    /// </summary>
+    public bool IsWithoutRowId => RootPage is BTreeIndexPage;
+
     internal Sqlite3Table(ReaderBase reader, BTreePage rootPage, Sqlite3SchemaRow table)
     {
         SchemaDefinition = table;

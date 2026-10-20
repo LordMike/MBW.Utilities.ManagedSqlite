@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Sql;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tests;
@@ -163,6 +164,22 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     [Fact]
     public void PageType_IndexPageInsideTableBTree() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A));
+
+    /// <summary>
+    /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
+    /// an interior table page. The root page alone can't tell, so the check is in the Sql package, which knows the SQL.
+    /// </summary>
+    [Theory]
+    [InlineData("Small", 0x0A)]
+    [InlineData("Keyed", 0x05)]
+    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType)
+    {
+        byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
+        SqliteParity.AssertSqliteReportsCorrupt(data, table);
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        Assert.Equal("b-tree page header", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Structure);
+    }
 
     [Fact]
     public void CellCount_PointerArrayPastEndOfPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF));

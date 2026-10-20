@@ -5,7 +5,6 @@ using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
@@ -70,6 +69,34 @@ internal static class SqliteParity
     {
         using SqliteConnection connection = Run(script);
         return Serialize(connection);
+    }
+
+    /// <summary>
+    /// Asserts that real SQLite reports SQLITE_CORRUPT when it reads the rows of <paramref name="table"/> from the
+    /// database file <paramref name="data"/>, for a damaged database the library must also reject.
+    /// </summary>
+    public static void AssertSqliteReportsCorrupt(byte[] data, string table)
+    {
+        IntPtr image = Marshal.AllocHGlobal(data.Length);
+        try
+        {
+            Marshal.Copy(data, 0, image, data.Length);
+
+            // Unpooled, so SQLite is done with the image when the connection is disposed, before it is freed
+            using SqliteConnection connection = new SqliteConnection("Data Source=:memory:;Pooling=False");
+            connection.Open();
+
+            int rc = raw.sqlite3_deserialize(connection.Handle, "main", image, data.Length, data.Length, raw.SQLITE_DESERIALIZE_READONLY);
+            if (rc != raw.SQLITE_OK)
+                throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
+
+            SqliteException ex = Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM \"{table.Replace("\"", "\"\"")}\""));
+            Assert.Equal(raw.SQLITE_CORRUPT, ex.SqliteErrorCode);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(image);
+        }
     }
 
     /// <summary>
@@ -174,8 +201,6 @@ internal static class SqliteParity
     private static void AppendTableWithLibrary(StringBuilder sb, Sqlite3Database db, string name)
     {
         Sqlite3Table table = db.GetTable(name);
-        string sql = table.SchemaDefinition.Sql;
-        bool withoutRowId = sql != null && WithoutRowIdClause.IsMatch(sql);
         List<string> columns = table.GetTableDefinition().Columns.Where(s => !s.IsVirtualGenerated).OrderBy(s => s.Ordinal)
             .Select(s => s.Name).ToList();
         AppendTableHeader(sb, name, columns);
@@ -185,15 +210,9 @@ internal static class SqliteParity
             // By name, so a rowid alias column reads the rowid as SQLite does. A column missing from the record
             // (added by ALTER TABLE after the row was written) reads as NULL.
             IEnumerable<object> values = columns.Select(c => row.TryGetValueByName(c, out object value) ? value : null);
-            AppendRow(sb, withoutRowId ? null : row.RowId, values);
+            AppendRow(sb, table.IsWithoutRowId ? null : row.RowId, values);
         }
     }
-
-    /// <summary>
-    /// The WITHOUT ROWID table option, after the column list's closing parenthesis. The library does not expose it, and
-    /// SQLite's own answer (pragma_table_list) must not leak into the library's dump.
-    /// </summary>
-    private static readonly Regex WithoutRowIdClause = new Regex(@"\)[^)]*\bWITHOUT\s+ROWID\b[^)]*$", RegexOptions.IgnoreCase);
 
     private static bool IsReadableTable(string type, string sql)
     {
