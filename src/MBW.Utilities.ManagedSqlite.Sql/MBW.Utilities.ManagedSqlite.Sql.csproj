@@ -18,4 +18,9 @@
     <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Core\MBW.Utilities.ManagedSqlite.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="TestDataGenerator" />
+    <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Sql.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -11,7 +11,7 @@ using MBW.Utilities.ManagedSqlite.Core.Tables;
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
-public class Sqlite3Database : IDisposable
+public sealed class Sqlite3Database : IDisposable
 {
     private readonly Sqlite3Settings _settings;
     private readonly ReaderBase _reader;
@@ -19,7 +19,7 @@ public class Sqlite3Database : IDisposable
 
     private uint _sizeInPages;
 
-    public DatabaseHeader Header { get; private set; }
+    internal DatabaseHeader Header { get; private set; }
     private Sqlite3MasterTable _masterTable;
     private Sqlite3SchemaRow _masterSchemaRow;
 
