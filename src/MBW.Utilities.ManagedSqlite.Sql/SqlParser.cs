@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Diagnostics;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -106,8 +107,9 @@ internal static class SqlParser
 
         SqlTableDefinition def = new SqlTableDefinition(node.GetString(2));
 
+        // GetGroup only returns group nodes, which always have Children
         SqlNode columns = node.GetGroup(3);
-        DebugCheck.Assert(columns.IsGroup());
+        Debug.Assert(columns.IsGroup());
         int primaryKeyComponents = 0;
         SqlTableColumn? primaryKeyColumn = null;
 
@@ -117,7 +119,7 @@ internal static class SqlParser
         // VIRTUAL generated columns are not stored, so each one moves the later columns one position left in the record
         int virtualGeneratedColumns = 0;
 
-        for (int columnIndex = 0; columnIndex < columns.Children.Count; columnIndex++)
+        for (int columnIndex = 0; columnIndex < columns.Children!.Count; columnIndex++)
         {
             SqlNode columnSet = columns.Children[columnIndex];
             if (columnSet.Children == null || !columnSet.Children.Any() || !columnSet.Children.First().Is(SqlToken.String))
@@ -131,10 +133,11 @@ internal static class SqlParser
             {
                 if (columnSet.Is(0, "PRIMARY") && columnSet.Is(1, "KEY") && columnSet.IsGroup(2))
                 {
+                    // GetGroup only returns group nodes, which always have Children
                     SqlNode pkColumns = columnSet.GetGroup(2);
-                    DebugCheck.Assert(pkColumns.IsGroup());
+                    Debug.Assert(pkColumns.IsGroup());
 
-                    foreach (SqlNode pkColumn in pkColumns.Children)
+                    foreach (SqlNode pkColumn in pkColumns.Children!)
                     {
                         if (pkColumn.Is(SqlToken.String))
                             name = pkColumn.GetString();
@@ -260,9 +263,9 @@ internal static class SqlParser
     /// </summary>
     private static bool IsVirtualGenerated(SqlNode columnSet)
     {
-        DebugCheck.Assert(columnSet.IsGroup());
+        Debug.Assert(columnSet.IsGroup());
 
-        for (int i = 1; i < columnSet.Children.Count; i++)
+        for (int i = 1; i < columnSet.Children!.Count; i++)
         {
             if (columnSet.Is(i, "AS") && columnSet.IsGroup(i + 1))
                 return !columnSet.Is(i + 2, "STORED");
@@ -273,9 +276,9 @@ internal static class SqlParser
 
     private static bool IsColumnPrimaryKeyDesc(SqlNode columnSet)
     {
-        DebugCheck.Assert(columnSet.IsGroup());
+        Debug.Assert(columnSet.IsGroup());
 
-        for (int i = 1; i < columnSet.Children.Count; i++)
+        for (int i = 1; i < columnSet.Children!.Count; i++)
         {
             if (columnSet.Is(i, "PRIMARY") && columnSet.Is(i + 1, "KEY"))
                 return columnSet.Is(i + 2, "DESC");
@@ -287,9 +290,9 @@ internal static class SqlParser
     private static bool IsWithoutRowId(SqlNode createStatement)
     {
         // Table options follow the column definitions group
-        DebugCheck.Assert(createStatement.IsGroup());
+        Debug.Assert(createStatement.IsGroup());
 
-        for (int i = 4; i < createStatement.Children.Count; i++)
+        for (int i = 4; i < createStatement.Children!.Count; i++)
         {
             if (createStatement.Is(i, "WITHOUT") && createStatement.Is(i + 1, "ROWID"))
                 return true;
