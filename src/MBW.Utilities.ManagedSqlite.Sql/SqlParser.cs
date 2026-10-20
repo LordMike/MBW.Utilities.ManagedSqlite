@@ -159,8 +159,6 @@ public static class SqlParser
             string[] typeStrings = columnSet.Children.Skip(1).Where(s => s.Is(SqlToken.String))
                 .Select(s => s.GetString()).ToArray();
 
-            // Defaults
-            Type identifiedType = typeof(byte[]);
             string[] identifiedTypeStrings = typeStrings;
 
             foreach ((string[] words, Type type) candidate in SqlKeywords.TypeKeywords)
@@ -168,10 +166,11 @@ public static class SqlParser
                 if (!typeStrings.Take(candidate.words.Length).SequenceEqual(candidate.words, StringComparer.OrdinalIgnoreCase))
                     continue;
 
-                identifiedType = candidate.type;
                 identifiedTypeStrings = candidate.words;
                 break;
             }
+
+            Type identifiedType = GetAffinityType(columnSet);
 
             SqlTableColumn sqlTableColumn = new SqlTableColumn(columnIndex, name, string.Join(" ", identifiedTypeStrings), identifiedType);
             def.AddColumn(sqlTableColumn);
@@ -202,12 +201,40 @@ public static class SqlParser
         return true;
     }
 
-    private static bool IsDeclaredAsInteger(SqlNode columnSet)
+    private static List<SqlNode> GetDeclaredType(SqlNode columnSet)
     {
         // The declared type is everything between the column name and the first column-constraint
-        List<SqlNode> declaredType = columnSet.Children.Skip(1)
+        return columnSet.Children.Skip(1)
             .TakeWhile(s => !(s.Is(SqlToken.String) && SqlKeywords.ColumnConstraintKeywords.Contains(s.GetString())))
             .ToList();
+    }
+
+    /// <summary>
+    /// The CLR type of the column's affinity, which SQLite determines from substrings of the declared type, by the first
+    /// rule that matches. https://www.sqlite.org/datatype3.html#determination_of_column_affinity
+    /// </summary>
+    private static Type GetAffinityType(SqlNode columnSet)
+    {
+        string declaredType = string.Join(" ", GetDeclaredType(columnSet).Where(s => s.Is(SqlToken.String)).Select(s => s.GetString()));
+
+        bool Contains(string value) => declaredType.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        if (Contains("INT"))
+            return typeof(long);
+        if (Contains("CHAR") || Contains("CLOB") || Contains("TEXT"))
+            return typeof(string);
+        if (Contains("BLOB") || declaredType.Length == 0)
+            return typeof(byte[]);
+        if (Contains("REAL") || Contains("FLOA") || Contains("DOUB"))
+            return typeof(double);
+
+        // NUMERIC affinity, reported as long although SQLite may store a real, text or blob there
+        return typeof(long);
+    }
+
+    private static bool IsDeclaredAsInteger(SqlNode columnSet)
+    {
+        List<SqlNode> declaredType = GetDeclaredType(columnSet);
 
         return declaredType.Count == 1 &&
                declaredType[0].Is(SqlToken.String) &&
