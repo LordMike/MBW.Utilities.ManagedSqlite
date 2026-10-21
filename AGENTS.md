@@ -7,3 +7,10 @@ MBW.Utilities.ManagedSqlite is a managed, read-only reader of SQLite 3 database 
 ## Pull requests
 
 If your change adds, removes or alters any tests, run the `test-review` skill (`.agents/skills/test-review/SKILL.md`) just before submitting the PR, scoped to the tests you changed. Apply its findings in the same PR, and state in the PR description how many tests and lines it removed or added and what, if anything, lacks coverage.
+
+## Writing code
+
+Before changing anything under `src/`, read `.agents/writing-code.md`. It covers parity with SQLite 3, how to cite
+SQLite source (`github.com/sqlite/sqlite/blob/version-3.X.Y/...` links pinned to a release tag), code style,
+consistency checks (`Checks.Strict` / `Checks.Relaxable`, with the survey tables in `docs/sqlite-checks/`), and the
+test shape.
