@@ -89,9 +89,11 @@ public sealed class Sqlite3Database : IDisposable
         if (database == null)
             throw new ArgumentNullException(nameof(database));
 
+        StreamFileView file;
         try
         {
             CheckStream(database, nameof(database));
+            file = new StreamFileView(database, leaveOpen);
         }
         catch
         {
@@ -100,7 +102,7 @@ public sealed class Sqlite3Database : IDisposable
             throw;
         }
 
-        return new Sqlite3Database(new StreamFileView(database, leaveOpen), settings ?? new Sqlite3Settings());
+        return new Sqlite3Database(file, settings ?? new Sqlite3Settings());
     }
 
     private static void CheckStream(Stream stream, string parameterName)
