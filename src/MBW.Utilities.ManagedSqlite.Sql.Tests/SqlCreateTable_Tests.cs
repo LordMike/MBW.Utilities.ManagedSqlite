@@ -6,8 +6,8 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
 /// <summary>
 /// The CREATE TABLE syntax SQLite stores in sqlite_schema (https://www.sqlite.org/lang_createtable.html, parse.y).
 /// Each theory fixes the shape of the statement, and its rows give only the part that varies: the column list, the
-/// table options or the table name, and the rows to insert. Each case creates the table with real SQLite, compares
-/// SQLite's view of its schema with the Sql package's parse of the stored statement, and reads its rows by name.
+/// table options or the table name, and the rows to insert. Each case creates the table with real SQLite and compares
+/// SQLite's dump of it, schema and then rows, with the library's.
 /// </summary>
 public class SqlCreateTable_Tests
 {
@@ -242,7 +242,6 @@ public class SqlCreateTable_Tests
     {
         // REFERENCES may name a table that does not exist
         script = "PRAGMA foreign_keys = OFF; " + script;
-        SqliteParity.AssertSchemaSameAsSqlite(script);
         SqliteParity.AssertSameAsSqlite(script);
     }
 }

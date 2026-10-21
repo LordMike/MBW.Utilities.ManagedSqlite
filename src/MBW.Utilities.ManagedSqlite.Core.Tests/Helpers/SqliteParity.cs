@@ -18,9 +18,10 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// Builds an in-memory database with real SQLite from a SQL script, then dumps it both with SQLite and with this library into
 /// the same text format and asserts the two dumps are equal.
 /// <para>
-/// The dump holds everything the library promises to read: the text encoding, the page size, every sqlite_master entry (type, name,
-/// table name and SQL, in file order), and for every table its column names and its rows in enumeration order, each
-/// with its rowid and every column value with its storage class. A WITHOUT ROWID table has no rowid, so its rows are
+/// The dump holds everything the library promises to read. First the schema: the text encoding, the page size, every
+/// sqlite_master entry (type, name, table name and SQL, in file order), and for every table its rowid alias and per column
+/// its name, declared type, primary key membership and whether it is a VIRTUAL generated column. Then the data: every
+/// table's rows in enumeration order, each with its rowid and every column value with its storage class. A WITHOUT ROWID table has no rowid, so its rows are
 /// listed without one, in primary key order, which is SQLite's order. VIRTUAL generated columns are left out, as SQLite
 /// computes them when read and does not store them. Virtual tables are listed but not read, since their
 /// contents are not in the file; their shadow tables are ordinary tables and are read. Views, indexes and triggers
@@ -95,74 +96,6 @@ internal static class SqliteParity
     {
         using SqliteConnection connection = Run(script);
         return Serialize(connection);
-    }
-
-    /// <summary>
-    /// Asserts that the Sql package parses every table's CREATE statement, as SQLite stored it in sqlite_schema, into
-    /// the columns SQLite reports for that table. Only the schema is compared, no rows, so WITHOUT ROWID tables work.
-    /// <para>
-    /// Per table (by name; sqlite_ internal tables left out): the table name and its rowid alias, then per column its
-    /// name, declared type, primary key membership and whether it is a VIRTUAL generated column. SQLite's side comes
-    /// from pragma_table_list (wr), pragma_table_xinfo (name, type, pk, hidden = 2) and pragma_index_list: a rowid table
-    /// (wr = 0) whose primary key has no automatic index (origin 'pk') has a rowid alias, its one pk column. The
-    /// declared type is compared without its size, in upper case, as <see cref="SqlTableColumn.TypeName"/> leaves
-    /// out "(10, 5)". The definition exposes neither STRICT nor the primary key's column order, so those are not
-    /// compared; WITHOUT ROWID shows through the rowid alias.
-    /// </para>
-    /// </summary>
-    public static void AssertSchemaSameAsSqlite(string script)
-    {
-        using SqliteConnection connection = Run(script);
-
-        StringBuilder expected = new StringBuilder();
-        // Shadow tables of virtual tables are ordinary tables, which the library reads; sorted here, with the same
-        // comparer as the library's side, as SQLite's BINARY order is byte order of the UTF-8 text.
-        foreach (object[] table in Query(connection, "SELECT name, wr FROM pragma_table_list WHERE schema = 'main' AND type IN ('table', 'shadow') AND name NOT LIKE 'sqlite~_%' ESCAPE '~'")
-                     .OrderBy(t => (string)t[0], StringComparer.Ordinal))
-        {
-            string name = (string)table[0];
-
-            List<object[]> columns = Query(connection, $"SELECT name, type, pk, hidden FROM pragma_table_xinfo({Literal(name)}) ORDER BY cid");
-            List<object[]> pkColumns = columns.Where(c => (long)c[2] > 0).ToList();
-            bool pkHasIndex = Query(connection, $"SELECT 1 FROM pragma_index_list({Literal(name)}) WHERE origin = 'pk'").Any();
-            string rowIdAlias = (long)table[1] == 0 && pkColumns.Count == 1 && !pkHasIndex ? (string)pkColumns[0][0] : null;
-
-            AppendSchemaTable(expected, name, rowIdAlias, columns.Select(c =>
-                ((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim().ToUpperInvariant(), (long)c[2] > 0, (long)c[3] == 2)));
-        }
-
-        StringBuilder actual = new StringBuilder();
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(Serialize(connection))))
-        {
-            foreach (Sqlite3SchemaRow entry in db.GetTables().Where(s => IsReadableTable(s.Type, s.Sql) && !s.Name.StartsWith("sqlite_", StringComparison.OrdinalIgnoreCase))
-                         .OrderBy(s => s.Name, StringComparer.Ordinal))
-            {
-                SqlTableDefinition definition;
-                try
-                {
-                    definition = entry.GetTableDefinition();
-                }
-                catch (InvalidOperationException)
-                {
-                    actual.Append("table ").Append(Quote(entry.Name)).AppendLine(" unparseable");
-                    continue;
-                }
-
-                AppendSchemaTable(actual, definition.TableName, definition.RowIdColumn?.Name, definition.Columns.OrderBy(c => c.Ordinal)
-                    .Select(c => (c.Name, c.TypeName.ToUpperInvariant(), c.IsPartOfPrimaryKey, c.IsVirtualGenerated)));
-            }
-        }
-
-        Assert.Equal(expected.ToString(), actual.ToString());
-    }
-
-    private static void AppendSchemaTable(StringBuilder sb, string name, string rowIdAlias,
-        IEnumerable<(string name, string type, bool pk, bool virtualGenerated)> columns)
-    {
-        sb.Append("table ").Append(Quote(name)).Append(" rowid alias ").AppendLine(rowIdAlias == null ? "none" : Quote(rowIdAlias));
-        foreach ((string column, string type, bool pk, bool virtualGenerated) in columns)
-            sb.Append("  column ").Append(Quote(column)).Append(" type ").Append(Quote(type))
-                .Append(pk ? " pk" : "").AppendLine(virtualGenerated ? " virtual" : "");
     }
 
     /// <summary>
@@ -288,10 +221,33 @@ internal static class SqliteParity
         foreach (object[] entry in schema)
             AppendSchemaEntry(sb, (string)entry[0], (string)entry[1], (string)entry[2], entry[3] as string);
 
-        foreach (object[] entry in schema.Where(s => IsReadableTable((string)s[0], s[3] as string)))
-            AppendTableWithSqlite(sb, connection, (string)entry[1]);
+        List<string> tables = schema.Where(s => IsReadableTable((string)s[0], s[3] as string)).Select(s => (string)s[1]).ToList();
+        foreach (string table in tables)
+            AppendColumnsWithSqlite(sb, connection, table);
+
+        foreach (string table in tables)
+            AppendTableWithSqlite(sb, connection, table);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// SQLite's view of a table's columns: pragma_table_list (wr), pragma_table_xinfo (name, type, pk, hidden = 2) and
+    /// pragma_index_list. A rowid table (wr = 0) whose primary key has no automatic index (origin 'pk') has a rowid
+    /// alias, its one pk column. The declared type is compared without its size, in upper case, as
+    /// <see cref="SqlTableColumn.TypeName"/> leaves out "(10, 5)". The definition exposes neither STRICT nor the
+    /// primary key's column order, so those are not compared; WITHOUT ROWID shows through the rowid alias.
+    /// </summary>
+    private static void AppendColumnsWithSqlite(StringBuilder sb, SqliteConnection connection, string name)
+    {
+        bool withoutRowId = (long)Query(connection, $"SELECT wr FROM pragma_table_list WHERE schema = 'main' AND name = {Literal(name)}").Single()[0] != 0;
+        List<object[]> columns = Query(connection, $"SELECT name, type, pk, hidden FROM pragma_table_xinfo({Literal(name)}) ORDER BY cid");
+        List<object[]> pkColumns = columns.Where(c => (long)c[2] > 0).ToList();
+        bool pkHasIndex = Query(connection, $"SELECT 1 FROM pragma_index_list({Literal(name)}) WHERE origin = 'pk'").Any();
+        string rowIdAlias = !withoutRowId && pkColumns.Count == 1 && !pkHasIndex ? (string)pkColumns[0][0] : null;
+
+        AppendColumns(sb, name, rowIdAlias, columns.Select(c =>
+            ((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim().ToUpperInvariant(), (long)c[2] > 0, (long)c[3] == 2)));
     }
 
     private static void AppendTableWithSqlite(StringBuilder sb, SqliteConnection connection, string name)
@@ -333,7 +289,15 @@ internal static class SqliteParity
         foreach (Sqlite3SchemaRow entry in schema)
             AppendSchemaEntry(sb, entry.Type, entry.Name, entry.TableName, entry.Sql);
 
-        foreach (Sqlite3SchemaRow entry in schema.Where(s => IsReadableTable(s.Type, s.Sql)))
+        List<Sqlite3SchemaRow> tables = schema.Where(s => IsReadableTable(s.Type, s.Sql)).ToList();
+        foreach (Sqlite3SchemaRow entry in tables)
+        {
+            SqlTableDefinition definition = entry.GetTableDefinition();
+            AppendColumns(sb, entry.Name, definition.RowIdColumn?.Name, definition.Columns.OrderBy(c => c.Ordinal)
+                .Select(c => (c.Name, c.TypeName.ToUpperInvariant(), c.IsPartOfPrimaryKey, c.IsVirtualGenerated)));
+        }
+
+        foreach (Sqlite3SchemaRow entry in tables)
             AppendTableWithLibrary(sb, db, entry.Name);
 
         return sb.ToString();
@@ -364,6 +328,15 @@ internal static class SqliteParity
     {
         sb.Append("schema ").Append(type).Append(' ').Append(Quote(name)).Append(" on ").Append(Quote(tableName))
             .Append(": ").AppendLine(sql == null ? "NULL" : Quote(sql));
+    }
+
+    private static void AppendColumns(StringBuilder sb, string name, string rowIdAlias,
+        IEnumerable<(string name, string type, bool pk, bool virtualGenerated)> columns)
+    {
+        sb.Append("columns of ").Append(Quote(name)).Append(", rowid alias ").AppendLine(rowIdAlias == null ? "none" : Quote(rowIdAlias));
+        foreach ((string column, string type, bool pk, bool virtualGenerated) in columns)
+            sb.Append("  column ").Append(Quote(column)).Append(" type ").Append(Quote(type))
+                .Append(pk ? " pk" : "").AppendLine(virtualGenerated ? " virtual" : "");
     }
 
     private static void AppendTableHeader(StringBuilder sb, string name, List<string> columns)
