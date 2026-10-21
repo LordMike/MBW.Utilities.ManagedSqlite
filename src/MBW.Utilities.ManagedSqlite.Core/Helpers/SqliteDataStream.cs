@@ -46,7 +46,7 @@ internal class SqliteDataStream : ReadonlyStream
             //   if( rc==SQLITE_OK && amt>0 ){
             //     /* Overflow chain ends prematurely */
             //     return SQLITE_CORRUPT_PAGE(pPage);
-            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5320 (accessPayload)
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5321 (accessPayload)
             Checks.Strict(_fullLengthRemaining <= 0 || count <= 0, "CELL-13",
                 $"the overflow chain ended with {_fullLengthRemaining} bytes of the payload left", _currentPage, "overflow chain");
 

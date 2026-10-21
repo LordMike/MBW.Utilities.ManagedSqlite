@@ -338,14 +338,24 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     public void Overflow_LastNextPointerIgnored()
     {
         DbPatcher patcher = new DbPatcher(Base);
-        uint last = patcher.GetOverflowPointer(SmallRoot, 1);
-        while (patcher.ReadUInt32((int)((last - 1) * patcher.PageSize)) != 0)
-            last = patcher.ReadUInt32((int)((last - 1) * patcher.PageSize));
-
-        byte[] data = patcher.WriteUInt32((int)((last - 1) * patcher.PageSize), PastTheEnd).Data;
+        byte[] data = patcher.SetOverflowNextPointer(patcher.GetOverflowChain(SmallRoot, 1).Last(), PastTheEnd).Data;
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small");
+    }
+
+    // CELL-13: a chain that ends on an intermediate overflow page, while payload remains
+    [Fact]
+    public void Overflow_ChainEndsOnOverflowPage()
+    {
+        DbPatcher patcher = new DbPatcher(Base);
+        List<uint> chain = patcher.GetOverflowChain(SmallRoot, 1);
+        Assert.True(chain.Count >= 2);
+
+        Exception ex = RunBounded(() => ReadEverything(patcher.SetOverflowNextPointer(chain[0], 0).Data));
+        SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(ex);
+        Assert.Equal("overflow chain", corrupt.Structure);
+        Assert.Equal("CELL-13", corrupt.Check);
     }
 
     [Fact]

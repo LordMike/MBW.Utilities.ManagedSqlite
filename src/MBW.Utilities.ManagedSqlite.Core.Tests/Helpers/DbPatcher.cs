@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 
@@ -125,6 +126,23 @@ internal sealed class DbPatcher
     public uint GetOverflowPointer(uint page, int cell) => ReadUInt32(GetOverflowPointerOffset(page, cell));
 
     public DbPatcher SetOverflowPointer(uint page, int cell, uint value) => WriteUInt32(GetOverflowPointerOffset(page, cell), value);
+
+    /// <summary>
+    /// The pages of a cell's overflow chain, in order
+    /// </summary>
+    public List<uint> GetOverflowChain(uint page, int cell)
+    {
+        List<uint> chain = new List<uint>();
+        for (uint next = GetOverflowPointer(page, cell); next != 0; next = ReadUInt32(PageOffset(next)))
+            chain.Add(next);
+
+        return chain;
+    }
+
+    /// <summary>
+    /// Sets the next pointer at the start of an overflow page
+    /// </summary>
+    public DbPatcher SetOverflowNextPointer(uint overflowPage, uint value) => WriteUInt32(PageOffset(overflowPage), value);
 
     // File
 
