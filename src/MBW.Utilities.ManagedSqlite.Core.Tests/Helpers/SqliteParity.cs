@@ -15,63 +15,69 @@ using Xunit;
 namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 
 /// <summary>
-/// Builds an in-memory database with real SQLite from a SQL script, then dumps it both with SQLite and with this library into
-/// the same text format and asserts the two dumps are equal.
+/// Builds an in-memory database with real SQLite from a SQL script, reads it both with SQLite and with this library,
+/// and asserts the two dumps are equal.
 /// <para>
-/// The dump holds everything the library promises to read. First the schema: the text encoding, the page size, every
-/// sqlite_master entry (type, name, table name and SQL, in file order), and for every table its rowid alias and per column
-/// its name, declared type, primary key membership and whether it is a VIRTUAL generated column. Then the data: every
-/// table's rows in enumeration order, each with its rowid and every column value with its storage class. A WITHOUT ROWID table has no rowid, so its rows are
-/// listed without one, in primary key order, which is SQLite's order. VIRTUAL generated columns are left out, as SQLite
-/// computes them when read and does not store them. Virtual tables are listed but not read, since their
-/// contents are not in the file; their shadow tables are ordinary tables and are read. Views, indexes and triggers
-/// are listed only, as the library does not run queries.
+/// The dump starts with the schema: the text encoding, the page size, every sqlite_master entry in file order, and per
+/// table its rowid alias and per column its name, declared type (without its size, in upper case), primary key
+/// membership and whether it is a VIRTUAL generated column. Then the data: every table's rows in enumeration order,
+/// each with its rowid (none in a WITHOUT ROWID table) and every stored value with its storage class. VIRTUAL generated
+/// columns have no value, as SQLite computes them when read. Virtual tables, views, indexes and triggers are only
+/// listed; the shadow tables of a virtual table are ordinary tables and are read.
 /// </para>
 /// </summary>
 internal static class SqliteParity
 {
-    public static void AssertSameAsSqlite(string script) => AssertSameAsSqlite(script, data => data);
+    private sealed record Column(string Name, string Type, bool Pk, bool Virtual);
+
+    private sealed record Table(string Name, string RowIdAlias, List<Column> Columns, List<(long? RowId, object[] Values)> Rows);
+
+    public static void AssertSameAsSqlite(string script) => AssertSameAsSqlite(Build(script));
 
     /// <summary>
-    /// As <see cref="AssertSameAsSqlite(string)"/>, for a database with <paramref name="reservedBytes"/> unused bytes at
-    /// the end of every page (the header's "reserved space", offset 20), which no SQL statement can set.
+    /// For a database with <paramref name="reservedBytes"/> unused bytes at the end of every page (the header's
+    /// "reserved space", offset 20), which no SQL statement can set.
     /// </summary>
     public static void AssertSameAsSqlite(int reservedBytes, string script)
     {
-        byte[] data;
-        using (SqliteConnection connection = Run(script, reservedBytes))
-            data = Serialize(connection);
-
+        byte[] data = Build(script, reservedBytes);
         Assert.Equal(reservedBytes, data[20]);
         AssertSameAsSqlite(data);
     }
 
     /// <summary>
-    /// Both SQLite and the library read the database file that <paramref name="script"/> produced, after
-    /// <paramref name="patch"/> has changed its bytes, for cases SQLite itself never writes.
+    /// After <paramref name="patch"/> has changed the file's bytes, for cases SQLite itself never writes.
     /// </summary>
-    public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch)
-    {
-        AssertSameAsSqlite(patch(Build(script)));
-    }
+    public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch) => AssertSameAsSqlite(patch(Build(script)));
 
     private static void AssertSameAsSqlite(byte[] data)
     {
         string expected;
-        using (SqliteConnection connection = OpenBytes(data))
-            expected = DumpWithSqlite(connection);
+        using (SqliteConnection connection = Open(data))
+        {
+            List<object[]> schema = Query(connection, "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY rowid");
+            expected = Dump(Query(connection, "PRAGMA encoding")[0][0].ToString().Replace("-", "").ToUpperInvariant(),
+                Query(connection, "PRAGMA page_size")[0][0].ToString(),
+                schema.Select(s => ((string)s[0], (string)s[1], (string)s[2], s[3] as string)),
+                schema.Where(s => IsReadableTable((string)s[0], s[3] as string)).Select(s => ReadWithSqlite(connection, (string)s[1])));
+        }
 
         string actual;
-        using (Stream stream = new MemoryStream(data))
-            actual = DumpWithLibrary(stream);
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+        {
+            List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
+            actual = Dump(db.Header.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
+                schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
+                schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
+        }
 
         Assert.Equal(expected, actual);
     }
 
     /// <summary>
-    /// Asserts that this library reads the rows of <paramref name="tables"/> from <paramref name="db"/> as SQLite reads
-    /// them from the database <paramref name="script"/> builds. For a damaged copy of that database, whose other tables
-    /// must still read.
+    /// Asserts that this library reads <paramref name="tables"/> from <paramref name="db"/> as SQLite reads them from
+    /// the database <paramref name="script"/> builds. For a damaged copy of that database, whose other tables must
+    /// still read.
     /// </summary>
     public static void AssertTablesSameAsSqlite(string script, Sqlite3Database db, params string[] tables)
     {
@@ -81,21 +87,11 @@ internal static class SqliteParity
         StringBuilder actual = new StringBuilder();
         foreach (string table in tables)
         {
-            AppendTableWithSqlite(expected, connection, table);
-            AppendTableWithLibrary(actual, db, table);
+            AppendTable(expected, ReadWithSqlite(connection, table));
+            AppendTable(actual, ReadWithLibrary(db, table));
         }
 
         Assert.Equal(expected.ToString(), actual.ToString());
-    }
-
-    /// <summary>
-    /// The bytes of the database file real SQLite builds from <paramref name="script"/>, for tests of the library's
-    /// API that need a database but not a comparison.
-    /// </summary>
-    public static byte[] Build(string script)
-    {
-        using SqliteConnection connection = Run(script);
-        return Serialize(connection);
     }
 
     /// <summary>
@@ -104,31 +100,32 @@ internal static class SqliteParity
     /// </summary>
     public static void AssertSqliteReportsCorrupt(byte[] data, string table)
     {
-        IntPtr image = Marshal.AllocHGlobal(data.Length);
-        try
-        {
-            Marshal.Copy(data, 0, image, data.Length);
-
-            // Unpooled, so SQLite is done with the image when the connection is disposed, before it is freed
-            using SqliteConnection connection = new SqliteConnection("Data Source=:memory:;Pooling=False");
-            connection.Open();
-
-            int rc = raw.sqlite3_deserialize(connection.Handle, "main", image, data.Length, data.Length, raw.SQLITE_DESERIALIZE_READONLY);
-            if (rc != raw.SQLITE_OK)
-                throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
-
-            SqliteException ex = Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM \"{table.Replace("\"", "\"\"")}\""));
-            Assert.Equal(raw.SQLITE_CORRUPT, ex.SqliteErrorCode);
-        }
-        finally
-        {
-            Marshal.FreeHGlobal(image);
-        }
+        using SqliteConnection connection = Open(data);
+        SqliteException ex = Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM {Name(table)}"));
+        Assert.Equal(raw.SQLITE_CORRUPT, ex.SqliteErrorCode);
     }
 
     /// <summary>
-    /// Runs <paramref name="script"/> against a new in-memory database; nothing touches the disk. A database with
-    /// <paramref name="reservedBytes"/> gets them before the script runs, through SQLITE_FCNTL_RESERVE_BYTES
+    /// The bytes of the database file real SQLite builds from <paramref name="script"/>, exactly as SQLite would write
+    /// them to disk (https://www.sqlite.org/c3ref/serialize.html).
+    /// </summary>
+    public static byte[] Build(string script, int reservedBytes = 0)
+    {
+        using SqliteConnection connection = Run(script, reservedBytes);
+
+        IntPtr data = raw.sqlite3_serialize(connection.Handle, "main", out long size, 0);
+        if (data == IntPtr.Zero)
+            throw new InvalidOperationException("sqlite3_serialize failed");
+
+        byte[] bytes = new byte[size];
+        Marshal.Copy(data, bytes, 0, (int)size);
+        raw.sqlite3_free(data);
+        return bytes;
+    }
+
+    /// <summary>
+    /// Runs <paramref name="script"/> against a new in-memory database. A database with <paramref name="reservedBytes"/>
+    /// gets them before the script runs, through SQLITE_FCNTL_RESERVE_BYTES
     /// (https://www.sqlite.org/c3ref/c_fcntl_begin_atomic_write.html#sqlitefcntlreservebytes).
     /// </summary>
     private static SqliteConnection Run(string script, int reservedBytes = 0)
@@ -136,12 +133,8 @@ internal static class SqliteParity
         SqliteConnection connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
 
-        if (reservedBytes != 0)
-        {
-            int rc = sqlite3_file_control(connection.Handle.DangerousGetHandle(), "main", SqliteFcntlReserveBytes, ref reservedBytes);
-            if (rc != raw.SQLITE_OK)
-                throw new InvalidOperationException($"sqlite3_file_control failed: {rc}");
-        }
+        if (reservedBytes != 0 && sqlite3_file_control(connection.Handle.DangerousGetHandle(), "main", SqliteFcntlReserveBytes, ref reservedBytes) != raw.SQLITE_OK)
+            throw new InvalidOperationException("sqlite3_file_control failed");
 
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = script;
@@ -157,166 +150,66 @@ internal static class SqliteParity
     private static extern int sqlite3_file_control(IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string dbName, int op, ref int arg);
 
     /// <summary>
-    /// Opens a database file's bytes with SQLite, read-only and in memory; nothing touches the disk. Uses
-    /// sqlite3_deserialize (https://www.sqlite.org/c3ref/deserialize.html), which makes the bytes the content of the
-    /// "main" schema of an open connection, so SQLite reads exactly the bytes the library is given.
+    /// Opens a database file's bytes with SQLite, read-only and in memory, through sqlite3_deserialize
+    /// (https://www.sqlite.org/c3ref/deserialize.html), so SQLite reads exactly the bytes the library is given. SQLite
+    /// owns the copy (SQLITE_DESERIALIZE_FREEONCLOSE) and frees it when the connection closes, and also when
+    /// deserialize itself fails (end_deserialize in https://sqlite.org/src/file?name=src/memdb.c).
     /// </summary>
-    private static SqliteConnection OpenBytes(byte[] data)
+    private static SqliteConnection Open(byte[] data)
     {
         SqliteConnection connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
 
-        try
-        {
-            // SQLite owns the copy (SQLITE_DESERIALIZE_FREEONCLOSE): it frees it when the connection closes, and also when
-            // deserialize itself fails (end_deserialize in memdb.c), so the helper must not free it
-            IntPtr copy = raw.sqlite3_malloc(data.Length);
-            if (copy == IntPtr.Zero)
-                throw new OutOfMemoryException();
-
-            Marshal.Copy(data, 0, copy, data.Length);
-            int rc = raw.sqlite3_deserialize(connection.Handle, "main", copy, data.Length, data.Length, raw.SQLITE_DESERIALIZE_FREEONCLOSE | raw.SQLITE_DESERIALIZE_READONLY);
-            if (rc != raw.SQLITE_OK)
-                throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
-
-            return connection;
-        }
-        catch
+        IntPtr copy = raw.sqlite3_malloc(data.Length);
+        Marshal.Copy(data, 0, copy, data.Length);
+        int rc = raw.sqlite3_deserialize(connection.Handle, "main", copy, data.Length, data.Length, raw.SQLITE_DESERIALIZE_FREEONCLOSE | raw.SQLITE_DESERIALIZE_READONLY);
+        if (rc != raw.SQLITE_OK)
         {
             connection.Dispose();
-            throw;
+            throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
         }
+
+        return connection;
     }
 
     /// <summary>
-    /// The database file's bytes, exactly as SQLite would write them to disk.
+    /// SQLite's view of a table: pragma_table_list (wr), pragma_table_xinfo (name, type, pk, hidden = 2 for VIRTUAL
+    /// generated) and pragma_index_list. A rowid table (wr = 0) whose primary key has no automatic index (origin 'pk')
+    /// has a rowid alias, its one pk column. <see cref="SqlTableColumn.TypeName"/> leaves out the size, "(10, 5)", so
+    /// it is cut here too. The definition exposes neither STRICT nor the primary key's column order, so those are not
+    /// compared; WITHOUT ROWID shows through the rowid alias.
     /// </summary>
-    private static byte[] Serialize(SqliteConnection connection)
+    private static Table ReadWithSqlite(SqliteConnection connection, string name)
     {
-        IntPtr data = raw.sqlite3_serialize(connection.Handle, "main", out long size, 0);
-        if (data == IntPtr.Zero)
-            throw new InvalidOperationException("sqlite3_serialize failed");
+        bool withoutRowId = (long)Query(connection, $"SELECT wr FROM pragma_table_list WHERE schema = 'main' AND name = {Literal(name)}")[0][0] != 0;
+        List<Column> columns = Query(connection, $"SELECT name, type, pk, hidden FROM pragma_table_xinfo({Literal(name)}) ORDER BY cid")
+            .Select(c => new Column((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim().ToUpperInvariant(), (long)c[2] > 0, (long)c[3] == 2))
+            .ToList();
 
-        try
-        {
-            byte[] bytes = new byte[size];
-            Marshal.Copy(data, bytes, 0, (int)size);
-            return bytes;
-        }
-        finally
-        {
-            raw.sqlite3_free(data);
-        }
-    }
-
-    public static string DumpWithSqlite(SqliteConnection connection)
-    {
-        StringBuilder sb = new StringBuilder();
-
-        string encoding = Query(connection, "PRAGMA encoding").Single()[0].ToString();
-        sb.Append("encoding ").AppendLine(encoding.Replace("-", "").ToUpperInvariant());
-        sb.Append("page size ").AppendLine(Query(connection, "PRAGMA page_size").Single()[0].ToString());
-
-        List<object[]> schema = Query(connection, "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY rowid");
-        foreach (object[] entry in schema)
-            AppendSchemaEntry(sb, (string)entry[0], (string)entry[1], (string)entry[2], entry[3] as string);
-
-        List<string> tables = schema.Where(s => IsReadableTable((string)s[0], s[3] as string)).Select(s => (string)s[1]).ToList();
-        foreach (string table in tables)
-            AppendColumnsWithSqlite(sb, connection, table);
-
-        foreach (string table in tables)
-            AppendTableWithSqlite(sb, connection, table);
-
-        return sb.ToString();
-    }
-
-    /// <summary>
-    /// SQLite's view of a table's columns: pragma_table_list (wr), pragma_table_xinfo (name, type, pk, hidden = 2) and
-    /// pragma_index_list. A rowid table (wr = 0) whose primary key has no automatic index (origin 'pk') has a rowid
-    /// alias, its one pk column. The declared type is compared without its size, in upper case, as
-    /// <see cref="SqlTableColumn.TypeName"/> leaves out "(10, 5)". The definition exposes neither STRICT nor the
-    /// primary key's column order, so those are not compared; WITHOUT ROWID shows through the rowid alias.
-    /// </summary>
-    private static void AppendColumnsWithSqlite(StringBuilder sb, SqliteConnection connection, string name)
-    {
-        bool withoutRowId = (long)Query(connection, $"SELECT wr FROM pragma_table_list WHERE schema = 'main' AND name = {Literal(name)}").Single()[0] != 0;
-        List<object[]> columns = Query(connection, $"SELECT name, type, pk, hidden FROM pragma_table_xinfo({Literal(name)}) ORDER BY cid");
-        List<object[]> pkColumns = columns.Where(c => (long)c[2] > 0).ToList();
+        List<Column> pk = columns.Where(c => c.Pk).ToList();
         bool pkHasIndex = Query(connection, $"SELECT 1 FROM pragma_index_list({Literal(name)}) WHERE origin = 'pk'").Any();
-        string rowIdAlias = !withoutRowId && pkColumns.Count == 1 && !pkHasIndex ? (string)pkColumns[0][0] : null;
+        string rowIdAlias = !withoutRowId && pk.Count == 1 && !pkHasIndex ? pk[0].Name : null;
 
-        AppendColumns(sb, name, rowIdAlias, columns.Select(c =>
-            ((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim().ToUpperInvariant(), (long)c[2] > 0, (long)c[3] == 2)));
+        string values = string.Join(", ", columns.Where(c => !c.Virtual).Select(c => Name(c.Name)));
+        string sql = withoutRowId ? $"SELECT NULL, {values} FROM {Name(name)}" : $"SELECT rowid, {values} FROM {Name(name)} ORDER BY rowid";
+        return new Table(name, rowIdAlias, columns, Query(connection, sql).Select(r => (r[0] as long?, r.Skip(1).ToArray())).ToList());
     }
 
-    private static void AppendTableWithSqlite(StringBuilder sb, SqliteConnection connection, string name)
-    {
-        string quoted = "\"" + name.Replace("\"", "\"\"") + "\"";
-
-        // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns. VIRTUAL
-        // generated columns (hidden = 2) are left out: they are not stored, and the library does not compute them.
-        HashSet<string> virtualGenerated = new HashSet<string>(
-            Query(connection, $"SELECT name FROM pragma_table_xinfo({Literal(name)}) WHERE hidden = 2").Select(s => (string)s[0]),
-            StringComparer.OrdinalIgnoreCase);
-        List<string> allColumns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
-        List<string> columns = allColumns.Where(c => !virtualGenerated.Contains(c)).ToList();
-        AppendTableHeader(sb, name, columns);
-
-        bool withoutRowId = (long)Query(connection, $"SELECT wr FROM pragma_table_list WHERE schema = 'main' AND name = {Literal(name)}").Single()[0] != 0;
-        if (withoutRowId)
-        {
-            foreach (object[] row in Query(connection, $"SELECT * FROM {quoted}"))
-                AppendRow(sb, null, row.Where((_, i) => !virtualGenerated.Contains(allColumns[i])));
-        }
-        else
-        {
-            foreach (object[] row in Query(connection, $"SELECT rowid, * FROM {quoted} ORDER BY rowid"))
-                AppendRow(sb, (long)row[0], row.Skip(1).Where((_, i) => !virtualGenerated.Contains(allColumns[i])));
-        }
-    }
-
-    public static string DumpWithLibrary(Stream stream)
-    {
-        StringBuilder sb = new StringBuilder();
-
-        using Sqlite3Database db = new Sqlite3Database(stream);
-
-        sb.Append("encoding ").AppendLine(db.Header.TextEncoding.ToString());
-        sb.Append("page size ").AppendLine(db.Header.PageSize.ToString(CultureInfo.InvariantCulture));
-
-        List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
-        foreach (Sqlite3SchemaRow entry in schema)
-            AppendSchemaEntry(sb, entry.Type, entry.Name, entry.TableName, entry.Sql);
-
-        List<Sqlite3SchemaRow> tables = schema.Where(s => IsReadableTable(s.Type, s.Sql)).ToList();
-        foreach (Sqlite3SchemaRow entry in tables)
-        {
-            SqlTableDefinition definition = entry.GetTableDefinition();
-            AppendColumns(sb, entry.Name, definition.RowIdColumn?.Name, definition.Columns.OrderBy(c => c.Ordinal)
-                .Select(c => (c.Name, c.TypeName.ToUpperInvariant(), c.IsPartOfPrimaryKey, c.IsVirtualGenerated)));
-        }
-
-        foreach (Sqlite3SchemaRow entry in tables)
-            AppendTableWithLibrary(sb, db, entry.Name);
-
-        return sb.ToString();
-    }
-
-    private static void AppendTableWithLibrary(StringBuilder sb, Sqlite3Database db, string name)
+    private static Table ReadWithLibrary(Sqlite3Database db, string name)
     {
         Sqlite3Table table = db.GetTable(name);
-        List<string> columns = table.GetTableDefinition().Columns.Where(s => !s.IsVirtualGenerated).OrderBy(s => s.Ordinal)
-            .Select(s => s.Name).ToList();
-        AppendTableHeader(sb, name, columns);
+        SqlTableDefinition definition = table.GetTableDefinition();
+        List<Column> columns = definition.Columns.OrderBy(c => c.Ordinal)
+            .Select(c => new Column(c.Name, c.TypeName.ToUpperInvariant(), c.IsPartOfPrimaryKey, c.IsVirtualGenerated)).ToList();
 
-        foreach (Sqlite3Row row in table.EnumerateRows())
-        {
-            // By name, so a rowid alias column reads the rowid as SQLite does. A column missing from the record
-            // (added by ALTER TABLE after the row was written) reads as NULL.
-            IEnumerable<object> values = columns.Select(c => row.TryGetValueByName(c, out object value) ? value : null);
-            AppendRow(sb, table.IsWithoutRowId ? null : row.RowId, values);
-        }
+        // By name, so a rowid alias column reads the rowid as SQLite does. A column missing from the record (added by
+        // ALTER TABLE after the row was written) reads as NULL.
+        List<string> stored = columns.Where(c => !c.Virtual).Select(c => c.Name).ToList();
+        List<(long?, object[])> rows = table.EnumerateRows()
+            .Select(row => (table.IsWithoutRowId ? null : (long?)row.RowId, stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray()))
+            .ToList();
+
+        return new Table(name, definition.RowIdColumn?.Name, columns, rows);
     }
 
     private static bool IsReadableTable(string type, string sql)
@@ -324,29 +217,42 @@ internal static class SqliteParity
         return type == "table" && (sql == null || !sql.TrimStart().StartsWith("CREATE VIRTUAL TABLE", StringComparison.OrdinalIgnoreCase));
     }
 
-    private static void AppendSchemaEntry(StringBuilder sb, string type, string name, string tableName, string sql)
+    /// <summary>
+    /// The schema of every table before any table's rows, so a schema difference is the first difference shown
+    /// </summary>
+    private static string Dump(string encoding, string pageSize, IEnumerable<(string type, string name, string tableName, string sql)> schema, IEnumerable<Table> tables)
     {
-        sb.Append("schema ").Append(type).Append(' ').Append(Quote(name)).Append(" on ").Append(Quote(tableName))
-            .Append(": ").AppendLine(sql == null ? "NULL" : Quote(sql));
+        StringBuilder sb = new StringBuilder();
+        sb.Append("encoding ").AppendLine(encoding);
+        sb.Append("page size ").AppendLine(pageSize);
+
+        foreach ((string type, string name, string tableName, string sql) in schema)
+            sb.Append("schema ").Append(type).Append(' ').Append(Quote(name)).Append(" on ").Append(Quote(tableName)).Append(": ").AppendLine(Quote(sql));
+
+        List<Table> list = tables.ToList();
+        list.ForEach(t => AppendColumns(sb, t));
+        list.ForEach(t => AppendRows(sb, t));
+        return sb.ToString();
     }
 
-    private static void AppendColumns(StringBuilder sb, string name, string rowIdAlias,
-        IEnumerable<(string name, string type, bool pk, bool virtualGenerated)> columns)
+    private static void AppendTable(StringBuilder sb, Table table)
     {
-        sb.Append("columns of ").Append(Quote(name)).Append(", rowid alias ").AppendLine(rowIdAlias == null ? "none" : Quote(rowIdAlias));
-        foreach ((string column, string type, bool pk, bool virtualGenerated) in columns)
-            sb.Append("  column ").Append(Quote(column)).Append(" type ").Append(Quote(type))
-                .Append(pk ? " pk" : "").AppendLine(virtualGenerated ? " virtual" : "");
+        AppendColumns(sb, table);
+        AppendRows(sb, table);
     }
 
-    private static void AppendTableHeader(StringBuilder sb, string name, List<string> columns)
+    private static void AppendColumns(StringBuilder sb, Table table)
     {
-        sb.Append("table ").Append(Quote(name)).Append(" (").Append(string.Join(", ", columns.Select(Quote))).AppendLine(")");
+        sb.Append("columns of ").Append(Quote(table.Name)).Append(", rowid alias ").AppendLine(Quote(table.RowIdAlias));
+        foreach (Column c in table.Columns)
+            sb.Append("  ").Append(Quote(c.Name)).Append(' ').Append(Quote(c.Type)).Append(c.Pk ? " pk" : "").AppendLine(c.Virtual ? " virtual" : "");
     }
 
-    private static void AppendRow(StringBuilder sb, long? rowId, IEnumerable<object> values)
+    private static void AppendRows(StringBuilder sb, Table table)
     {
-        sb.Append("  row").Append(rowId.HasValue ? " " + rowId.Value.ToString(CultureInfo.InvariantCulture) : "").Append(": ").AppendLine(string.Join(", ", values.Select(FormatValue)));
+        sb.Append("rows of ").AppendLine(Quote(table.Name));
+        foreach ((long? rowId, object[] values) in table.Rows)
+            sb.Append("  ").Append(rowId?.ToString(CultureInfo.InvariantCulture) ?? "-").Append(": ").AppendLine(string.Join(", ", values.Select(FormatValue)));
     }
 
     private static string FormatValue(object value)
@@ -370,23 +276,25 @@ internal static class SqliteParity
         }
     }
 
+    /// <summary>
+    /// A SQL string literal
+    /// </summary>
     private static string Literal(string value) => "'" + value.Replace("'", "''") + "'";
 
+    /// <summary>
+    /// A SQL identifier
+    /// </summary>
+    private static string Name(string value) => "\"" + value.Replace("\"", "\"\"") + "\"";
+
+    /// <summary>
+    /// A value in the dump, escaped to stay on one line
+    /// </summary>
     private static string Quote(string value)
     {
         if (value == null)
             return "NULL";
 
         return "\"" + value.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "\\r").Replace("\n", "\\n") + "\"";
-    }
-
-    private static List<string> ColumnNames(SqliteConnection connection, string sql)
-    {
-        using SqliteCommand command = connection.CreateCommand();
-        command.CommandText = sql;
-
-        using SqliteDataReader reader = command.ExecuteReader();
-        return Enumerable.Range(0, reader.FieldCount).Select(reader.GetName).ToList();
     }
 
     private static List<object[]> Query(SqliteConnection connection, string sql)
