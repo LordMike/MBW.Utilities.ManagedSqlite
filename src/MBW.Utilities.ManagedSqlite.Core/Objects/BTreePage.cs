@@ -41,7 +41,7 @@ internal abstract class BTreePage
 
         BTreeHeader header = new BTreeHeader(data, length, ref pos);
 
-        // The cell pointer array follows the header, make sure it fits before reading it. ValidateCellOffsets checks the rest.
+        // The cell pointer array follows the header, make sure it fits before reading it
         if (pos + 2L * header.CellCount > reader.PageSize - reader.ReservedSpace)
             throw new SqliteCorruptException($"cell count {header.CellCount} does not fit in the page", page, "b-tree page header");
 
@@ -77,15 +77,38 @@ internal abstract class BTreePage
         {
             case BTreeType.InteriorIndexBtreePage:
             case BTreeType.LeafIndexBtreePage:
-                return new BTreeIndexPage(reader, page, header, cellOffsets);
+                return new BTreeIndexPage(reader, page, header, cellOffsets, data);
             case BTreeType.InteriorTableBtreePage:
-                return new BTreeInteriorTablePage(reader, page, header, cellOffsets);
+                return new BTreeInteriorTablePage(reader, page, header, cellOffsets, data);
             default:
                 return new BTreeLeafTablePage(reader, page, header, cellOffsets);
         }
     }
 
     public int CellCount => CellOffsets.Length;
+
+    /// <summary>
+    /// Where a cell's payload is and how large it is, see <see cref="PayloadSizeOnPage"/>
+    /// </summary>
+    public struct PayloadCell
+    {
+        /// <summary>
+        /// Where the payload starts on the page, after the cell's header
+        /// </summary>
+        public uint PayloadOffset;
+
+        /// <summary>
+        /// The size of the whole payload, including the part on overflow pages
+        /// </summary>
+        public uint DataSize;
+
+        /// <summary>
+        /// The size of the payload's part on this page. When it is less than <see cref="DataSize"/>, the first overflow
+        /// page's number follows it.
+        /// </summary>
+        // Maximum cell size is slightly less than one page, and pages can be up to 65536 bytes
+        public uint DataSizeInCell;
+    }
 
     /// <summary>
     /// Where cell <paramref name="index"/> starts. SQLite masks the cell pointer to the page size and reads whatever is
@@ -101,12 +124,31 @@ internal abstract class BTreePage
     protected byte[] GetData() => Reader.GetPage(Page);
 
     /// <summary>
-    /// A 4-byte big-endian integer of a cell, such as an interior cell's child pointer
+    /// The left child pointers of an interior page's cells, read once when the page loads, so the walk does not read
+    /// the page again for each child. A pointer that would run past the page reads as 0 here and fails in
+    /// <see cref="GetChildPointer"/>, when the walk reaches it, as SQLite fails only when it reads it.
     /// </summary>
-    protected uint ReadCellUInt32(byte[] data, int pos)
+    protected uint[] ReadChildPointers(byte[] data)
     {
+        uint[] pointers = new uint[CellOffsets.Length];
+        for (int i = 0; i < pointers.Length; i++)
+        {
+            int pos = GetCellOffset(i);
+            if (pos + 4L <= Reader.PageSize)
+                pointers[i] = (uint)(data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]);
+        }
+
+        return pointers;
+    }
+
+    /// <summary>
+    /// The left child pointer of cell <paramref name="index"/> of an interior page, from <see cref="ReadChildPointers"/>
+    /// </summary>
+    protected uint GetChildPointer(uint[] pointers, int index)
+    {
+        int pos = GetCellOffset(index);
         CheckInPage(pos + 4L, pos);
-        return (uint)(data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]);
+        return pointers[index];
     }
 
     /// <summary>
@@ -119,13 +161,12 @@ internal abstract class BTreePage
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L1259 (btreeParseCellPtr)
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L1347 (btreeParseCellPtrIndex)
     /// </summary>
-    protected uint ReadPayloadSize(byte[] data, ref int pos)
+    protected uint ReadPayloadSize(byte[] data, ref int pos, int cellStart)
     {
-        int start = pos;
         uint value = 0;
         for (int i = 0; i < 9; i++)
         {
-            CheckInPage(pos + 1L, start);
+            CheckInPage(pos + 1L, cellStart);
             byte b = data[pos++];
             value = (value << 7) | (uint)(b & 0x7F);
             if (b < 0x80)
@@ -138,20 +179,19 @@ internal abstract class BTreePage
     /// <summary>
     /// A standard varint of a cell, such as a rowid
     /// </summary>
-    protected long ReadCellVarInt(byte[] data, ref int pos)
+    protected long ReadCellVarInt(byte[] data, ref int pos, int cellStart)
     {
-        int start = pos;
         long value = 0;
         for (int i = 0; i < 8; i++)
         {
-            CheckInPage(pos + 1L, start);
+            CheckInPage(pos + 1L, cellStart);
             byte b = data[pos++];
             value = (value << 7) | (long)(b & 0x7F);
             if (b < 0x80)
                 return value;
         }
 
-        CheckInPage(pos + 1L, start);
+        CheckInPage(pos + 1L, cellStart);
         return (value << 8) | data[pos++];
     }
 

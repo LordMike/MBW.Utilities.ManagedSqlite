@@ -12,29 +12,34 @@ internal class BTreeIndexPage : BTreePage
 {
     public bool IsLeaf => Header.Type == BTreeType.LeafIndexBtreePage;
 
-    public BTreeIndexPage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
+    private readonly uint[]? _childPointers;
+
+    public BTreeIndexPage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets, byte[] data)
         : base(reader, page, header, cellOffsets)
     {
+        if (!IsLeaf)
+            _childPointers = ReadChildPointers(data);
     }
 
     /// <summary>
     /// The left child pointer of cell <paramref name="index"/> of an interior page: the child with the keys that sort
     /// before this cell's
     /// </summary>
-    public uint GetChildPointer(int index) => ReadCellUInt32(GetData(), GetCellOffset(index));
+    public uint GetChildPointer(int index) => GetChildPointer(_childPointers!, index);
 
     /// <summary>
     /// Parses cell <paramref name="index"/> when it is reached, as SQLite does (btreeParseCellPtrIndex in btree.c)
     /// </summary>
-    public BTreeLeafTablePage.Cell GetCell(int index)
+    public PayloadCell GetCell(int index)
     {
         byte[] data = GetData();
 
         // Interior cells begin with the left child pointer, leaf cells with the payload size
-        int pos = GetCellOffset(index) + (IsLeaf ? 0 : sizeof(uint));
-        uint bytes = ReadPayloadSize(data, ref pos);
+        int start = GetCellOffset(index);
+        int pos = start + (IsLeaf ? 0 : sizeof(uint));
+        uint bytes = ReadPayloadSize(data, ref pos, start);
 
-        return new BTreeLeafTablePage.Cell
+        return new PayloadCell
         {
             PayloadOffset = (uint)pos,
             DataSize = bytes,

@@ -71,10 +71,10 @@ public sealed class Sqlite3Table
         {
             for (int i = 0; i < leaf.CellCount; i++)
             {
-                BTreeLeafTablePage.Cell cell = leaf.GetCell(i);
-                byte[] payload = ReadPayload(leaf, cell.RowId, cell);
+                BTreePage.PayloadCell cell = leaf.GetCell(i, out long rowId);
+                byte[] payload = ReadPayload(leaf, rowId, cell);
 
-                yield return new Sqlite3Row(this, cell.RowId, new Sqlite3Record(_reader, leaf.Page, cell.RowId, payload, (int)cell.DataSize));
+                yield return new Sqlite3Row(this, rowId, new Sqlite3Record(_reader, leaf.Page, rowId, payload, (int)cell.DataSize));
             }
         }
     }
@@ -84,7 +84,7 @@ public sealed class Sqlite3Table
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells(root))
         {
             BTreeIndexPage page = entry.Key;
-            BTreeLeafTablePage.Cell cell = page.GetCell(entry.Value);
+            BTreePage.PayloadCell cell = page.GetCell(entry.Value);
             byte[] payload = ReadPayload(page, null, cell);
 
             // There is no rowid
@@ -96,7 +96,7 @@ public sealed class Sqlite3Table
     /// Reads a cell's whole payload once, so the row can decode it from memory when its values are read.
     /// <paramref name="rowId"/> names the row in error messages, and is null in a WITHOUT ROWID table.
     /// </summary>
-    private byte[] ReadPayload(BTreePage page, long? rowId, BTreeLeafTablePage.Cell cell)
+    private byte[] ReadPayload(BTreePage page, long? rowId, BTreePage.PayloadCell cell)
     {
         string structure = page is BTreeIndexPage { IsLeaf: false } ? "b-tree interior cell" : "b-tree leaf cell";
         long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;

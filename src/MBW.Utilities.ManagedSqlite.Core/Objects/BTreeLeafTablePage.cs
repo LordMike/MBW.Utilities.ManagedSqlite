@@ -16,42 +16,20 @@ internal class BTreeLeafTablePage : BTreePage
     /// <summary>
     /// Parses cell <paramref name="index"/> when it is reached, as SQLite does (btreeParseCellPtr in btree.c)
     /// </summary>
-    public Cell GetCell(int index)
+    public PayloadCell GetCell(int index, out long rowId)
     {
         byte[] data = GetData();
-        int pos = GetCellOffset(index);
+        int start = GetCellOffset(index);
+        int pos = start;
 
-        uint bytes = ReadPayloadSize(data, ref pos);
-        long rowId = ReadCellVarInt(data, ref pos);
+        uint bytes = ReadPayloadSize(data, ref pos, start);
+        rowId = ReadCellVarInt(data, ref pos, start);
 
-        return new Cell
+        return new PayloadCell
         {
             PayloadOffset = (uint)pos,
             DataSize = bytes,
-            DataSizeInCell = PayloadSizeOnPage(bytes, true),
-            RowId = rowId
+            DataSizeInCell = PayloadSizeOnPage(bytes, true)
         };
-    }
-
-    public struct Cell
-    {
-        /// <summary>
-        /// Where the payload starts on the page, after the cell's two varints
-        /// </summary>
-        public uint PayloadOffset;
-
-        /// <summary>
-        /// The size of the data in the cell (including data in overflow), excluding the header and overfow page pointers
-        /// </summary>
-        public uint DataSize;
-
-        /// <summary>
-        /// The size of the data in the cell (in the first page only), excluding the header and overfow page pointers.
-        /// When it is less than <see cref="DataSize"/>, the first overflow page's number follows it.
-        /// </summary>
-        // Maximum cell size is slightly less than one page, and pages can be up to 65536 bytes
-        public uint DataSizeInCell;
-
-        public long RowId;
     }
 }
