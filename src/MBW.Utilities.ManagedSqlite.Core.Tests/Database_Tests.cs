@@ -117,33 +117,28 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
         Assert.Equal(leaveOpen, stream.CanRead);
     }
 
+    /// <summary>
+    /// A stream the reader rejects, and a file too short for its header, are both closed unless left open
+    /// </summary>
     [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void UnseekableStreamIsRejectedAndClosedUnlessLeftOpen(bool leaveOpen)
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void FailedOpenClosesTheStreamUnlessLeftOpen(bool seekable, bool leaveOpen)
     {
-        UnseekableStream stream = new UnseekableStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
+        byte[] bytes = SqliteParity.Build("CREATE TABLE t (a INTEGER);");
+        MemoryStream stream = seekable ? new MemoryStream(bytes.Take(50).ToArray()) : new UnseekableStream(bytes);
 
-        Assert.Throws<ArgumentException>(() => Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen));
+        Exception e = Assert.ThrowsAny<Exception>(() => Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen));
 
+        Assert.IsType(seekable ? typeof(SqliteCorruptException) : typeof(ArgumentException), e);
         Assert.Equal(leaveOpen, stream.CanRead);
     }
 
     private sealed class UnseekableStream(byte[] bytes) : MemoryStream(bytes)
     {
         public override bool CanSeek => false;
-    }
-
-    [Theory]
-    [InlineData(false)]
-    [InlineData(true)]
-    public void FailedOpenClosesTheStreamUnlessLeftOpen(bool leaveOpen)
-    {
-        MemoryStream stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);").Take(50).ToArray());
-
-        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen));
-
-        Assert.Equal(leaveOpen, stream.CanRead);
     }
 
     /// <summary>
