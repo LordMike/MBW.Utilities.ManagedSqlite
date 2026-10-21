@@ -27,6 +27,8 @@ public class SqlRowIdAliasTests
         // The type is compared once unquoted
         "CREATE TABLE t (id 'INTEGER' PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (id [INTEGER] PRIMARY KEY, v TEXT)",
+        // SQLite drops "GENERATED ALWAYS" from the end of a long enough type
+        "CREATE TABLE t (id INTEGER GENERATED ALWAYS PRIMARY KEY, v TEXT)",
         // DEFERRABLE is a column constraint, so the type is still just INTEGER
         "CREATE TABLE t (id INTEGER DEFERRABLE PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (id INTEGER PRIMARY KEY ASC ON CONFLICT ABORT AUTOINCREMENT, v TEXT)",

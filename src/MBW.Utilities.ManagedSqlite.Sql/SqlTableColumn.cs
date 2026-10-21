@@ -10,6 +10,10 @@ public sealed class SqlTableColumn
     public int Ordinal { get; }
 
     public string Name { get; }
+    /// <summary>
+    /// The declared type's words, each unquoted, joined by one space, without a size: "VARCHAR" for VARCHAR(255),
+    /// "double precision" as written, and "" for a column with no type
+    /// </summary>
     public string TypeName { get; }
     public Type DetectedType { get; }
 

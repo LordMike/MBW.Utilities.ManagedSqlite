@@ -40,8 +40,9 @@ public class SqlSchemaParity_Tests
         { "sizes", "CREATE TABLE t (a DECIMAL(10, 5), b VARCHAR( 10 , 2 ), c DECIMAL(+10, -5), d TEXT)" },
         { "quoted types", "CREATE TABLE t (a 'INTEGER', b [TEXT], c \"REAL\", d `BLOB`); INSERT INTO t VALUES (1, 2, 3, 4);" },
         { "untyped columns with constraints", "CREATE TABLE t (a PRIMARY KEY, b NOT NULL DEFAULT 1, c UNIQUE, d CHECK (d > 0), e DEFAULT NULL); INSERT INTO t VALUES (1, 2, 3, 4, 5);" },
-        // SQLite strips a trailing GENERATED ALWAYS from the type when there is no AS after it
-        { "GENERATED ALWAYS without AS", "CREATE TABLE t (a INT GENERATED ALWAYS, b); INSERT INTO t VALUES (1, 2);" },
+        // GENERATED and ALWAYS can be type words. SQLite drops a trailing "always" or "generated always" from a type
+        // of 16 or more characters, so d keeps its ALWAYS.
+        { "GENERATED and ALWAYS in types", "CREATE TABLE t (a INT GENERATED ALWAYS, b BIGINTEGER ALWAYS, c INT GENERATED, d SHORT ALWAYS, e); INSERT INTO t VALUES (1, 2, 3, 4, 5);" },
     };
 
     public static TheoryData<string, string> ColumnConstraints() => new()
@@ -70,6 +71,8 @@ public class SqlSchemaParity_Tests
         { "constraints without commas", "CREATE TABLE t (a, b, c, UNIQUE (c) CHECK (c > 0) PRIMARY KEY (b)) WITHOUT ROWID; INSERT INTO t VALUES (1, 2, 3);" },
         // a is in the key twice, as two terms that collate differently, so the record holds it twice
         { "PRIMARY KEY repeating a column with another collation", "CREATE TABLE t (a TEXT, b TEXT, c TEXT COLLATE NOCASE, PRIMARY KEY (a, a COLLATE NOCASE, c, c COLLATE nocase)) WITHOUT ROWID; INSERT INTO t VALUES ('A', 'b', 'C');" },
+        // The last of a column's COLLATE constraints is its collation, so g's two key terms differ
+        { "column with two COLLATE constraints in the key twice", "CREATE TABLE t (g TEXT COLLATE NOCASE COLLATE RTRIM, h TEXT, PRIMARY KEY (g, g COLLATE NOCASE, h)) WITHOUT ROWID; INSERT INTO t VALUES ('G', 'h');" },
     };
 
     /// <summary>

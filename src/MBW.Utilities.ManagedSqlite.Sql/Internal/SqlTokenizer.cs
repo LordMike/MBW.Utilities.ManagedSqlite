@@ -17,7 +17,8 @@ internal static class SqlTokenizer
     /// identifier character, like any character outside ASCII.
     /// </summary>
     private static TextParser<TextSpan> WhiteSpace { get; } =
-        Span.MatchedBy(Character.In(' ', '\t', '\n', '\f', '\r', '\uFEFF').IgnoreThen(Character.In(' ', '\t', '\n', '\v', '\f', '\r').Many()));
+        Span.MatchedBy(Character.In(' ', '\t', '\n', '\f', '\r').IgnoreThen(Character.In(' ', '\t', '\n', '\v', '\f', '\r').Many()))
+            .Or(Span.EqualTo("\uFEFF"));
 
     /// <summary>
     /// An identifier character in SQLite (IdChar in tokenize.c): an ASCII letter or digit, '_', '$', or any character

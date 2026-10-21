@@ -250,17 +250,45 @@ internal static class SqlParser
         return true;
     }
 
+    /// <summary>
+    /// The declared type: everything between the column name and the first column constraint. GENERATED and ALWAYS
+    /// are names SQLite's grammar also accepts in a type (%fallback ID in parse.y), so GENERATED starts a constraint
+    /// only as "GENERATED ALWAYS AS". Like sqlite3AddColumn in build.c (https://sqlite.org/src/file?name=src/build.c),
+    /// a type text of 16 or more characters that ends in "always", or "generated always", loses those words.
+    /// </summary>
     private static List<SqlNode> GetDeclaredType(SqlNode columnSet)
     {
-        // The declared type is everything between the column name and the first column-constraint
-        return columnSet.Children.Skip(1)
-            .TakeWhile(s => !(s.Is(SqlToken.String) && SqlKeywords.ColumnConstraintKeywords.Contains(s.GetString())))
-            .ToList();
+        Debug.Assert(columnSet.IsGroup());
+
+        List<SqlNode> type = new List<SqlNode>();
+        for (int i = 1; i < columnSet.Children!.Count; i++)
+        {
+            SqlNode node = columnSet.Children[i];
+            if (node.Is(SqlToken.String) && SqlKeywords.ColumnConstraintKeywords.Contains(node.GetString()) &&
+                (!node.Is("GENERATED") || (columnSet.Is(i + 1, "ALWAYS") && columnSet.Is(i + 2, "AS"))))
+                break;
+
+            type.Add(node);
+        }
+
+        if (type.Count > 0 && type[type.Count - 1].Is("ALWAYS") && type[0].Token.HasValue)
+        {
+            TextSpan last = type[type.Count - 1].Token.Span;
+            if (last.Position.Absolute + last.Length - type[0].Token.Span.Position.Absolute >= 16)
+            {
+                type.RemoveAt(type.Count - 1);
+                if (type.Count > 0 && type[type.Count - 1].Is("GENERATED"))
+                    type.RemoveAt(type.Count - 1);
+            }
+        }
+
+        return type;
     }
 
     /// <summary>
-    /// The declared type as SQLite reports it (PRAGMA table_info): the words between the column name and its first
-    /// column constraint, unquoted, without a size such as "(10, 5)". sqlite3AddColumn in build.c:
+    /// The declared type's words, each unquoted, joined by one space, without a size such as "(10, 5)". For a type
+    /// written the usual way this is the type SQLite reports (PRAGMA table_info) without its size; SQLite itself keeps
+    /// the original spacing and dequotes the type text as a whole. sqlite3AddColumn in build.c:
     /// https://sqlite.org/src/file?name=src/build.c
     /// </summary>
     private static string GetDeclaredTypeName(SqlNode columnSet)
@@ -269,21 +297,23 @@ internal static class SqlParser
     }
 
     /// <summary>
-    /// The collation named by "COLLATE name" in <paramref name="node"/>, from position <paramref name="start"/>, or
-    /// null for none
+    /// The collation named by the last "COLLATE name" in <paramref name="node"/>, from position <paramref name="start"/>,
+    /// or null for none
     /// </summary>
     private static string? GetCollation(SqlNode node, int start)
     {
         if (!node.IsGroup())
             return null;
 
+        // A later COLLATE replaces an earlier one, as in sqlite3AddCollateType in build.c
+        string? collation = null;
         for (int i = start; i < node.Children.Count - 1; i++)
         {
             if (node.Is(i, "COLLATE") && node.Is(i + 1, SqlToken.String))
-                return node.GetString(i + 1);
+                collation = node.GetString(i + 1);
         }
 
-        return null;
+        return collation;
     }
 
     /// <summary>
@@ -347,8 +377,8 @@ internal static class SqlParser
     {
         List<SqlNode> declaredType = GetDeclaredType(columnSet);
 
-        // Exactly INTEGER once unquoted, so 'INTEGER' and [INTEGER] alias the rowid too (sqlite3AddColumn sets the
-        // column's eCType from the dequoted type text, in build.c)
+        // Exactly INTEGER once unquoted, with no size, so 'INTEGER' and [INTEGER] alias the rowid too (sqlite3AddColumn
+        // sets the column's eCType from the dequoted type text, in build.c)
         return declaredType.Count == 1 &&
                declaredType[0].Is(SqlToken.String) &&
                AsciiCaseInsensitiveComparer.Instance.Equals(SqlNode.Unquote(declaredType[0].GetString()), "INTEGER");

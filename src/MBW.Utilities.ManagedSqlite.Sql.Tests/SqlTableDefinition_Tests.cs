@@ -44,6 +44,7 @@ public class SqlTableDefinition_Tests
     [InlineData("CREATE TABLE t)")]
     [InlineData("CREATE TABLE t(a), b")]
     [InlineData("CREATE TABLE t(a INTEGER,\u000Bb TEXT)")]
+    [InlineData("CREATE TABLE t(a INTEGER,\uFEFF\u000Bb TEXT)")]
     [InlineData("CREATE TABLE t(a\u007Fb INTEGER)")]
     [InlineData("CREATE TABLE t(a TEXT DEFAULT 'unterminated)")]
     [InlineData("CREATE TABLE t(\"unterminated TEXT)")]
