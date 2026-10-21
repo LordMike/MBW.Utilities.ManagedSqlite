@@ -76,9 +76,9 @@ public class Journal_Tests
     public static TheoryData<string, string, Action<string>> DamagedCases() => new()
     {
         // The second transaction's first frame fails its checksum, so it and every later frame are ignored
-        { "a WAL frame with a bad checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Patch(db + "-wal", 32 + WalFrames(db).Frame * 1 + 24 + 100, 0x55) },
+        { "a WAL frame with a bad checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Patch(db + "-wal", 32 + WalFrameSize(db) + 24 + 100, 0x55) },
         { "a WAL cut inside its last frame", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Truncate(db + "-wal", new FileInfo(db + "-wal").Length - 10) },
-        { "a WAL with no commit frame", Wal + Checkpoint + ManyRows, db => Truncate(db + "-wal", 32 + WalFrames(db).Frame * 2) },
+        { "a WAL with no commit frame", Wal + Checkpoint + ManyRows, db => Truncate(db + "-wal", 32 + WalFrameSize(db) * 2) },
         { "a WAL with a bad header checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three');", db => Patch(db + "-wal", 16, 0x55) },
         { "a WAL with big-endian checksums", Wal + Checkpoint + ManyRows, db => RewriteWalChecksums(db + "-wal", bigEndian: true) },
         { "a journal record with a bad checksum", Rollback + ManyRows + "BEGIN; " + ChangeRows, db => Patch(db + "-journal", 512 + 4 + 4096 - 200, 0x55) },
@@ -125,14 +125,13 @@ public class Journal_Tests
         Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database));
     }
 
-    private static (int PageSize, int Frame) WalFrames(string db)
+    /// <summary>
+    /// The size of a WAL frame: its 24-byte header and a page of the size in the WAL header
+    /// </summary>
+    private static int WalFrameSize(string db)
     {
-        byte[] header = new byte[12];
-        using (FileStream fs = File.OpenRead(db + "-wal"))
-            fs.ReadExactly(header, 0, 12);
-
-        int pageSize = header[8] << 24 | header[9] << 16 | header[10] << 8 | header[11];
-        return (pageSize, pageSize + 24);
+        byte[] wal = File.ReadAllBytes(db + "-wal");
+        return (wal[8] << 24 | wal[9] << 16 | wal[10] << 8 | wal[11]) + 24;
     }
 
     private static void Patch(string path, long offset, byte xor)
