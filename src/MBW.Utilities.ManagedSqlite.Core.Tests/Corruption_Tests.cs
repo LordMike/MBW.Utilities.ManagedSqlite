@@ -494,6 +494,24 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal("CELL-13", corrupt.Check);
     }
 
+    // HDR-20: the lock-byte page is never data. The database is padded with zero pages past 1 GiB, and Small's overflow
+    // chain points at the page holding byte 0x40000000.
+    [Fact]
+    public void Overflow_PointerToLockBytePage()
+    {
+        DbPatcher patcher = new DbPatcher(Base);
+        uint lockBytePage = (uint)(0x40000000 / patcher.PageSize + 1);
+        byte[] data = patcher.SetDatabaseSizeInPages(lockBytePage + 1).SetOverflowPointer(SmallRoot, 1, lockBytePage).Data;
+
+        Dictionary<long, byte[]> pages = new Dictionary<long, byte[]>();
+        for (int page = 1; page <= patcher.PageCount; page++)
+            pages[page] = data.AsSpan(patcher.PageOffset((uint)page), patcher.PageSize).ToArray();
+
+        using Sqlite3Database db = new Sqlite3Database(new PageMappedStream(patcher.PageSize, (lockBytePage + 1L) * patcher.PageSize, pages));
+        SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Small"));
+        Assert.Equal("HDR-20", ex.Check);
+    }
+
     [Fact]
     public void Overflow_PointerPastTheEnd() => AssertCorrupt("page number", p => p.SetOverflowPointer(SmallRoot, 1, PastTheEnd));
 

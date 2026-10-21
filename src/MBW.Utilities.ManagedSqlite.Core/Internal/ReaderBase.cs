@@ -55,6 +55,11 @@ internal sealed class ReaderBase : IDisposable
     public uint PageSize { get; }
 
     /// <summary>
+    /// The page that holds byte offset 0x40000000 (SQLite's PENDING_BYTE), which SQLite never uses
+    /// </summary>
+    private uint LockBytePage => 0x40000000 / PageSize + 1;
+
+    /// <summary>
     /// Reserved space at the end of every page
     /// </summary>
     public byte ReservedSpace { get; }
@@ -251,6 +256,14 @@ internal sealed class ReaderBase : IDisposable
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2390
         Checks.Strict(page != 0, "PAGE-15", $"page number 0 is outside the database (1..{PageCount})", page, "page number");
         Checks.Strict(PageCount == 0 || page <= PageCount, "PAGE-14", $"page number {page} is outside the database (1..{PageCount})", page, "page number");
+
+        // HDR-20: the lock-byte page, which holds byte offset 0x40000000 (PENDING_BYTE) in a file over 1 GiB, is never
+        // part of the database, so a reference to it is corrupt in every mode. getPageNormal in pager.c:
+        //   if( pgno==PAGER_SJ_PGNO(pPager) ){
+        //     rc = SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5628 (getPageNormal)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3858 (lckPgno = PENDING_BYTE/pageSize + 1)
+        Checks.Strict(page != LockBytePage, "HDR-20", $"page {page} is the lock-byte page, which holds no data", page, "page number");
 
         // Note: Pages are 1-indexed
         // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB
