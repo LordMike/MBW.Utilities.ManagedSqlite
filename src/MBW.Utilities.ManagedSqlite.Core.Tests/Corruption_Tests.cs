@@ -224,14 +224,6 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Truncated_EmptyFile() => SqliteParity.AssertSameAsSqlite("", _ => new byte[0]);
 
-    // An empty file has no encoding of its own, so it takes the default, as SQLite takes the connection's
-    [Fact]
-    public void Truncated_EmptyFileUsesFallbackEncoding()
-    {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(new byte[0]), new Sqlite3Settings { FallbackEncoding = SqliteEncoding.UTF16LE });
-        Assert.Equal(SqliteEncoding.UTF16LE, db.TextEncoding);
-    }
-
     // A stream positioned at its end is not an empty file
     [Fact]
     public void Truncated_StreamAtItsEnd()

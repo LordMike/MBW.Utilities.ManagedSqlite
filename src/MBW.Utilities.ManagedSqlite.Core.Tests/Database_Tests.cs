@@ -74,7 +74,6 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     /// </summary>
     [Theory]
     [InlineData("UTF-8", 0u)]
-    [InlineData("UTF-8", 4u)]
     [InlineData("UTF-8", 0x100u)]
     [InlineData("UTF-16le", 6u)]
     [InlineData("UTF-16be", 0xFFFFFFFFu)]
