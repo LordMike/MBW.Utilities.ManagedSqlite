@@ -316,6 +316,18 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal(new[] { check }, issues);
     }
 
+    // PAGE-18: page 1 holds the schema, a rowid table, so it must be a table b-tree page in either mode
+    [Theory]
+    [InlineData(SqliteValidation.Strict)]
+    [InlineData(SqliteValidation.Lenient)]
+    public void PageType_SchemaPageIsIndexPage(SqliteValidation validation)
+    {
+        byte[] data = new DbPatcher(Base).SetPageType(MasterRoot, 0x0A).Data;
+
+        SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
+        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = validation })).Check);
+    }
+
     [Fact]
     public void PageType_Unknown() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01));
 
