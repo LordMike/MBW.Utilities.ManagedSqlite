@@ -137,17 +137,10 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     public void Header_UsableSizeBelow480() => AssertCorrupt("database header", p => p.SetReservedSpace(255));
 
     // The in-header database size is valid (SQLite wrote the change counter and version-valid-for fields), so it decides
-    // how many pages the database has, and pages after it are not read. SQLite also refuses a count larger than the file
-    // (lockBtree in btree.c: https://sqlite.org/src/file?name=src/btree.c); the reader instead keeps the file's count, as
-    // every page that exists is intact. https://www.sqlite.org/fileformat.html#in_header_database_size
+    // how many pages the database has: more than the file holds is corrupt, and pages after it are not read.
+    // lockBtree in btree.c: https://sqlite.org/src/file?name=src/btree.c; https://www.sqlite.org/fileformat.html#in_header_database_size
     [Fact]
-    public void Header_DatabaseSizeLargerThanFile_ReadsWhatIsThere()
-    {
-        byte[] data = new DbPatcher(Base).SetDatabaseSizeInPages((uint)new DbPatcher(Base).PageCount + 1).Data;
-
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
-        SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
-    }
+    public void Header_DatabaseSizeLargerThanFile() => AssertCorrupt("file length", p => p.SetDatabaseSizeInPages((uint)p.PageCount + 1));
 
     [Fact]
     public void Header_PagesAfterDatabaseSize_AreNotRead() => AssertCorrupt("page number", p => p.AppendPages(1).SetOverflowPointer(SmallRoot, 1, PastTheEnd));
@@ -163,8 +156,7 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
     }
 
-    // File length. A file cut at a page boundary opens (the file's page count wins over the header's), and the row whose
-    // page is missing fails with a page number past the end
+    // File length
 
     [Fact]
     public void Truncated_EmptyFile() => AssertCorrupt("file length", p => p.Truncate(0));
@@ -173,10 +165,10 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     public void Truncated_InsideTheHeader() => AssertCorrupt("file length", p => p.Truncate(50));
 
     [Fact]
-    public void Truncated_AfterTheSchemaPage() => AssertCorrupt("page number", p => p.Truncate(p.PageSize));
+    public void Truncated_AfterTheSchemaPage() => AssertCorrupt("file length", p => p.Truncate(p.PageSize));
 
     [Fact]
-    public void Truncated_LastPageMissing() => AssertCorrupt("page number", p => p.Truncate((p.PageCount - 1) * p.PageSize));
+    public void Truncated_LastPageMissing() => AssertCorrupt("file length", p => p.Truncate((p.PageCount - 1) * p.PageSize));
 
     // A partial last page still counts as a page, so the file opens and a table that does not touch that page reads as
     // before. (The last page holds Small's overflow; SQLite reads the missing bytes as zeros, which the reader does not yet.)

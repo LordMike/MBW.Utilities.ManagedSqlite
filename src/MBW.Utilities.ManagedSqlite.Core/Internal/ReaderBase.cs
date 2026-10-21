@@ -58,8 +58,8 @@ internal sealed class ReaderBase : IDisposable
         // https://www.sqlite.org/fileformat.html#in_header_database_size
         // The in-header size (offset 28) is valid when it is not 0 and the version-valid-for number (offset 92) equals the
         // change counter (offset 24). SQLite then trusts it over the file length (pages after it are not part of the
-        // database, as after a rollback that did not truncate the file, and could hold stale but plausible b-tree pages),
-        // and rejects a size larger than the file. Otherwise the file length decides. This is lockBtree in btree.c:
+        // database, as after a rollback that did not truncate the file), and rejects a size larger than the file.
+        // Otherwise the file length decides. This is lockBtree in btree.c:
         //   nPage = get4byte(28+page1);
         //   sqlite3PagerPagecount(pBt->pPager, &nPageFile);
         //   if( nPage==0 || memcmp(24+page1, 92+page1, 4)!=0 ) nPage = nPageFile;
@@ -74,10 +74,10 @@ internal sealed class ReaderBase : IDisposable
         uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
-        // Where SQLite refuses the file because the header counts more pages than the file holds (a truncated file, or a
-        // wrong header), this reader keeps the file's count instead: the pages that exist are intact, and a pointer past
-        // the end fails on the row that follows it, not at open.
-        PageCount = headerSizeValid && header.DatabaseSizeInPages < filePages ? header.DatabaseSizeInPages : filePages;
+        if (headerSizeValid && header.DatabaseSizeInPages > filePages)
+            throw new SqliteCorruptException($"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}", structure: "file length");
+
+        PageCount = headerSizeValid ? header.DatabaseSizeInPages : filePages;
     }
 
     /// <summary>
