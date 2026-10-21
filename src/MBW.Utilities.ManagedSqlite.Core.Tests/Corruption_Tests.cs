@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using MBW.Utilities.ManagedSqlite.Sql;
@@ -211,6 +212,23 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     // HDR-01: SQLite opens a 0-byte file as an empty database
     [Fact]
     public void Truncated_EmptyFile() => SqliteParity.AssertSameAsSqlite("", _ => new byte[0]);
+
+    // An empty file has no encoding of its own, so it takes the default, as SQLite takes the connection's
+    [Fact]
+    public void Truncated_EmptyFileUsesFallbackEncoding()
+    {
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(new byte[0]), new Sqlite3Settings { FallbackEncoding = SqliteEncoding.UTF16LE });
+        Assert.Equal(SqliteEncoding.UTF16LE, db.TextEncoding);
+    }
+
+    // A stream positioned at its end is not an empty file
+    [Fact]
+    public void Truncated_StreamAtItsEnd()
+    {
+        MemoryStream stream = new MemoryStream(Base);
+        stream.Seek(0, SeekOrigin.End);
+        Assert.Equal("file length", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(stream)).Structure);
+    }
 
     [Fact]
     public void Truncated_InsideTheHeader() => AssertCorrupt("file length", p => p.Truncate(50));

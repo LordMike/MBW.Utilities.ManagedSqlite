@@ -141,7 +141,9 @@ internal sealed class ReaderBase : IDisposable
         // This reader stands in the database SQLite would create in that file: one empty schema page with the default
         // page size, and an encoding field of 0, so the encoding is the default (or FallbackEncoding) as in SQLite.
         Stream? source = null;
-        if (read == 0)
+        // The file's length decides, as SQLite's page count does, so a stream handed over at its end is not mistaken for
+        // an empty file
+        if (read == 0 && stream.Length == 0)
         {
             source = stream;
             stream = new MemoryStream(EmptyDatabase(), false);
