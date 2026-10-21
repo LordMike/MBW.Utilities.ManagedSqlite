@@ -54,8 +54,8 @@ The stream factories dispose the streams with the database, unless you pass `lea
 
 All of SQLite's journal modes can be read. Nothing is ever written: side files are read in memory only.
 
-* **WAL.** Pages that committed transactions wrote to the `-wal` file are read from there, as SQLite does before a checkpoint copies them into the main file. Uncommitted frames, frames left from before the log restarted, and a damaged or empty log are ignored, as SQLite ignores them. The `-shm` file is never read: it only caches an index that is rebuilt from the `-wal` file.
-* **Rollback (DELETE, TRUNCATE, PERSIST).** A hot `-journal`, left by a write that never finished, is played back, so the database reads as it was before that write. This is what a writable SQLite connection does on open. A read-only SQLite connection instead refuses to open the database (`SQLITE_READONLY_ROLLBACK`). A journal that names a super-journal (a transaction across attached databases) is always played back; if that transaction did commit, the database reads as it was just before it.
+* **WAL.** Pages that committed transactions wrote to the `-wal` file are read from there, as SQLite does before a checkpoint copies them into the main file. Uncommitted frames, frames left from before the log restarted, and a damaged or empty log are ignored, as SQLite ignores them. A WAL in a format version other than SQLite's 3007000 throws, as in SQLite, and so does one with a different page size than the database. The `-shm` file is never read: it only caches an index that is rebuilt from the `-wal` file.
+* **Rollback (DELETE, TRUNCATE, PERSIST).** A hot `-journal`, left by a write that never finished, is played back, so the database reads as it was before that write. This is what a writable SQLite connection does on open. A read-only SQLite connection instead refuses to read the database (`SQLITE_READONLY_ROLLBACK`). A journal that names a super-journal (a transaction across attached databases) is always played back; if that transaction did commit, the database reads as it was just before it.
 * **MEMORY and OFF** keep no journal on disk; the main file is all there is.
 
 The library assumes nothing else uses the files while a database is open:
@@ -91,6 +91,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 
 * **Column DEFAULTs are not applied.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column. SQLite returns the column's DEFAULT for it, but this library returns no value (`null`).
 * **Hot journals are played back, not refused.** See [Journal modes](#journal-modes).
+* **A WAL with a different page size than the database throws.** It can only belong to another database. SQLite reads it without an error, leaving part of each page undefined.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs

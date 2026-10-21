@@ -71,33 +71,34 @@ public class Journal_Tests
     }
 
     /// <summary>
-    /// Damage SQLite itself tolerates: the WAL or journal is read up to the damage, or ignored
+    /// Damage SQLite itself tolerates: the WAL or journal is read up to the damage, or ignored. Where it is read up to
+    /// the damage, the case also asserts that the part before it is read.
     /// </summary>
-    public static TheoryData<string, string, Action<string>> DamagedCases() => new()
+    public static TheoryData<string, string, Action<string>, bool> DamagedCases() => new()
     {
         // The second transaction's first frame fails its checksum, so it and every later frame are ignored
-        { "a WAL frame with a bad checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Patch(db + "-wal", 32 + WalFrameSize(db) + 24 + 100, 0x55) },
-        { "a WAL cut inside its last frame", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Truncate(db + "-wal", new FileInfo(db + "-wal").Length - 10) },
-        { "a WAL with no commit frame", Wal + Checkpoint + ManyRows, db => Truncate(db + "-wal", 32 + WalFrameSize(db) * 2) },
-        { "a WAL with a bad header checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three');", db => Patch(db + "-wal", 16, 0x55) },
-        { "a WAL with big-endian checksums", Wal + Checkpoint + ManyRows, db => RewriteWalChecksums(db + "-wal", bigEndian: true) },
-        { "a journal record with a bad checksum", Rollback + ManyRows + "BEGIN; " + ChangeRows, db => Patch(db + "-journal", 512 + 4 + 4096 - 200, 0x55) },
-        { "a journal shorter than a sector", Rollback + ManyRows + "BEGIN; " + ChangeRows, db => Truncate(db + "-journal", 100) },
+        { "a WAL frame with a bad checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Patch(db + "-wal", 32 + WalFrameSize(db) + 24 + 100, 0x55), true },
+        { "a WAL cut inside its last frame", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Truncate(db + "-wal", new FileInfo(db + "-wal").Length - 10), true },
+        { "a WAL with no commit frame", Wal + Checkpoint + ManyRows, db => Truncate(db + "-wal", 32 + WalFrameSize(db) * 2), false },
+        { "a WAL with a bad header checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three');", db => Patch(db + "-wal", 16, 0x55), false },
+        { "a WAL with big-endian checksums", Wal + Checkpoint + ManyRows, db => RewriteWalChecksums(db + "-wal", bigEndian: true), true },
+        { "a journal record with a bad checksum", Rollback + ManyRows + "BEGIN; " + ChangeRows, db => Patch(db + "-journal", 512 + 4 + 4096 - 200, 0x55), false },
+        { "a journal shorter than a sector", Rollback + ManyRows + "BEGIN; " + ChangeRows, db => Truncate(db + "-journal", 100), false },
     };
 
     [Theory]
     [MemberData(nameof(DamagedCases))]
-    public void DamagedSideFile(string name, string script, Action<string> damage)
+    public void DamagedSideFile(string name, string script, Action<string> damage, bool partlyRead)
     {
         _ = name;
         using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(script);
         damage(snapshot.Database);
 
-        SqliteParity.AssertSameAsSqlite(snapshot, false);
+        SqliteParity.AssertSameAsSqlite(snapshot, partlyRead);
     }
 
     /// <summary>
-    /// SQLite fails to open a WAL in a format version it does not know (SQLITE_CANTOPEN)
+    /// SQLite fails to open a WAL in a format version it does not know (SQLITE_CANTOPEN), and so does the library
     /// </summary>
     [Fact]
     public void WalFormatVersionMustBeKnown()
@@ -109,11 +110,13 @@ public class Journal_Tests
         File.WriteAllBytes(wal, bytes);
         RewriteWalChecksums(wal, bigEndian: false);
 
+        SqliteParity.AssertSqliteCannotOpen(snapshot);
         Assert.Throws<SqliteException>(() => Sqlite3Database.FromPath(snapshot.Database));
     }
 
     /// <summary>
-    /// A WAL whose page size differs from the database's can only come from another database (WALJ-28)
+    /// A WAL whose page size differs from the database's can only come from another database (WALJ-28). This is a
+    /// deliberate difference: SQLite reads such frames without an error, leaving part of each page undefined.
     /// </summary>
     [Fact]
     public void WalPageSizeMustMatchTheDatabase()

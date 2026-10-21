@@ -16,7 +16,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 
 /// <summary>
 /// Builds an in-memory database with real SQLite from a SQL script, reads it both with SQLite and with this library,
-/// and asserts the two dumps are equal.
+/// and asserts the two dumps are equal. <see cref="Snapshot"/> does the same for a database file and its <c>-wal</c>
+/// or <c>-journal</c> file, as a crash would leave them.
 /// <para>
 /// The dump starts with the schema: the text encoding, the page size, every sqlite_master entry in file order, and per
 /// table its rowid alias and per column its name, declared type (without its size, in upper case), primary key
@@ -89,34 +90,15 @@ internal static class SqliteParity
     /// </summary>
     public static SnapshotDirectory Snapshot(string script)
     {
-        SnapshotDirectory source = new SnapshotDirectory();
-        SnapshotDirectory copy = new SnapshotDirectory();
-        try
-        {
-            using (SqliteConnection connection = new SqliteConnection($"Data Source={source.Database};Pooling=False"))
-            {
-                connection.Open();
+        using SnapshotDirectory source = new SnapshotDirectory();
+        using SqliteConnection connection = new SqliteConnection($"Data Source={source.Database};Pooling=False");
+        connection.Open();
 
-                using SqliteCommand command = connection.CreateCommand();
-                command.CommandText = "PRAGMA wal_autocheckpoint = 0;" + script;
-                command.ExecuteNonQuery();
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA wal_autocheckpoint = 0;" + script;
+        command.ExecuteNonQuery();
 
-                foreach (string suffix in new[] { "", "-wal", "-journal" })
-                    if (File.Exists(source.Database + suffix))
-                        File.Copy(source.Database + suffix, copy.Database + suffix);
-            }
-
-            return copy;
-        }
-        catch
-        {
-            copy.Dispose();
-            throw;
-        }
-        finally
-        {
-            source.Dispose();
-        }
+        return source.Copy();
     }
 
     /// <summary>
@@ -147,10 +129,7 @@ internal static class SqliteParity
             Assert.NotEqual(actual, mainOnly);
         }
 
-        using SnapshotDirectory copy = new SnapshotDirectory();
-        foreach (string suffix in new[] { "", "-wal", "-journal" })
-            if (File.Exists(snapshot.Database + suffix))
-                File.Copy(snapshot.Database + suffix, copy.Database + suffix);
+        using SnapshotDirectory copy = snapshot.Copy();
 
         string expected;
         using (SqliteConnection connection = new SqliteConnection($"Data Source={copy.Database};Pooling=False"))
@@ -160,6 +139,19 @@ internal static class SqliteParity
         }
 
         Assert.Equal(expected, actual);
+    }
+
+    /// <summary>
+    /// Asserts that SQLite reports SQLITE_CANTOPEN when it reads the database in <paramref name="snapshot"/>
+    /// </summary>
+    public static void AssertSqliteCannotOpen(SnapshotDirectory snapshot)
+    {
+        using SnapshotDirectory copy = snapshot.Copy();
+
+        using SqliteConnection connection = new SqliteConnection($"Data Source={copy.Database};Pooling=False");
+        connection.Open();
+        SqliteException ex = Assert.Throws<SqliteException>(() => Query(connection, "SELECT * FROM sqlite_master"));
+        Assert.Equal(raw.SQLITE_CANTOPEN, ex.SqliteErrorCode);
     }
 
     /// <summary>
@@ -175,6 +167,19 @@ internal static class SqliteParity
         {
             Directory.CreateDirectory(_directory);
             Database = Path.Combine(_directory, "db");
+        }
+
+        /// <summary>
+        /// Copies the database and its -wal and -journal files, not -shm, to a new directory
+        /// </summary>
+        public SnapshotDirectory Copy()
+        {
+            SnapshotDirectory copy = new SnapshotDirectory();
+            foreach (string suffix in new[] { "", "-wal", "-journal" })
+                if (File.Exists(Database + suffix))
+                    File.Copy(Database + suffix, copy.Database + suffix);
+
+            return copy;
         }
 
         public void Dispose()
