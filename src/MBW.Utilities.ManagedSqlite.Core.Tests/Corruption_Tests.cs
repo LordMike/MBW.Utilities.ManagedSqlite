@@ -315,6 +315,21 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Overflow_ChainEndsEarly() => AssertCorrupt("overflow chain", p => p.SetOverflowPointer(SmallRoot, 1, 0));
 
+    // CELL-16: SQLite never follows the last overflow page's next pointer, so a bad one reads on
+    [Fact]
+    public void Overflow_LastNextPointerIgnored()
+    {
+        DbPatcher patcher = new DbPatcher(Base);
+        uint last = patcher.GetOverflowPointer(SmallRoot, 1);
+        while (patcher.ReadUInt32((int)((last - 1) * patcher.PageSize)) != 0)
+            last = patcher.ReadUInt32((int)((last - 1) * patcher.PageSize));
+
+        byte[] data = patcher.WriteUInt32((int)((last - 1) * patcher.PageSize), PastTheEnd).Data;
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small");
+    }
+
     [Fact]
     public void Overflow_PointerPastTheEnd() => AssertCorrupt("page number", p => p.SetOverflowPointer(SmallRoot, 1, PastTheEnd));
 
