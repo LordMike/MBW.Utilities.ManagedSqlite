@@ -8,7 +8,9 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// </summary>
 internal sealed class DbPatcher
 {
-    public byte[] Data { get; private set; }
+    private byte[] _data;
+
+    public byte[] Data => _data;
 
     /// <summary>
     /// The page size from the unpatched header
@@ -17,7 +19,7 @@ internal sealed class DbPatcher
 
     public DbPatcher(byte[] data)
     {
-        Data = (byte[])data.Clone();
+        _data = (byte[])data.Clone();
         PageSize = ReadUInt16(16);
     }
 
@@ -34,7 +36,23 @@ internal sealed class DbPatcher
 
     public DbPatcher SetPageSizeField(ushort value) => WriteUInt16(16, value);
 
+    public DbPatcher SetReadVersion(byte value) => WriteByte(19, value);
+
     public DbPatcher SetReservedSpace(byte value) => WriteByte(20, value);
+
+    public DbPatcher SetMaxEmbeddedPayloadFraction(byte value) => WriteByte(21, value);
+
+    /// <summary>
+    /// The in-header database size at offset 28. The base database's version-valid-for number equals its change
+    /// counter, so the reader trusts this field.
+    /// </summary>
+    public DbPatcher SetDatabaseSizeInPages(uint value) => WriteUInt32(28, value);
+
+    /// <summary>
+    /// The version-valid-for number at offset 92. When it differs from the change counter, the in-header database size
+    /// is ignored.
+    /// </summary>
+    public DbPatcher SetVersionValidFor(uint value) => WriteUInt32(92, value);
 
     // B-tree page header
 
@@ -112,7 +130,16 @@ internal sealed class DbPatcher
 
     public DbPatcher Truncate(int length)
     {
-        Data = Data.AsSpan(0, length).ToArray();
+        _data = Data.AsSpan(0, length).ToArray();
+        return this;
+    }
+
+    /// <summary>
+    /// Appends zeroed pages, which the header's database size does not count
+    /// </summary>
+    public DbPatcher AppendPages(int count)
+    {
+        Array.Resize(ref _data, Data.Length + count * PageSize);
         return this;
     }
 
