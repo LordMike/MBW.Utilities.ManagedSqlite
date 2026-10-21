@@ -36,11 +36,7 @@ internal sealed class DbPatcher
 
     public DbPatcher SetPageSizeField(ushort value) => WriteUInt16(16, value);
 
-    public DbPatcher SetReadVersion(byte value) => WriteByte(19, value);
-
     public DbPatcher SetReservedSpace(byte value) => WriteByte(20, value);
-
-    public DbPatcher SetMaxEmbeddedPayloadFraction(byte value) => WriteByte(21, value);
 
     /// <summary>
     /// The in-header database size at offset 28. The base database's version-valid-for number equals its change
