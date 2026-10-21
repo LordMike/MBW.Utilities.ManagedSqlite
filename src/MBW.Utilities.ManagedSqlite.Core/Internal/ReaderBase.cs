@@ -187,11 +187,10 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     private static uint InitialPageSize(IFileView main)
     {
-        // SQLite reads the 100-byte header with a zeroed buffer, so a shorter file has page size 0 here
+        // SQLite reads the 100-byte header into a zeroed buffer and keeps what a short read returns, so a file of 18
+        // bytes or more gives bytes 16-17, and a shorter one gives 0
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3943 (sqlite3PagerReadFileheader)
-        if (main.Length < DatabaseHeader.HeaderSize)
-            return 4096;
-
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_unix.c#L3575-L3577 (unixRead)
         byte[] bytes = new byte[2];
         if (main.Read(16, bytes, 0, 2) != 2)
             return 4096;
@@ -262,7 +261,7 @@ internal sealed class ReaderBase : IDisposable
 
             // A committed transaction can grow the database without the file growing; the pages it did not write are
             // zeros, as SQLite reads them past the end of the file.
-            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3083-L3086 (readDbPage)
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3086-L3090 (readDbPage)
             if (position >= _file.Length)
             {
                 Array.Clear(_pageBuffer, 0, _pageBuffer.Length);

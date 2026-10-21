@@ -175,11 +175,19 @@ internal static class SqliteParity
         public SnapshotDirectory Copy()
         {
             SnapshotDirectory copy = new SnapshotDirectory();
-            foreach (string suffix in new[] { "", "-wal", "-journal" })
-                if (File.Exists(Database + suffix))
-                    File.Copy(Database + suffix, copy.Database + suffix);
+            try
+            {
+                foreach (string suffix in new[] { "", "-wal", "-journal" })
+                    if (File.Exists(Database + suffix))
+                        File.Copy(Database + suffix, copy.Database + suffix);
 
-            return copy;
+                return copy;
+            }
+            catch
+            {
+                copy.Dispose();
+                throw;
+            }
         }
 
         public void Dispose()
