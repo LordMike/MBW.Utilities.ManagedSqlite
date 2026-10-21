@@ -15,7 +15,7 @@ internal interface IFileView : IDisposable
 
     /// <summary>
     /// Reads up to <paramref name="count"/> bytes from <paramref name="position"/>, and returns how many it read. It
-    /// reads fewer only at the end of the file.
+    /// reads fewer only at the end of the file. Errors of the underlying stream, such as a failed seek, are thrown.
     /// </summary>
     int Read(long position, byte[] buffer, int offset, int count);
 }

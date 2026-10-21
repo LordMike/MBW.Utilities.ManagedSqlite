@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -16,6 +17,9 @@ internal sealed class StreamFileView : IFileView
 
     public StreamFileView(Stream stream, bool leaveOpen)
     {
+        if (!stream.CanSeek)
+            throw new ArgumentException("The stream must be seekable", nameof(stream));
+
         _stream = stream;
         _leaveOpen = leaveOpen;
         Length = stream.Length;

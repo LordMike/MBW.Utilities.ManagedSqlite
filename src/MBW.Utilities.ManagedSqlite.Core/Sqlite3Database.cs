@@ -26,7 +26,7 @@ public sealed class Sqlite3Database : IDisposable
 
     /// <summary>
     /// True when the database is in WAL mode (file format read version 2, header byte 19). Such a database may have
-    /// committed changes in a <c>-wal</c> file next to it, which must be passed in to be seen.
+    /// committed changes in a <c>-wal</c> file next to it, which this reader does not see.
     /// </summary>
     /// <remarks>
     /// The flag stays set after the last connection closes and SQLite deletes the <c>-wal</c> file, so it does not mean
@@ -47,7 +47,7 @@ public sealed class Sqlite3Database : IDisposable
             }
             catch
             {
-                file.Dispose();
+                DisposeQuietly(file);
                 throw;
             }
 
@@ -57,7 +57,7 @@ public sealed class Sqlite3Database : IDisposable
             }
             catch
             {
-                _reader.Dispose();
+                DisposeQuietly(_reader);
                 throw;
             }
         }
@@ -77,7 +77,7 @@ public sealed class Sqlite3Database : IDisposable
     /// the main file that this method could check, so a database opened without them may read stale or half-written
     /// data. The database must not be written to while it is open.
     /// </remarks>
-    /// <param name="database">The main database file</param>
+    /// <param name="database">The main database file, a seekable stream</param>
     /// <param name="settings">Settings, or null for the defaults</param>
     /// <param name="leaveOpen">True to leave <paramref name="database"/> open when the database is disposed, or when opening it fails</param>
     public static Sqlite3Database FromStreamWithNoJournal(Stream database, Sqlite3Settings? settings = null, bool leaveOpen = false)
@@ -85,7 +85,34 @@ public sealed class Sqlite3Database : IDisposable
         if (database == null)
             throw new ArgumentNullException(nameof(database));
 
-        return new Sqlite3Database(new StreamFileView(database, leaveOpen), settings ?? new Sqlite3Settings());
+        StreamFileView file;
+        try
+        {
+            file = new StreamFileView(database, leaveOpen);
+        }
+        catch
+        {
+            if (!leaveOpen)
+                DisposeQuietly(database);
+            throw;
+        }
+
+        return new Sqlite3Database(file, settings ?? new Sqlite3Settings());
+    }
+
+    /// <summary>
+    /// Disposes after a failed open, without letting an error from the dispose hide the error that failed the open
+    /// </summary>
+    private static void DisposeQuietly(IDisposable disposable)
+    {
+        try
+        {
+            disposable.Dispose();
+        }
+        catch
+        {
+            // The open's own error is the one to report
+        }
     }
 
     private Sqlite3MasterTable OpenMasterTable(out Sqlite3SchemaRow schemaRow)
