@@ -262,6 +262,34 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     // B-tree page headers
 
+    /// <summary>
+    /// PAGE-21: a child page with no cells, and PAGE-19: an interior root other than page 1 with no cells. SQLite reports
+    /// both corrupt, and so does Strict. Lenient reports the check once and walks on: the empty leaf has no rows, and the
+    /// empty root still leads to its right-most child.
+    /// </summary>
+    [Theory]
+    [InlineData("PAGE-21")]
+    [InlineData("PAGE-19")]
+    public void EmptyPage_Relaxable(string check)
+    {
+        byte[] data = new DbPatcher(Base).SetCellCount(check == "PAGE-21" ? DeepFirstLeaf : DeepRoot, 0).Data;
+
+        SqliteParity.AssertSqliteReportsCorrupt(data, "Deep");
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep")).Check);
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient))
+        {
+            int rows = db.GetTable("Deep").EnumerateRows().Count();
+            Assert.InRange(rows, 1, 119);
+            SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small", "Keyed");
+        }
+
+        Assert.Equal(new[] { check }, issues);
+    }
+
     [Fact]
     public void PageType_Unknown() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01));
 
