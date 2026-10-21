@@ -56,10 +56,21 @@ internal sealed class ReaderBase : IDisposable
         _encoding = encoding;
 
         // https://www.sqlite.org/fileformat.html#in_header_database_size
-        // The in-header size is valid when it is not 0 and the version-valid-for number equals the change counter. SQLite
-        // then trusts it over the file length (pages after it are not part of the database, as after a rollback that
-        // did not truncate the file), and rejects a size larger than the file. Otherwise the file length decides. A
-        // partial last page counts as a page, as in SQLite's pager (which reads the missing bytes as zeros).
+        // The in-header size (offset 28) is valid when it is not 0 and the version-valid-for number (offset 92) equals the
+        // change counter (offset 24). SQLite then trusts it over the file length (pages after it are not part of the
+        // database, as after a rollback that did not truncate the file), and rejects a size larger than the file.
+        // Otherwise the file length decides. This is lockBtree in btree.c:
+        //   nPage = get4byte(28+page1);
+        //   sqlite3PagerPagecount(pBt->pPager, &nPageFile);
+        //   if( nPage==0 || memcmp(24+page1, 92+page1, 4)!=0 ) nPage = nPageFile;
+        //   ...
+        //   if( nPage>nPageFile ) rc = SQLITE_CORRUPT_BKPT
+        // https://sqlite.org/src/file?name=src/btree.c (lockBtree)
+        //
+        // The file's page count rounds a partial last page up, as pagerPagecount in pager.c does
+        // ("nPage = (Pgno)((n+pPager->pageSize-1) / pPager->pageSize)"); SQLite then reads the missing bytes of that page
+        // as zeros (SQLITE_IOERR_SHORT_READ handling in os_unix.c unixRead / os_win.c winRead), which this reader does not.
+        // https://sqlite.org/src/file?name=src/pager.c (pagerPagecount)
         uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
