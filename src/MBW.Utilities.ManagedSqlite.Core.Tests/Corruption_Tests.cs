@@ -147,14 +147,15 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     /// <summary>
     /// Header checks SQLite makes although the data is intact: a read version above 2 (a format newer than it knows),
-    /// payload fractions other than 64, 32, 32, and a valid in-header database size larger than the file. Strict fails
-    /// like SQLite, with the check's ID; Lenient reports the check once and reads every table as SQLite reads the
-    /// undamaged database.
+    /// payload fractions other than 64, 32, 32, a valid in-header database size larger than the file, and a schema format
+    /// above 4. Strict fails like SQLite, with the check's ID; Lenient reports the check once and reads every table as
+    /// SQLite reads the undamaged database.
     /// </summary>
     [Theory]
     [InlineData("HDR-05")]
     [InlineData("HDR-08")]
     [InlineData("HDR-14")]
+    [InlineData("HDR-24")]
     public void Header_Relaxable(string check)
     {
         DbPatcher patcher = new DbPatcher(Base);
@@ -162,9 +163,11 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         {
             "HDR-05" => patcher.SetReadVersion(3),
             "HDR-08" => patcher.SetMaxEmbeddedPayloadFraction(65),
-            _ => patcher.SetDatabaseSizeInPages((uint)patcher.PageCount + 1)
+            "HDR-14" => patcher.SetDatabaseSizeInPages((uint)patcher.PageCount + 1),
+            _ => patcher.WriteByte(47, 5)
         }).Data;
 
+        SqliteParity.AssertSqliteFails(data, "Small");
         Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
 
         List<string> issues = new List<string>();
@@ -192,6 +195,14 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), lenient)).Check);
         Assert.Empty(issues);
     }
+
+    // HDR-24: SQLite reads only the schema format's low byte, so 0x104 is format 4
+    [Fact]
+    public void Header_SchemaFormatLowByteOnly() => SqliteParity.AssertSameAsSqlite(Script, data =>
+    {
+        data[46] = 1;
+        return data;
+    });
 
     [Fact]
     public void Header_PagesAfterDatabaseSize_AreNotRead() => AssertCorrupt("page number", p => p.AppendPages(1).SetOverflowPointer(SmallRoot, 1, PastTheEnd));

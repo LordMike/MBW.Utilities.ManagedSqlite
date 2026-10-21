@@ -111,6 +111,16 @@ internal static class SqliteParity
     }
 
     /// <summary>
+    /// Asserts that real SQLite fails with an error, any error, when it reads the rows of <paramref name="table"/> from
+    /// the database file <paramref name="data"/>
+    /// </summary>
+    public static void AssertSqliteFails(byte[] data, string table)
+    {
+        using SqliteConnection connection = Open(data);
+        Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM {Name(table)}"));
+    }
+
+    /// <summary>
     /// The bytes of the database file real SQLite builds from <paramref name="script"/>, exactly as SQLite would write
     /// them to disk (https://www.sqlite.org/c3ref/serialize.html).
     /// </summary>
