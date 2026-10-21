@@ -117,6 +117,21 @@ internal sealed class ReaderBase : IDisposable
                 structure: "file length")
             ? header.DatabaseSizeInPages
             : filePages;
+
+        // HDR-24, SCHEMA-02, checked after the page count as SQLite checks it in sqlite3InitOne, after lockBtree: the
+        // schema format number's low byte, where 0 means 1, must be at most 4. SQLite fails the
+        // schema load with "unsupported file format" (SQLITE_ERROR, not SQLITE_CORRUPT). sqlite3InitOne in prepare.c:
+        //   pDb->pSchema->file_format = (u8)meta[BTREE_FILE_FORMAT-1];
+        //   if( pDb->pSchema->file_format==0 ){
+        //     pDb->pSchema->file_format = 1;
+        //   }
+        //   if( pDb->pSchema->file_format>SQLITE_MAX_FILE_FORMAT ){
+        //     sqlite3SetString(pzErrMsg, db, "unsupported file format");
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L340 (sqlite3InitOne)
+        // Formats 1 to 4 only add features to what 1 can store, and this reader reads them all the same, so Lenient
+        // reads a higher number on.
+        Checks.Relaxable((byte)header.SchemaFormat <= 4, settings, "HDR-24",
+            $"unsupported schema format {(byte)header.SchemaFormat} (1 to 4)", structure: "database header");
     }
 
     /// <summary>
