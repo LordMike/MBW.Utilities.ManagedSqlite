@@ -1,4 +1,3 @@
-using System;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -15,14 +14,11 @@ internal sealed class StreamFileView : IFileView
 
     public long Length { get; }
 
+    /// <summary>
+    /// Wraps <paramref name="stream"/>, which the caller has checked is readable and seekable
+    /// </summary>
     public StreamFileView(Stream stream, bool leaveOpen)
     {
-        // A disposed stream can neither read nor seek, so check reading first to give it the clearer message
-        if (!stream.CanRead)
-            throw new ArgumentException("The stream must be readable, and not disposed", nameof(stream));
-        if (!stream.CanSeek)
-            throw new ArgumentException("The stream must be seekable", nameof(stream));
-
         _stream = stream;
         _leaveOpen = leaveOpen;
         Length = stream.Length;

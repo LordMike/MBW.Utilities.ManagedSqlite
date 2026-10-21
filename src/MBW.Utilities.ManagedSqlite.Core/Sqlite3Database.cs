@@ -81,17 +81,17 @@ public sealed class Sqlite3Database : IDisposable
     /// <param name="settings">Settings, or null for the defaults</param>
     /// <param name="leaveOpen">True to leave <paramref name="database"/> open when the database is disposed, or when opening it fails</param>
     /// <exception cref="ArgumentNullException"><paramref name="database"/> is null</exception>
-    /// <exception cref="ArgumentException"><paramref name="database"/> is not readable and seekable</exception>
+    /// <exception cref="ArgumentException"><paramref name="database"/> is not readable, or is not seekable</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
+    /// <exception cref="SqliteInvalidEncodingException">The header's text encoding is unknown and the settings give no fallback</exception>
     public static Sqlite3Database FromStreamWithNoJournal(Stream database, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
         if (database == null)
             throw new ArgumentNullException(nameof(database));
 
-        StreamFileView file;
         try
         {
-            file = new StreamFileView(database, leaveOpen);
+            CheckStream(database, nameof(database));
         }
         catch
         {
@@ -100,7 +100,16 @@ public sealed class Sqlite3Database : IDisposable
             throw;
         }
 
-        return new Sqlite3Database(file, settings ?? new Sqlite3Settings());
+        return new Sqlite3Database(new StreamFileView(database, leaveOpen), settings ?? new Sqlite3Settings());
+    }
+
+    private static void CheckStream(Stream stream, string parameterName)
+    {
+        // A disposed stream can neither read nor seek, so check reading first to give it the clearer message
+        if (!stream.CanRead)
+            throw new ArgumentException("The stream must be readable, and not disposed", parameterName);
+        if (!stream.CanSeek)
+            throw new ArgumentException("The stream must be seekable", parameterName);
     }
 
     /// <summary>
