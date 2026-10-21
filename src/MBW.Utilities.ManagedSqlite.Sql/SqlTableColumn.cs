@@ -10,6 +10,10 @@ public sealed class SqlTableColumn
     public int Ordinal { get; }
 
     public string Name { get; }
+    /// <summary>
+    /// The declared type's words, each unquoted, joined by one space, without a size: "VARCHAR" for VARCHAR(255),
+    /// "double precision" as written, and "" for a column with no type
+    /// </summary>
     public string TypeName { get; }
     public Type DetectedType { get; }
 
@@ -27,6 +31,11 @@ public sealed class SqlTableColumn
     /// table's record holds the primary key columns first, in key order, then the other stored columns in declared order.
     /// </summary>
     internal int RecordIndex { get; set; }
+
+    /// <summary>
+    /// The collation from the column's COLLATE constraint, or null for the default, BINARY
+    /// </summary>
+    internal string? Collation { get; set; }
 
     internal SqlTableColumn(int ordinal, string name, string typeName, Type detectedType)
     {
