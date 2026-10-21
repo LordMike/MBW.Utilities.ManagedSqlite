@@ -10,11 +10,6 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 public sealed class Sqlite3Table
 {
-    /// <summary>
-    /// Payloads larger than this are read into a temporary buffer, so one huge row does not keep a huge buffer alive
-    /// </summary>
-    private const int MaxReusedBufferSize = 64 * 1024;
-
     private readonly ReaderBase _reader;
 
     private BTreePage RootPage { get; }
@@ -72,9 +67,6 @@ public sealed class Sqlite3Table
 
     private IEnumerable<Sqlite3Row> EnumerateRowIdRows()
     {
-        byte[]? buffer = null;
-        long[]? serialTypes = null;
-
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
             BTreeLeafTablePage.Cell[] cells = leaf.Cells;
@@ -82,36 +74,32 @@ public sealed class Sqlite3Table
             {
                 BTreeLeafTablePage.Cell cell = cells[i];
                 byte[] payload = ReadPayload(leaf, cell.RowId, leaf.CellOffsets[i] + (uint)cell.CellHeaderSize, cell.DataSize,
-                    cell.DataSizeInCell, cell.FirstOverflowPage, ref buffer);
+                    cell.DataSizeInCell, cell.FirstOverflowPage);
 
-                yield return new Sqlite3Row(this, cell.RowId, DecodeRecord(leaf.Page, cell.RowId, payload, (int)cell.DataSize, ref serialTypes));
+                yield return new Sqlite3Row(this, cell.RowId, new Sqlite3Record(_reader, leaf.Page, cell.RowId, payload, (int)cell.DataSize));
             }
         }
     }
 
     private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(BTreeIndexPage root)
     {
-        byte[]? buffer = null;
-        long[]? serialTypes = null;
-
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells(root))
         {
             BTreeIndexPage page = entry.Key;
             BTreeIndexPage.Cell cell = page.Cells[entry.Value];
             byte[] payload = ReadPayload(page, null, page.CellOffsets[entry.Value] + (uint)cell.CellHeaderSize, cell.DataSize,
-                cell.DataSizeInCell, cell.FirstOverflowPage, ref buffer);
+                cell.DataSizeInCell, cell.FirstOverflowPage);
 
             // There is no rowid
-            yield return new Sqlite3Row(this, 0, DecodeRecord(page.Page, null, payload, (int)cell.DataSize, ref serialTypes));
+            yield return new Sqlite3Row(this, 0, new Sqlite3Record(_reader, page.Page, null, payload, (int)cell.DataSize));
         }
     }
 
     /// <summary>
-    /// Reads a cell's whole payload once, so it can be decoded from memory. Small payloads go into
-    /// <paramref name="buffer"/>, which is grown as needed and reused for the next cell. <paramref name="rowId"/> names
-    /// the row in error messages, and is null in a WITHOUT ROWID table.
+    /// Reads a cell's whole payload once, so the row can decode it from memory when its values are read.
+    /// <paramref name="rowId"/> names the row in error messages, and is null in a WITHOUT ROWID table.
     /// </summary>
-    private byte[] ReadPayload(BTreePage page, long? rowId, uint dataOffset, long dataSize, uint dataSizeInCell, uint firstOverflowPage, ref byte[]? buffer)
+    private byte[] ReadPayload(BTreePage page, long? rowId, uint dataOffset, long dataSize, uint dataSizeInCell, uint firstOverflowPage)
     {
         // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
         long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
@@ -120,18 +108,22 @@ public sealed class Sqlite3Table
             throw new SqliteCorruptException($"payload size {dataSize} of {RowName(rowId)} is larger than the database", page.Page, page is BTreeIndexPage { IsLeaf: false } ? "b-tree interior cell" : "b-tree leaf cell");
 
         int payloadSize = checked((int)dataSize);
-        byte[] payload;
-        if (payloadSize <= MaxReusedBufferSize)
-        {
-            if (buffer == null || buffer.Length < payloadSize)
-                buffer = new byte[RoundUpToPowerOfTwo(payloadSize)];
 
-            payload = buffer;
-        }
-        else
+        // REC-04: SQLite reads the header size of a 0-byte payload from the byte after the cell (aOffset[0] =
+        // pC->aRow[0] in OP_Column, vdbe.c), so a 0 there is a record of no fields and anything else is corrupt. That
+        // byte is the one at the payload's offset. A damaged page can put that offset at the very end of the page,
+        // where SQLite reads whatever memory follows the page; this reads a 0 there.
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3048 (OP_Column)
+        if (payloadSize == 0)
         {
-            payload = new byte[payloadSize];
+            byte[] next = new byte[1];
+            if (dataOffset < _reader.PageSize)
+                _reader.ReadFromPage(page.Page, dataOffset, next, 0, 1);
+
+            return next;
         }
+
+        byte[] payload = new byte[payloadSize];
 
         if (firstOverflowPage == 0)
         {
@@ -156,141 +148,4 @@ public sealed class Sqlite3Table
     }
 
     private static string RowName(long? rowId) => rowId.HasValue ? $"row {rowId.Value}" : "a WITHOUT ROWID row";
-
-    private static int RoundUpToPowerOfTwo(int value)
-    {
-        int res = 64;
-        while (res < value)
-            res <<= 1;
-
-        return res;
-    }
-
-    private object?[] DecodeRecord(uint page, long? rowId, byte[] payload, int length, ref long[]? serialTypes)
-    {
-        serialTypes ??= new long[16];
-
-        int pos = 0;
-        long headerSize = ByteArrayReader.ReadVarInt(payload, length, ref pos);
-        if (headerSize < 1 || headerSize > length)
-            throw new SqliteCorruptException($"record header size {headerSize} of {RowName(rowId)} is outside the payload of {length} bytes", page, "record header");
-
-        // The largest serial type whose value could still fit in the payload
-        long maxSerialType = 2L * length + 13;
-
-        int columns = 0;
-        long dataSize = 0;
-        while (pos < headerSize)
-        {
-            if (columns == serialTypes.Length)
-                Array.Resize(ref serialTypes, columns * 2);
-
-            long serialType = ByteArrayReader.ReadVarInt(payload, length, ref pos);
-            if (serialType < 0 || serialType > maxSerialType)
-                throw new SqliteCorruptException($"serial type {serialType} of {RowName(rowId)} does not fit in the payload", page, "record header");
-
-            dataSize += SerialTypeSize(serialType);
-            serialTypes[columns++] = serialType;
-        }
-
-        // The header must end exactly where it says, and the values must fill the rest of the payload exactly
-        if (pos != headerSize || headerSize + dataSize != length)
-            throw new SqliteCorruptException($"record of {RowName(rowId)} has a {pos} byte header (declared {headerSize}) and {dataSize} bytes of values, but the payload is {length} bytes", page, "record header");
-
-        object?[] rowData = new object?[columns];
-        for (int i = 0; i < columns; i++)
-        {
-            long serialType = serialTypes[i];
-            switch (serialType)
-            {
-                case 0:
-                case 10:
-                case 11:
-                    // 10 and 11 are reserved. SQLite reads them as NULL with no payload bytes, and so does this.
-                    rowData[i] = null;
-                    break;
-                case 1:
-                case 2:
-                case 3:
-                case 4:
-                    rowData[i] = ByteArrayReader.ReadInteger(payload, length, ref pos, (int)serialType);
-                    break;
-                case 5:
-                    rowData[i] = ByteArrayReader.ReadInteger(payload, length, ref pos, 6);
-                    break;
-                case 6:
-                    rowData[i] = ByteArrayReader.ReadInteger(payload, length, ref pos, 8);
-                    break;
-                case 7:
-                {
-                    // Serial type 7 is a big-endian IEEE 754 double (https://www.sqlite.org/fileformat.html#record_format).
-                    // SQLite never stores a NaN: sqlite3VdbeMemSetDouble in vdbemem.c turns one into NULL before it is
-                    // written, so binding, computing or casting a NaN all store NULL. When it reads a record, serialGet in
-                    // vdbeaux.c does the same for a NaN that another writer or damage put in the file
-                    // ("pMem->flags = IsNaN(x) ? MEM_Null : MEM_Real"), so a NaN reads as NULL here too.
-                    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4071 (serialGet, serial type 7)
-                    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L1092 (sqlite3VdbeMemSetDouble)
-                    double real = BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(payload, length, ref pos, 8));
-                    rowData[i] = double.IsNaN(real) ? null : (object)real;
-                    break;
-                }
-                case 8:
-                    // Serial types 8 and 9: integer constants 0 and 1, no payload bytes
-                    rowData[i] = 0L;
-                    break;
-                case 9:
-                    rowData[i] = 1L;
-                    break;
-                default:
-                {
-                    long size = (serialType - 12) / 2;
-                    if (size > length - pos)
-                        throw new EndOfStreamException();
-
-                    if ((serialType & 0x01) == 0x00)
-                    {
-                        // Even number
-                        byte[] blob = new byte[size];
-                        Buffer.BlockCopy(payload, pos, blob, 0, (int)size);
-                        rowData[i] = blob;
-                    }
-                    else
-                    {
-                        // Odd number
-                        rowData[i] = _reader.DecodeString(payload, pos, (int)size);
-                    }
-
-                    pos += (int)size;
-                    break;
-                }
-            }
-        }
-
-        return rowData;
-    }
-
-    private static long SerialTypeSize(long serialType)
-    {
-        switch (serialType)
-        {
-            case 0:
-            case 8:
-            case 9:
-            case 10:
-            case 11:
-                return 0;
-            case 1:
-            case 2:
-            case 3:
-            case 4:
-                return serialType;
-            case 5:
-                return 6;
-            case 6:
-            case 7:
-                return 8;
-            default:
-                return (serialType - 12) / 2;
-        }
-    }
 }

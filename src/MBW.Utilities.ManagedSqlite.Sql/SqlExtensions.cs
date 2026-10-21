@@ -59,18 +59,17 @@ public static class SqlExtensions
         if (column.IsVirtualGenerated)
             return false;
 
-        if (row.ColumnData.Length <= column.RecordIndex)
-            return false;
-
-        // Special case for row-id
+        // A rowid alias column reads the rowid, which SQLite takes from the cell, not the record, so it reads even when
+        // the record is shorter (REC-21)
         if (column == tableDefinition.RowIdColumn)
         {
-            // Return the row-id
             value = row.RowId;
             return true;
         }
 
-        value = row.ColumnData[column.RecordIndex];
+        // Like SQLite, the record is decoded only up to this column
+        if (!row.TryGetField(column.RecordIndex, out value))
+            return false;
 
         // SQLite writes REAL values without a fractional part as integers, and turns them back into REAL when read
         // through a column with REAL affinity

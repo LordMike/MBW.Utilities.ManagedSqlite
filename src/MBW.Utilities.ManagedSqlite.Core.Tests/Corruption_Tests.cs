@@ -328,6 +328,69 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Record_SerialTypeTooLargeForPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 21));
 
+    /// <summary>
+    /// Record headers SQLite reads although it never writes them. REC-04: a header size of 0 is a record of no fields,
+    /// so every column reads as NULL. REC-10: fields after the last column read are never parsed; Small's schema is
+    /// patched to drop its Data column, and the now surplus third field gets a serial type larger than the payload.
+    /// REC-04 again: a 0-byte payload takes its header size from the byte after the cell, here a 0.
+    /// </summary>
+    [Theory]
+    [InlineData("header size 0")]
+    [InlineData("surplus field")]
+    [InlineData("0-byte payload")]
+    public void Record_ReadLikeSqlite(string variant) =>
+        SqliteParity.AssertSameAsSqlite(Script, data =>
+        {
+            DbPatcher p = new DbPatcher(data);
+            int record = p.GetRecordOffset(SmallRoot, 0, out _);
+            switch (variant)
+            {
+                case "header size 0":
+                    p.WriteByte(record, 0);
+                    break;
+                case "surplus field":
+                    DropSmallDataColumn(p);
+                    p.WriteByte(record + 3, 0x7F);
+                    break;
+                default:
+                    p.WriteByte(record - 2, 0).WriteByte(record, 0);
+                    break;
+            }
+
+            return p.Data;
+        });
+
+    /// <summary>
+    /// REC-05: a header size of 1 leaves no room for a serial type, and SQLite reports the record corrupt. REC-03: a
+    /// 0-byte payload whose next byte is not 0 has a header larger than the payload.
+    /// </summary>
+    [Theory]
+    [InlineData("CELL-23", "header size 1")]
+    [InlineData("REC-03", "0-byte payload")]
+    public void Record_CorruptLikeSqlite(string check, string variant)
+    {
+        DbPatcher p = new DbPatcher(Base);
+        int record = p.GetRecordOffset(SmallRoot, 0, out _);
+        byte[] data = (variant == "header size 1" ? p.WriteByte(record, 1) : p.WriteByte(record - 2, 0)).Data;
+
+        SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
+        SqliteCorruptException ex = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadEverything(data)));
+        Assert.Equal(check, ex.Check);
+    }
+
+    /// <summary>
+    /// Blanks ", Data BLOB" out of Small's CREATE TABLE in the schema, so the table has two columns while its records
+    /// keep three fields
+    /// </summary>
+    private static void DropSmallDataColumn(DbPatcher p)
+    {
+        byte[] column = System.Text.Encoding.ASCII.GetBytes(", Data BLOB");
+        int at = p.Data.AsSpan(0, p.PageSize).IndexOf(column);
+        Assert.True(at > 0);
+        for (int i = 0; i < column.Length; i++)
+            p.WriteByte(at + i, (byte)' ');
+    }
+
     // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
 
     [Fact]
