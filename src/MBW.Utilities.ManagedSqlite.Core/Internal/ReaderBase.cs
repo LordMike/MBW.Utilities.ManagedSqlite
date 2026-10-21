@@ -187,13 +187,12 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     private static uint InitialPageSize(IFileView main)
     {
-        // SQLite reads the 100-byte header into a zeroed buffer and keeps what a short read returns, so a file of 18
-        // bytes or more gives bytes 16-17, and a shorter one gives 0
+        // SQLite reads the 100-byte header into a zeroed buffer; a short read keeps the bytes it got and zero-fills the
+        // rest, as the zeroed buffer here does
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3943 (sqlite3PagerReadFileheader)
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_unix.c#L3575-L3577 (unixRead)
         byte[] bytes = new byte[2];
-        if (main.Read(16, bytes, 0, 2) != 2)
-            return 4096;
+        main.Read(16, bytes, 0, 2);
 
         uint pageSize = (uint)(bytes[0] << 8 | bytes[1] << 16);
         if (pageSize < 512 || pageSize > 65536 || (pageSize & (pageSize - 1)) != 0)
