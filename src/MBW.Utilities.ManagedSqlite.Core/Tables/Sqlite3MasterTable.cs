@@ -94,7 +94,9 @@ internal class Sqlite3MasterTable
             1, "sqlite_schema");
 
         // SCHEMA-26, DDL-03: the type must name the statement's kind, and a table's or view's tbl_name its own name, both
-        // compared ignoring ASCII case. (The name itself is compared with the statement when the SQL is parsed.)
+        // compared ignoring ASCII case. A table's name is compared with its statement when the SQL is parsed (DDL-03);
+        // the names of views, indexes and triggers, and the parent table of an index or trigger, are left to the
+        // whole-schema validation.
         // sqlite3StartTable passes its own name as zTblName. sqlite3CheckObjectName in build.c:
         //   if( sqlite3_stricmp(zType, db->init.azInit[0])
         //    || sqlite3_stricmp(zName, db->init.azInit[1])
@@ -119,7 +121,9 @@ internal class Sqlite3MasterTable
                 $"malformed database schema ({name}): its tbl_name is {tableName ?? "NULL"}, not its own name", 1, "sqlite_schema");
 
         // SCHEMA-19: a table, view or virtual table with rootpage 1 is taken for the schema table itself, named
-        // sqlite_master, so its name no longer matches the row and the schema is malformed. sqlite3StartTable in build.c
+        // sqlite_master, so its name no longer matches the row and the schema is malformed. (A row that is itself named
+        // sqlite_master would pass the name check and then find that table already exists; it is treated as corrupt
+        // here too.) sqlite3StartTable in build.c
         // (sqlite3VtabBeginParse and sqlite3CreateView call it too):
         //   if( db->init.busy && db->init.newTnum==1 ){
         //     /* Special case:  Parsing the sqlite_schema or sqlite_temp_schema schema */

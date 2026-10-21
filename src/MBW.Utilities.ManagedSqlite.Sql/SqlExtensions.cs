@@ -53,6 +53,8 @@ public static class SqlExtensions
         //    || sqlite3_stricmp(zName, db->init.azInit[1])
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1047 (sqlite3CheckObjectName)
         // Lenient reports it once, when the SQL is parsed, and reads on: the table's rows are the same under either name.
+        // This is not what SQLite does with writable_schema on, where the table goes by its statement's name; this
+        // reader keeps the row's name, so a lookup by that name still finds it.
         if (parsed || schema.Database.Settings.Validation == SqliteValidation.Strict)
             Checks.Relaxable(AsciiCaseInsensitiveComparer.Instance.Equals(definition!.TableName, schema.Name), schema.Database.Settings, "DDL-03",
                 $"malformed database schema ({schema.Name}): its SQL creates table {definition.TableName}", structure: "table definition");

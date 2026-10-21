@@ -460,6 +460,8 @@ PRAGMA writable_schema = ON;
     [InlineData("SCHEMA-26", "type = 'index' WHERE name = 'u'")]
     [InlineData("SCHEMA-26", "type = NULL WHERE name = 'u'")]
     [InlineData("SCHEMA-26", "tbl_name = 't' WHERE name = 'u'")]
+    [InlineData("SCHEMA-26", "tbl_name = 'u' WHERE name = 'v'")]
+    [InlineData("SCHEMA-26", "type = 'table' WHERE name = 'v'")]
     [InlineData("DDL-03", "sql = 'CREATE TABLE w (b)' WHERE name = 'u'")]
     public void SchemaRow_NamesDisagreeWithSql(string check, string update)
     {
