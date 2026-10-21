@@ -15,6 +15,11 @@ internal enum SchemaObjectKind : byte
     /// </summary>
     Unknown,
     Table,
+
+    /// <summary>
+    /// CREATE TABLE ... AS SELECT, which SQLite never stores, and finds corrupt in the schema
+    /// </summary>
+    TableAsSelect,
     VirtualTable,
     View,
     Index,

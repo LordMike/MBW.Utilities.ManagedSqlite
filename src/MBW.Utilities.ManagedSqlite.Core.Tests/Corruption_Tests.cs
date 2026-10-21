@@ -395,12 +395,14 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void SchemaRootPage_Zero() => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, 0));
 
-    // Schema rows. Each script edits sqlite_schema with writable_schema, after a schema of a table, a view, a table with
-    // an automatic index and a virtual table.
+    // Schema rows. Each script edits sqlite_schema with writable_schema, after a schema of tables, a view, an index, a
+    // trigger, a table with an automatic index and a virtual table.
     private const string SchemaScript = @"
 CREATE TABLE t (a); INSERT INTO t VALUES (1);
 CREATE TABLE u (b); INSERT INTO u VALUES (2);
 CREATE VIEW v AS SELECT a FROM t;
+CREATE INDEX i ON t (a);
+CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END;
 CREATE TABLE k (x PRIMARY KEY);
 CREATE VIRTUAL TABLE f USING fts5(c);
 PRAGMA writable_schema = ON;
@@ -423,11 +425,15 @@ PRAGMA writable_schema = ON;
     [InlineData("SCHEMA-17", "rootpage = 'abc' WHERE name = 'u'")]
     [InlineData("SCHEMA-17", "rootpage = rootpage + 4294967296 WHERE name = 'u'")]
     [InlineData("SCHEMA-17", "rootpage = 999 WHERE name = 'u'")]
+    [InlineData("SCHEMA-17", "rootpage = 999 WHERE name = 'v'")]
+    [InlineData("SCHEMA-17", "rootpage = 999 WHERE name = 'i'")]
+    [InlineData("SCHEMA-17", "rootpage = 99999 WHERE name = 'tr'")]
     [InlineData("SCHEMA-19", "rootpage = 1 WHERE name = 'u'")]
     [InlineData("SCHEMA-19", "rootpage = 1 WHERE name = 'f'")]
     [InlineData("SCHEMA-22", "sql = 'CRxATE TABLE u (b)' WHERE name = 'u'")]
     [InlineData("SCHEMA-26", "name = NULL WHERE name = 'u'")]
     [InlineData("DDL-58", "rootpage = 2 WHERE name = 'v'")]
+    [InlineData("DDL-58", "sql = 'CREATE TABLE u AS SELECT 1' WHERE name = 'u'")]
     public void SchemaRow_CorruptLikeSqlite(string check, string update)
     {
         byte[] data = SqliteParity.Build(SchemaScript + $"UPDATE sqlite_schema SET {update};");
@@ -481,6 +487,8 @@ PRAGMA writable_schema = ON;
     [InlineData("type = 'TABLE' WHERE name = 'u'")]
     [InlineData("type = CAST(type AS BLOB), name = CAST(name AS BLOB), tbl_name = CAST(tbl_name AS BLOB), sql = CAST(sql AS BLOB) WHERE name = 'u'")]
     [InlineData("sql = sql || char(0) || 'garbage ((' WHERE name = 'u'")]
+    [InlineData("rootpage = 1 WHERE name = 'tr'")]
+    [InlineData("sql = 'CREATE  /* x */ VIRTUAL TABLE f USING fts5(c)' WHERE name = 'f'")]
     public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript + $"UPDATE sqlite_schema SET {update};");
 
     // SCHEMA-58: SQLite tolerates a rootpage on a virtual table, and never reads it as a b-tree

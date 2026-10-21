@@ -245,7 +245,7 @@ internal static class SqliteParity
 
     private static bool IsReadableTable(string type, string sql)
     {
-        return string.Equals(type, "table", StringComparison.OrdinalIgnoreCase) && (sql == null || !sql.TrimStart().StartsWith("CREATE VIRTUAL TABLE", StringComparison.OrdinalIgnoreCase));
+        return string.Equals(type, "table", StringComparison.OrdinalIgnoreCase) && (sql == null || !Regex.IsMatch(sql, @"^\s*CREATE\s+(/\*.*?\*/\s*)*VIRTUAL\s", RegexOptions.IgnoreCase | RegexOptions.Singleline));
     }
 
     /// <summary>

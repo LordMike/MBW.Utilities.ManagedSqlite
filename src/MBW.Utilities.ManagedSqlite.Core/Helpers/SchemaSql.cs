@@ -126,7 +126,7 @@ internal static class SchemaSql
 
         int afterTemp = pos;
         if (IsWord(sql!, ref pos, "TABLE"))
-            return SchemaObjectKind.Table;
+            return IsCreateTableAsSelect(sql!, pos) ? SchemaObjectKind.TableAsSelect : SchemaObjectKind.Table;
         pos = afterTemp;
         if (IsWord(sql!, ref pos, "VIEW"))
             return SchemaObjectKind.View;
@@ -135,6 +135,70 @@ internal static class SchemaSql
             return SchemaObjectKind.Trigger;
 
         return SchemaObjectKind.Unknown;
+    }
+
+    /// <summary>
+    /// True when the CREATE TABLE at <paramref name="pos"/>, just after TABLE, is CREATE TABLE ... AS SELECT: after
+    /// [IF NOT EXISTS] and the name, [schema.]name, comes AS (create_table_args ::= AS select in parse.y)
+    /// </summary>
+    private static bool IsCreateTableAsSelect(string sql, int pos)
+    {
+        int afterTable = pos;
+        if (!(IsWord(sql, ref pos, "IF") && IsWord(sql, ref pos, "NOT") && IsWord(sql, ref pos, "EXISTS")))
+            pos = afterTable;
+
+        if (!SkipName(sql, ref pos))
+            return false;
+
+        int dot = SkipSpaceAndComments(sql, pos);
+        if (dot < sql.Length && sql[dot] == '.')
+        {
+            pos = dot + 1;
+            if (!SkipName(sql, ref pos))
+                return false;
+        }
+
+        return IsWord(sql, ref pos, "AS");
+    }
+
+    /// <summary>
+    /// Skips one name: an unquoted word, or one quoted with "", '', `` or [] (doubled quotes inside are escapes)
+    /// </summary>
+    private static bool SkipName(string sql, ref int pos)
+    {
+        int i = SkipSpaceAndComments(sql, pos);
+        if (i >= sql.Length)
+            return false;
+
+        char c = sql[i];
+        if (c == '"' || c == '\'' || c == '`' || c == '[')
+        {
+            char close = c == '[' ? ']' : c;
+            for (i++; i < sql.Length; i++)
+            {
+                if (sql[i] != close)
+                    continue;
+                if (close != ']' && i + 1 < sql.Length && sql[i + 1] == close)
+                {
+                    i++;
+                    continue;
+                }
+
+                pos = i + 1;
+                return true;
+            }
+
+            return false;
+        }
+
+        int start = i;
+        while (i < sql.Length && IsIdChar(sql[i]))
+            i++;
+        if (i == start)
+            return false;
+
+        pos = i;
+        return true;
     }
 
     /// <summary>
@@ -172,7 +236,8 @@ internal static class SchemaSql
         while (i < sql.Length)
         {
             char c = sql[i];
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '﻿')
+            // A byte order mark is whitespace too (CC_BOM, tokenize.c:575)
+            if (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '\uFEFF')
             {
                 i++;
                 while (i < sql.Length && (sql[i] == ' ' || (sql[i] >= '\t' && sql[i] <= '\r')))

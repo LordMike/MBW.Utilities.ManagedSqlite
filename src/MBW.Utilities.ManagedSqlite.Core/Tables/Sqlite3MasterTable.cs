@@ -45,7 +45,6 @@ internal class Sqlite3MasterTable
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L113 (sqlite3InitCallback)
         Checks.Strict(rootPageText != null, "SCHEMA-11", $"malformed database schema ({name ?? "?"}): its rootpage is NULL", 1, "sqlite_schema");
 
-        kind = SchemaSql.GetKind(sql);
         if (!SchemaSql.StartsWithCr(sql))
         {
             // SCHEMA-13: SQL that does not start with "cr" at its first byte is never parsed, and is corrupt unless it is
@@ -88,6 +87,8 @@ internal class Sqlite3MasterTable
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1046 (sqlite3CheckObjectName)
         Checks.Strict(name != null, "SCHEMA-26", $"malformed database schema (?): the row has no name", 1, "sqlite_schema");
 
+        kind = SchemaSql.GetKind(sql);
+
         // SCHEMA-22: SQL that starts with "cr" but is not a CREATE statement does not parse
         Checks.Strict(kind != SchemaObjectKind.Unknown, "SCHEMA-22", $"malformed database schema ({name ?? "?"}): its SQL is not a CREATE statement",
             1, "sqlite_schema");
@@ -105,7 +106,7 @@ internal class Sqlite3MasterTable
         // goes by the statement: a table is found by its kind, not its type column.
         string expectedType = kind switch
         {
-            SchemaObjectKind.Table or SchemaObjectKind.VirtualTable => "table",
+            SchemaObjectKind.Table or SchemaObjectKind.TableAsSelect or SchemaObjectKind.VirtualTable => "table",
             SchemaObjectKind.View => "view",
             SchemaObjectKind.Index => "index",
             _ => "trigger"
@@ -113,7 +114,7 @@ internal class Sqlite3MasterTable
         AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
         Checks.Relaxable(names.Equals(type, expectedType), reader.Settings, "SCHEMA-26",
             $"malformed database schema ({name}): its type is {type ?? "NULL"}, but its SQL creates a {expectedType}", 1, "sqlite_schema");
-        if (kind is SchemaObjectKind.Table or SchemaObjectKind.VirtualTable or SchemaObjectKind.View)
+        if (kind is SchemaObjectKind.Table or SchemaObjectKind.TableAsSelect or SchemaObjectKind.VirtualTable or SchemaObjectKind.View)
             Checks.Relaxable(names.Equals(tableName, name), reader.Settings, "SCHEMA-26",
                 $"malformed database schema ({name}): its tbl_name is {tableName ?? "NULL"}, not its own name", 1, "sqlite_schema");
 
@@ -126,13 +127,13 @@ internal class Sqlite3MasterTable
         Checks.Strict(rootPage != 1 || kind is SchemaObjectKind.Index or SchemaObjectKind.Trigger, "SCHEMA-19",
             $"malformed database schema ({name ?? "?"}): rootpage 1 is the schema table", 1, "sqlite_schema");
 
-        // DDL-58: a view has no b-tree, so a non-zero rootpage is corrupt. A virtual table may have one, and it is not
-        // read (SCHEMA-58). sqlite3EndTable in build.c:
+        // DDL-58: CREATE TABLE ... AS SELECT is corrupt in the schema, and a view has no b-tree, so a non-zero rootpage is
+        // corrupt. A virtual table may have one, and it is not read (SCHEMA-58). sqlite3EndTable in build.c:
         //   if( pSelect || (!IsOrdinaryTable(p) && db->init.newTnum) ){
         //     sqlite3ErrorMsg(pParse, "");
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L2669 (sqlite3EndTable)
-        Checks.Strict(kind != SchemaObjectKind.View || rootPage == 0, "DDL-58",
-            $"malformed database schema ({name ?? "?"}): view with rootpage {rootPage}", 1, "sqlite_schema");
+        Checks.Strict(kind != SchemaObjectKind.TableAsSelect && (kind != SchemaObjectKind.View || rootPage == 0), "DDL-58",
+            $"malformed database schema ({name ?? "?"}): {(kind == SchemaObjectKind.View ? $"view with rootpage {rootPage}" : "CREATE TABLE ... AS SELECT")}", 1, "sqlite_schema");
 
         return rootPage;
     }
