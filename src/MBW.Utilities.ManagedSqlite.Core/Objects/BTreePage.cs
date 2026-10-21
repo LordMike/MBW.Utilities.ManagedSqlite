@@ -41,9 +41,21 @@ internal abstract class BTreePage
 
         BTreeHeader header = new BTreeHeader(data, length, ref pos);
 
-        // The cell pointer array follows the header, make sure it fits before reading it
-        if (pos + 2L * header.CellCount > reader.PageSize - reader.ReservedSpace)
-            throw new SqliteCorruptException($"cell count {header.CellCount} does not fit in the page", page, "b-tree page header");
+        // PAGE-03: a page holds at most (pageSize-8)/6 cells, the most that fit with the smallest cell and its pointer.
+        // btreeInitPage in btree.c:
+        //   if( pPage->nCell>MX_CELL(pBt) ){
+        //     /* To many cells for a single page.  The page must be corrupt */
+        //     return SQLITE_CORRUPT_PAGE(pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2247 (btreeInitPage)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btreeInt.h#L229 (MX_CELL)
+        // Lenient allows more, up to a cell pointer array that fits in the usable area, as this reader did before.
+        uint maxCells = (reader.PageSize - 8) / 6;
+        Checks.Relaxable(header.CellCount <= maxCells, reader.Settings, "PAGE-03",
+            $"cell count {header.CellCount} is more than a page can hold ({maxCells})", page, "b-tree page header");
+
+        // The cell pointer array follows the header, and must be in the page to be read at all
+        Checks.Strict(pos + 2L * header.CellCount <= reader.PageSize - reader.ReservedSpace, "PAGE-03",
+            $"cell count {header.CellCount} does not fit in the page", page, "b-tree page header");
 
         // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
         ushort[] cellOffsets = new ushort[header.CellCount];

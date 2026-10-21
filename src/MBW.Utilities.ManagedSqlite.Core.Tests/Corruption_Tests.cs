@@ -320,10 +320,23 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void CellCount_PointerArrayPastEndOfSchemaPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(MasterRoot, 250));
 
-    // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells. SQLite does not
-    // check where cell pointers point (PAGE-11), so the garbage "cells" read as damaged records.
+    // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold. Lenient allows any count whose pointers fit
+    // in the page: 249 pointers end at byte 506, past where the cells start, so they overlap the cells, and SQLite's
+    // pointers are not checked (PAGE-11), so the garbage "cells" read as damaged records.
     [Fact]
-    public void CellCount_PointersOverlapCells() => AssertCorrupt("record header", p => p.SetCellCount(SmallRoot, 249));
+    public void CellCount_PointersOverlapCells()
+    {
+        byte[] data = new DbPatcher(Base).SetCellCount(SmallRoot, 249).Data;
+
+        SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
+        Assert.Equal("PAGE-03", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadEverything(data))).Check);
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient);
+        Assert.Equal("record header", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Small"))).Structure);
+        Assert.Equal(new[] { "PAGE-03" }, issues);
+    }
 
     // Child pointers
 
