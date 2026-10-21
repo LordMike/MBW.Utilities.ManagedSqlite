@@ -264,28 +264,53 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     // B-tree page headers
 
     /// <summary>
-    /// PAGE-21: a child page with no cells, and PAGE-19: an interior root other than page 1 with no cells. SQLite reports
-    /// both corrupt, and so does Strict. Lenient reports the check once and walks on: the empty leaf has no rows, and the
-    /// empty root still leads to its right-most child.
+    /// PAGE-21: a child page with no cells (a leaf, or an interior page), and PAGE-19: an interior root other than page
+    /// 1 with no cells, in a table and in a WITHOUT ROWID table. SQLite reports them corrupt, and so does Strict.
+    /// Lenient reports the check once and walks on: the empty leaf has no rows, and an empty interior page still leads
+    /// to its right-most child. The rows it does return are in order and each is intact (its payload holds its key), and
+    /// the other tables read as SQLite reads them.
     /// </summary>
     [Theory]
-    [InlineData("PAGE-21")]
-    [InlineData("PAGE-19")]
-    public void EmptyPage_Relaxable(string check)
+    [InlineData("PAGE-21", "Deep", "first leaf")]
+    [InlineData("PAGE-21", "Deep", "interior child")]
+    [InlineData("PAGE-19", "Deep", "root")]
+    [InlineData("PAGE-21", "Keyed", "first leaf")]
+    [InlineData("PAGE-19", "Keyed", "root")]
+    public void EmptyPage_Relaxable(string check, string table, string page)
     {
-        byte[] data = new DbPatcher(Base).SetCellCount(check == "PAGE-21" ? DeepFirstLeaf : DeepRoot, 0).Data;
+        uint emptied = (table, page) switch
+        {
+            ("Deep", "first leaf") => DeepFirstLeaf,
+            ("Deep", "interior child") => DeepLeft,
+            ("Deep", _) => DeepRoot,
+            (_, "first leaf") => KeyedFirstLeaf,
+            _ => KeyedRoot
+        };
+        byte[] data = new DbPatcher(Base).SetCellCount(emptied, 0).Data;
 
-        SqliteParity.AssertSqliteReportsCorrupt(data, "Deep");
+        SqliteParity.AssertSqliteReportsCorrupt(data, table);
         using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
-            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep")).Check);
+            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => ReadTable(db, table)).Check);
 
         List<string> issues = new List<string>();
         Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
         using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient))
         {
-            int rows = db.GetTable("Deep").EnumerateRows().Count();
-            Assert.InRange(rows, 1, 119);
-            SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small", "Keyed");
+            List<long> keys = db.GetTable(table).EnumerateRows().Select(row =>
+            {
+                Assert.True(row.TryGetValueByName("Payload", out string payload));
+                long key = table == "Deep" ? row.RowId : long.Parse(Assert.IsType<string>(row.ColumnData[0]).Substring(3));
+                Assert.Equal(key.ToString(), payload.Trim());
+                return key;
+            }).ToList();
+
+            Assert.NotEmpty(keys);
+            Assert.True(keys.Count < (table == "Deep" ? 120 : 40));
+            Assert.Equal(keys.OrderBy(k => k), keys);
+            if (table == "Deep" && page == "first leaf")
+                Assert.Equal(Enumerable.Range(2, 119).Select(i => (long)i), keys);
+
+            SqliteParity.AssertTablesSameAsSqlite(Script, db, new[] { "Deep", "Small", "Keyed" }.Where(t => t != table).ToArray());
         }
 
         Assert.Equal(new[] { check }, issues);

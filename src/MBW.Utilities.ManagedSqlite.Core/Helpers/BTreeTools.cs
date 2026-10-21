@@ -133,7 +133,7 @@ internal static class BTreeTools
     ///   }else if( !pRoot->leaf ){
     ///     Pgno subpage;
     ///     if( pRoot->pgno!=1 ) return SQLITE_CORRUPT_BKPT;
-    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5622 (moveToRoot)
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5620 (moveToRoot)
     /// Lenient reports it and walks the right-most child as for page 1, so the subtree's rows are still read.
     /// </summary>
     private static void CheckInteriorRoot(BTreePage root) =>
