@@ -94,7 +94,9 @@ internal static class SqliteParity
     }
 
     /// <summary>
-    /// Opens a database file's bytes with SQLite, read-only and in memory; nothing touches the disk.
+    /// Opens a database file's bytes with SQLite, read-only and in memory; nothing touches the disk. Uses
+    /// sqlite3_deserialize (https://www.sqlite.org/c3ref/deserialize.html), which makes the bytes the content of the
+    /// "main" schema of an open connection, so SQLite reads exactly the bytes the library is given.
     /// </summary>
     private static SqliteConnection OpenBytes(byte[] data)
     {
@@ -103,7 +105,8 @@ internal static class SqliteParity
 
         try
         {
-            // SQLite owns the copy: it frees it when the connection closes, and also when deserialize itself fails
+            // SQLite owns the copy (SQLITE_DESERIALIZE_FREEONCLOSE): it frees it when the connection closes, and also when
+            // deserialize itself fails (end_deserialize in memdb.c), so the helper must not free it
             IntPtr copy = raw.sqlite3_malloc(data.Length);
             if (copy == IntPtr.Zero)
                 throw new OutOfMemoryException();

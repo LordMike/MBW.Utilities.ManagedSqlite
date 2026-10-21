@@ -62,9 +62,11 @@ public class Values_Tests
     }
 
     /// <summary>
-    /// SQLite stores NULL instead of a NaN, and reads a NaN that another writer or damage put in a file as NULL. The
-    /// stored 1.5 (big-endian 3FF8000000000000) is overwritten with a NaN's bits (sign bit set, non-canonical payload);
-    /// the text column after it proves the 8 bytes are still consumed.
+    /// SQLite stores NULL instead of a NaN (sqlite3VdbeMemSetDouble in vdbemem.c), so no SQL statement can put one in a
+    /// file; a NaN comes only from another writer or damage, and serialGet in vdbeaux.c reads it as NULL. The stored 1.5
+    /// (big-endian 3FF8000000000000, serial type 7) is overwritten with a NaN's bits (sign bit set, non-canonical
+    /// payload); the text column after it proves the 8 bytes are still consumed.
+    /// https://sqlite.org/src/file?name=src/vdbeaux.c, https://www.sqlite.org/fileformat.html#record_format
     /// </summary>
     [Fact]
     public void NaNReadsAsNull()
