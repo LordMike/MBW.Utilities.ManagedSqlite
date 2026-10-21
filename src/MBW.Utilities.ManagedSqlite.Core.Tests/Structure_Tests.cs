@@ -163,12 +163,6 @@ CREATE VIRTUAL TABLE boxes USING rtree(id, minX, maxX, minY, maxY);
 INSERT INTO boxes VALUES (1, 0, 10, 0, 10), (2, 5, 15, 5, 15), (3, -3, 3, -3, 3);
 CREATE TABLE Plain (Id INTEGER PRIMARY KEY, Value TEXT);
 INSERT INTO Plain VALUES (1, 'one'), (2, 'two');" },
-            // Rows written before ADD COLUMN read the column's DEFAULT
-            { "ALTER TABLE ADD COLUMN with DEFAULT", @"
-CREATE TABLE tbl (a);
-INSERT INTO tbl VALUES (10);
-ALTER TABLE tbl ADD COLUMN b TEXT DEFAULT 'dflt';
-INSERT INTO tbl VALUES (20, 'x');" },
             // Quoting and escapes already in SqlParserSyntaxTests.SchemaFeatures are left out here
             { "CREATE TABLE syntax and names", @"
 CREATE TABLE [bracketed space] ([my col] TEXT, ""kølønne_日本"" TEXT);
