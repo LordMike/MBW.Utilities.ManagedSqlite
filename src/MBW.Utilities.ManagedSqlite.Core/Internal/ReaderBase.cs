@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Runtime.ExceptionServices;
 using System.Text;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -80,7 +81,7 @@ internal sealed class ReaderBase : IDisposable
         // https://sqlite.org/src/file?name=src/pager.c (pagerPagecount)
         //
         // With a WAL, the database size is the one its last committed transaction recorded, not the file's (WALJ-26):
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3338 (pagerPagecount)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3325 (pagerPagecount)
         //   nPage = sqlite3WalDbsize(pPager->pWal);
         //   if( nPage==0 && ... ){ ... sqlite3OsFileSize(pPager->fd, &n) ...
         uint filePages = wal != null
@@ -186,6 +187,11 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     private static uint InitialPageSize(IFileView main)
     {
+        // SQLite reads the 100-byte header with a zeroed buffer, so a shorter file has page size 0 here
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3943 (sqlite3PagerReadFileheader)
+        if (main.Length < DatabaseHeader.HeaderSize)
+            return 4096;
+
         byte[] bytes = new byte[2];
         if (main.Read(16, bytes, 0, 2) != 2)
             return 4096;
@@ -199,8 +205,22 @@ internal sealed class ReaderBase : IDisposable
 
     public void Dispose()
     {
+        // Every file is disposed even when one throws; the first error is rethrown
+        Exception? error = null;
         foreach (IDisposable disposable in _owned)
-            disposable.Dispose();
+        {
+            try
+            {
+                disposable.Dispose();
+            }
+            catch (Exception e)
+            {
+                error ??= e;
+            }
+        }
+
+        if (error != null)
+            ExceptionDispatchInfo.Capture(error).Throw();
     }
 
     private static void DisposeQuietly(IDisposable disposable)
@@ -242,7 +262,7 @@ internal sealed class ReaderBase : IDisposable
 
             // A committed transaction can grow the database without the file growing; the pages it did not write are
             // zeros, as SQLite reads them past the end of the file.
-            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3082 (readDbPage)
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3083-L3086 (readDbPage)
             if (position >= _file.Length)
             {
                 Array.Clear(_pageBuffer, 0, _pageBuffer.Length);

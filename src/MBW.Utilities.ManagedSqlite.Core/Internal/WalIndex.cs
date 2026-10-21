@@ -15,7 +15,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 /// </remarks>
 internal sealed class WalIndex
 {
-    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L277 (WAL_MAX_VERSION), #L477-L486 (sizes, WAL_MAGIC)
+    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L277 (WAL_MAX_VERSION), #L477-L480 (sizes), #L491 (WAL_MAGIC)
     private const uint WalMagic = 0x377f0682;
     private const uint WalVersion = 3007000;
     private const int WalHeaderSize = 32;

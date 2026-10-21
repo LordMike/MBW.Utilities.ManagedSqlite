@@ -14,13 +14,13 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 /// A read-only SQLite connection refuses to open a database with a hot journal (SQLITE_READONLY_ROLLBACK), and a
 /// writable one plays the journal back into the file first. This reader deliberately does what the writable connection
 /// does, in memory, so it reads the last committed state instead of failing.
-/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5333 (sqlite3PagerSharedLock)
+/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5335 (sqlite3PagerSharedLock)
 /// </para>
 /// <para>
 /// A journal that names a super-journal (a transaction over several attached databases) is played back whether or not
 /// the super-journal still exists. SQLite skips the playback when the super-journal is gone, as the transaction then
 /// committed; this reader would then show the state just before that transaction, which is still consistent.
-/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2885-L2892 (pager_playback)
+/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2891-L2896 (pager_playback)
 /// </para>
 /// https://www.sqlite.org/fileformat.html#the_rollback_journal
 /// </remarks>
@@ -34,7 +34,7 @@ internal sealed class RollbackJournalView : IFileView
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2791 (setSectorSize)
     private const int DefaultSectorSize = 512;
 
-    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1665-L1667 (readJournalHdr), MAX_SECTOR_SIZE
+    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1663-L1665 (readJournalHdr), MAX_SECTOR_SIZE
     private const uint MaxSectorSize = 0x10000;
 
     // The lock-byte page holds the byte at offset 1 GiB, PENDING_BYTE
@@ -59,7 +59,7 @@ internal sealed class RollbackJournalView : IFileView
 
     /// <summary>
     /// Plays back <paramref name="journal"/> over <paramref name="main"/> if it is hot, and returns the result.
-    /// Returns <paramref name="main"/> unchanged when the journal is not hot or holds nothing to play back.
+    /// Returns <paramref name="main"/> unchanged when the journal is not hot or its first header is not usable.
     /// <paramref name="initialPageSize"/> is the page size from the main file's header, used where the journal does
     /// not give its own. The view does not own either file.
     /// </summary>
@@ -83,6 +83,7 @@ internal sealed class RollbackJournalView : IFileView
         long sectorSize = DefaultSectorSize;
 
         Dictionary<uint, long> pages = new Dictionary<uint, long>();
+        byte[]? pageData = null;
         long length = main.Length;
         uint databaseSize = 0;
         bool truncated = false;
@@ -209,7 +210,10 @@ internal sealed class RollbackJournalView : IFileView
                 wordPos = 0;
                 uint checksum = ByteArrayReader.ReadUInt32(word, 4, ref wordPos);
 
-                if (Checksum(journal, recordOffset + 4, pageSize, checksumInit) != checksum)
+                if (pageData == null || pageData.Length != pageSize)
+                    pageData = new byte[pageSize];
+
+                if (Checksum(journal, recordOffset + 4, pageData, checksumInit) != checksum)
                 {
                     done = true;
                     break;
@@ -256,15 +260,14 @@ internal sealed class RollbackJournalView : IFileView
     ///   }
     /// </code>
     /// </summary>
-    private static uint Checksum(IFileView journal, long offset, uint pageSize, uint checksumInit)
+    private static uint Checksum(IFileView journal, long offset, byte[] data, uint checksumInit)
     {
-        byte[] data = new byte[pageSize];
         journal.Read(offset, data, 0, data.Length);
 
         uint checksum = checksumInit;
         unchecked
         {
-            for (int i = (int)pageSize - 200; i > 0; i -= 200)
+            for (int i = data.Length - 200; i > 0; i -= 200)
                 checksum += data[i];
         }
 
