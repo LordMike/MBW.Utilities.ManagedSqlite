@@ -63,28 +63,20 @@ internal sealed class DatabaseHeader
     /// Parses the first <see cref="HeaderSize"/> bytes of the database file. <paramref name="length"/> is how many
     /// bytes of <paramref name="data"/> the file actually had.
     /// </summary>
-    internal DatabaseHeader(byte[] data, int length)
+    internal DatabaseHeader(byte[] data, int length, Sqlite3Settings settings)
     {
-        if (length < HeaderSize)
-            throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
-            {
-                Data =
-                {
-                    { "Position", 0L },
-                    { "sizeWanted", (uint)HeaderSize },
-                    { "SourceLength", (long)length }
-                }
-            };
+        // HDR-02: SQLite zero-fills a header shorter than 100 bytes, which then fails the magic string check
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3943 (sqlite3PagerReadFileheader)
+        Checks.Strict(length >= HeaderSize, "HDR-02",
+            $"the file is shorter than the structures in it say ({HeaderSize} byte header, the file is {length} bytes)",
+            structure: "file length");
 
-        if (!data.Take(_expectedHeader.Length).SequenceEqual(_expectedHeader))
-            throw new SqliteCorruptException("the requested magic bytes did not match", structure: "magic bytes")
-            {
-                Data =
-                {
-                    { "comparison", _expectedHeader.ToHex() },
-                    { "data", data.Take(_expectedHeader.Length).ToArray().ToHex() }
-                }
-            };
+        // HDR-03: the magic string. lockBtree in btree.c:
+        //   if( memcmp(page1, zMagicHeader, 16)!=0 ){ goto page1_init_failed; }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3314
+        Checks.Strict(data.Take(_expectedHeader.Length).SequenceEqual(_expectedHeader), "HDR-03",
+            $"the magic bytes {data.Take(_expectedHeader.Length).ToArray().ToHex()} did not match {_expectedHeader.ToHex()}",
+            structure: "magic bytes");
 
         int pos = _expectedHeader.Length;
 
@@ -118,37 +110,47 @@ internal sealed class DatabaseHeader
 
         // TODO: Warn/err on mismatch with expected values
 
-        Validate();
+        Validate(settings);
     }
 
-    private void Validate()
+    private void Validate(Sqlite3Settings settings)
     {
         // https://www.sqlite.org/fileformat.html#page_size
         // A power of two between 512 and 65536. The stored value 1 has already been mapped to 65536.
         bool validPageSize = PageSize >= 512 && PageSize <= 65536 && (PageSize & (PageSize - 1)) == 0;
 
-        if (!validPageSize)
-            throw new SqliteCorruptException($"invalid page size {PageSize}", structure: "database header");
+        // HDR-09, lockBtree in btree.c:
+        //   if( ((pageSize-1)&pageSize)!=0 || pageSize>SQLITE_MAX_PAGE_SIZE || pageSize<=256 ){ goto page1_init_failed; }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3374
+        Checks.Strict(validPageSize, "HDR-09", $"invalid page size {PageSize}", structure: "database header");
 
         // https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
         // The usable size of a page may not be less than 480
         uint usableSize = PageSize - ReservedSpaceAtEndOfPage;
-        if (usableSize < 480)
-            throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {PageSize}, reserved space {ReservedSpaceAtEndOfPage})", structure: "database header");
+        // HDR-11, lockBtree in btree.c: "if( usableSize<480 ){ goto page1_init_failed; }"
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3416
+        Checks.Strict(usableSize >= 480, "HDR-11",
+            $"usable page size {usableSize} is less than 480 (page size {PageSize}, reserved space {ReservedSpaceAtEndOfPage})",
+            structure: "database header");
 
+        // HDR-05: a read version above 2 means a format this reader (and SQLite) does not know, so SQLite treats the
+        // file as not a database (SQLITE_NOTADB). lockBtree in btree.c:
+        //   if( page1[19]>2 ){ goto page1_init_failed; }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3329
         // https://www.sqlite.org/fileformat.html#file_format_version_numbers
-        // A read version above 2 means a format this reader (and SQLite) does not know, so SQLite treats the file as not a
-        // database (lockBtree in btree.c, "if( page1[19]>2 ) goto page1_init_failed", SQLITE_NOTADB). The b-tree itself
-        // is unchanged by that byte, so this is a strict check a Lenient validation mode may skip; see issue #58.
-        // https://sqlite.org/src/file?name=src/btree.c (lockBtree)
-        if ((byte)ReadVersion > 2)
-            throw new SqliteCorruptException($"file format read version {(byte)ReadVersion} is not supported (1 or 2)", structure: "database header");
+        // The b-tree itself is unchanged by that byte, so Lenient reads on.
+        Checks.Relaxable((byte)ReadVersion <= 2, settings, "HDR-05",
+            $"file format read version {(byte)ReadVersion} is not supported (1 or 2)", structure: "database header");
 
+        // HDR-08: the payload fractions must be 64, 32 and 32 (SQLITE_NOTADB otherwise). lockBtree in btree.c:
+        //   if( memcmp(&page1[21], "\100\040\040",3)!=0 ){ goto page1_init_failed; }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3365
         // https://www.sqlite.org/fileformat.html#payload_fractions
-        // The payload fractions must be 64, 32 and 32, and SQLite rejects a file with other values (lockBtree in btree.c,
-        // "if( memcmp(&page1[21], "\100\040\040",3)!=0 ) goto page1_init_failed", SQLITE_NOTADB). SQLite never consults
-        // them when reading, so this too is a strict check a Lenient mode may skip; see issue #58.
-        if (MaximumEmbeddedPayloadFraction != 64 || MinimumEmbeddedPayloadFraction != 32 || LeafPayloadFraction != 32)
-            throw new SqliteCorruptException($"payload fractions {MaximumEmbeddedPayloadFraction}, {MinimumEmbeddedPayloadFraction}, {LeafPayloadFraction} must be 64, 32, 32", structure: "database header");
+        // SQLite never consults them when reading (the local payload limits are computed from the usable size), so
+        // Lenient reads on.
+        Checks.Relaxable(MaximumEmbeddedPayloadFraction == 64 && MinimumEmbeddedPayloadFraction == 32 && LeafPayloadFraction == 32,
+            settings, "HDR-08",
+            $"payload fractions {MaximumEmbeddedPayloadFraction}, {MinimumEmbeddedPayloadFraction}, {LeafPayloadFraction} must be 64, 32, 32",
+            structure: "database header");
     }
 }

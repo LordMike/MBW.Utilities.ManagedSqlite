@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -143,18 +144,35 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Header_UsableSizeBelow480() => AssertCorrupt("database header", p => p.SetReservedSpace(255));
 
-    // SQLite refuses a read version above 2 (a format newer than it knows) and payload fractions other than 64, 32, 32
-    [Fact]
-    public void Header_ReadVersionAbove2() => AssertCorrupt("database header", p => p.SetReadVersion(3));
+    /// <summary>
+    /// Header checks SQLite makes although the data is intact: a read version above 2 (a format newer than it knows),
+    /// payload fractions other than 64, 32, 32, and a valid in-header database size larger than the file. Strict fails
+    /// like SQLite, with the check's ID; Lenient reports the check once and reads every table as SQLite reads the
+    /// undamaged database.
+    /// </summary>
+    [Theory]
+    [InlineData("HDR-05")]
+    [InlineData("HDR-08")]
+    [InlineData("HDR-14")]
+    public void Header_Relaxable(string check)
+    {
+        DbPatcher patcher = new DbPatcher(Base);
+        byte[] data = (check switch
+        {
+            "HDR-05" => patcher.SetReadVersion(3),
+            "HDR-08" => patcher.SetMaxEmbeddedPayloadFraction(65),
+            _ => patcher.SetDatabaseSizeInPages((uint)patcher.PageCount + 1)
+        }).Data;
 
-    [Fact]
-    public void Header_PayloadFractionNot64() => AssertCorrupt("database header", p => p.SetMaxEmbeddedPayloadFraction(65));
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
 
-    // The in-header database size is valid (SQLite wrote the change counter and version-valid-for fields), so it decides
-    // how many pages the database has: more than the file holds is corrupt, and pages after it are not read.
-    // lockBtree in btree.c: https://sqlite.org/src/file?name=src/btree.c; https://www.sqlite.org/fileformat.html#in_header_database_size
-    [Fact]
-    public void Header_DatabaseSizeLargerThanFile() => AssertCorrupt("file length", p => p.SetDatabaseSizeInPages((uint)p.PageCount + 1));
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient);
+        SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small", "Keyed");
+        Assert.Equal(new[] { check }, issues);
+    }
 
     [Fact]
     public void Header_PagesAfterDatabaseSize_AreNotRead() => AssertCorrupt("page number", p => p.AppendPages(1).SetOverflowPointer(SmallRoot, 1, PastTheEnd));

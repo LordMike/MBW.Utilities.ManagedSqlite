@@ -32,6 +32,11 @@ internal sealed class ReaderBase : IDisposable
     public DatabaseHeader Header { get; }
 
     /// <summary>
+    /// The settings the database was opened with, which the consistency checks consult
+    /// </summary>
+    public Sqlite3Settings Settings { get; }
+
+    /// <summary>
     /// The text encoding in use: the header's, or the fallback from the settings when the header's is invalid
     /// </summary>
     public SqliteEncoding TextEncoding { get; }
@@ -49,12 +54,13 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     public uint PageCount { get; }
 
-    private ReaderBase(Stream stream, DatabaseHeader header, SqliteEncoding textEncoding, Encoding encoding)
+    private ReaderBase(Stream stream, DatabaseHeader header, Sqlite3Settings settings, SqliteEncoding textEncoding, Encoding encoding)
     {
         _stream = stream;
         Length = stream.Length;
 
         Header = header;
+        Settings = settings;
         PageSize = header.PageSize;
         ReservedSpace = header.ReservedSpaceAtEndOfPage;
         TextEncoding = textEncoding;
@@ -79,12 +85,14 @@ internal sealed class ReaderBase : IDisposable
         uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
-        // The pages that do exist are intact in such a file (truncated, or a wrong header), so this is a strict check that a
-        // Lenient validation mode may replace by using the file's count; see issue #58.
-        if (headerSizeValid && header.DatabaseSizeInPages > filePages)
-            throw new SqliteCorruptException($"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}", structure: "file length");
-
-        PageCount = headerSizeValid ? header.DatabaseSizeInPages : filePages;
+        // HDR-14: a valid in-header size larger than the file is corrupt. The pages that do exist are intact in such a
+        // file (truncated, or a wrong header), so Lenient uses the file's count instead.
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3405 (lockBtree)
+        PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= filePages, settings, "HDR-14",
+                $"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}",
+                structure: "file length")
+            ? header.DatabaseSizeInPages
+            : filePages;
     }
 
     /// <summary>
@@ -100,7 +108,7 @@ internal sealed class ReaderBase : IDisposable
 
         int read = stream.ReadFully(headerData, 0, headerData.Length);
 
-        DatabaseHeader header = new DatabaseHeader(headerData, read);
+        DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
 
         SqliteEncoding textEncoding = header.TextEncoding;
         if (!Enum.IsDefined(typeof(SqliteEncoding), textEncoding) && settings.FallbackEncoding.HasValue)
@@ -114,7 +122,7 @@ internal sealed class ReaderBase : IDisposable
             _ => throw new SqliteInvalidEncodingException(textEncoding)
         };
 
-        return new ReaderBase(stream, header, textEncoding, encoding);
+        return new ReaderBase(stream, header, settings, textEncoding, encoding);
     }
 
     public void Dispose()
@@ -127,19 +135,11 @@ internal sealed class ReaderBase : IDisposable
         if (!throwException)
             return;
 
+        // HDR-17: the file ends inside a structure (a page or the header) that the file refers to
         long dataLeft = Length - _stream.Position;
-        if (dataLeft < sizeWanted)
-        {
-            throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
-            {
-                Data =
-                {
-                    { nameof(Stream.Position), _stream.Position },
-                    { nameof(sizeWanted), sizeWanted },
-                    { "SourceLength", Length }
-                }
-            };
-        }
+        Checks.Strict(dataLeft >= sizeWanted, "HDR-17",
+            $"the file is shorter than the structures in it say ({sizeWanted} bytes wanted at offset {_stream.Position}, the file is {Length} bytes)",
+            structure: "file length");
     }
 
     internal void SetPositionAndCheckSize(ulong position, uint sizeWanted, bool throwException = true)
@@ -153,17 +153,19 @@ internal sealed class ReaderBase : IDisposable
     {
         ulong newPosition = (ulong)_stream.Seek((long)position, SeekOrigin.Begin);
 
-        if (newPosition != position)
-            throw new SqliteCorruptException("unable to seek to a position the file refers to", structure: "file length")
-            {
-                Data = { { nameof(position), position } }
-            };
+        Checks.Strict(newPosition == position, "HDR-17", $"unable to seek to offset {position}, which the file refers to",
+            structure: "file length");
     }
 
     internal void SeekPage(uint page, uint offset = 0)
     {
-        if (page == 0 || (PageCount > 0 && page > PageCount))
-            throw new SqliteCorruptException($"page number {page} is outside the database (1..{PageCount})", page, "page number");
+        // PAGE-15: page 0 does not exist, and PAGE-14: pages above the page count are not part of the database.
+        // getPageNormal in pager.c, and getAndInitPage in btree.c:
+        //   if( pgno>btreePagecount(pBt) ){ rc = SQLITE_CORRUPT_BKPT; goto getAndInitPage_error1; }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5597
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2390
+        Checks.Strict(page != 0, "PAGE-15", $"page number 0 is outside the database (1..{PageCount})", page, "page number");
+        Checks.Strict(PageCount == 0 || page <= PageCount, "PAGE-14", $"page number {page} is outside the database (1..{PageCount})", page, "page number");
 
         // Note: Pages are 1-indexed
         // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB
