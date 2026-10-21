@@ -350,7 +350,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
-        Assert.Equal("b-tree page header", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Structure);
+        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
     }
 
     [Fact]

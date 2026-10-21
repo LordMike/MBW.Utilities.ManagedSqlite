@@ -40,7 +40,7 @@ public static class SqlExtensions
         //   if( SQLITE_OK!=rc ){
         //     ...
         //       corruptSchema(pData, argv, sqlite3_errmsg(db));
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L149 (sqlite3InitCallback)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L150 (sqlite3InitCallback)
         Checks.Strict(definition != null, "SCHEMA-22", $"malformed database schema ({schema.Name}): its SQL does not parse as CREATE TABLE",
             structure: "table definition");
 
