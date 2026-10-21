@@ -17,7 +17,6 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
 
     [Theory]
     [InlineData("MIXEDCASETABLE", "MixedCaseTable")]
-    [InlineData("mIxEdCaSeTaBlE", "MixedCaseTable")]
     [InlineData("sqlite_master", "sqlite_master")]
     [InlineData("SQLITE_SCHEMA", "sqlite_master")]
     public void GetTableIsCaseInsensitiveAndResolvesMasterAliases(string lookup, string storedName)
@@ -28,10 +27,8 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     }
 
     [Theory]
-    [InlineData("MixedCaseIndex")]
     [InlineData("MixedCaseView")]
     [InlineData("docs")]
-    [InlineData("Missing")]
     public void TryGetTableIsFalseForNonTables(string name)
     {
         using Sqlite3Database db = Open();

@@ -30,7 +30,6 @@ public class SqlRowIdAliasTests
     {
         "CREATE TABLE t (id INT PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (id BIGINT PRIMARY KEY, v TEXT)",
-        "CREATE TABLE t (id int primary key, v text)",
         "CREATE TABLE t (id UNSIGNED INTEGER PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (id INTEGER UNSIGNED PRIMARY KEY, v TEXT)",
         "CREATE TABLE t (id INTEGER(10) PRIMARY KEY, v TEXT)",
@@ -41,34 +40,7 @@ public class SqlRowIdAliasTests
         "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id)) without rowid"
     };
 
-    public static IEnumerable<object[]> AliasSql() => Alias.Select(s => new object[] { s });
-    public static IEnumerable<object[]> NotAliasSql() => NotAlias.Select(s => new object[] { s });
-
     public static IEnumerable<object[]> ParitySql() => Alias.Concat(NotAlias).Select(s => new object[] { s });
-
-    [Theory]
-    [MemberData(nameof(AliasSql))]
-    public void RowIdAlias(string sql)
-    {
-        Assert.True(SqlParser.TryParse(sql, out SqlTableDefinition definition));
-
-        Assert.True(definition.TryGetColumn("id", out SqlTableColumn id));
-        Assert.True(id.IsPartOfPrimaryKey);
-        Assert.Equal(typeof(long), id.DetectedType);
-        Assert.Same(id, definition.RowIdColumn);
-    }
-
-    [Theory]
-    [MemberData(nameof(NotAliasSql))]
-    public void NotRowIdAlias(string sql)
-    {
-        Assert.True(SqlParser.TryParse(sql, out SqlTableDefinition definition));
-
-        Assert.True(definition.TryGetColumn("id", out SqlTableColumn id));
-        Assert.True(id.IsPartOfPrimaryKey);
-        Assert.Equal(typeof(long), id.DetectedType);
-        Assert.Null(definition.RowIdColumn);
-    }
 
     /// <summary>
     /// An alias reads the rowid (42, -7 as written), a non-alias reads the stored value, with rowids 1 and 2

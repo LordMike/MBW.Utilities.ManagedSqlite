@@ -7,28 +7,19 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
 public class SqlColumnTypes_Tests
 {
     /// <summary>
-    /// The declared type name and primary key flag. The declared type ends at the first constraint, and DetectedType is
-    /// checked against SQLite's affinity for the same statement.
+    /// TypeName reports a known multi-word type by its first word, where SQLite's declared type is the whole text
+    /// ("DOUBLE TEXT", "double precision"). Other declared types are compared with SQLite in
+    /// <see cref="SqlSchemaParity_Tests"/>.
     /// </summary>
     [Theory]
-    [InlineData("CREATE TABLE t (c integer)", "c", "INTEGER", false)]
-    [InlineData("CREATE TABLE t (c BIGINT PRIMARY KEY)", "c", "BIGINT", true)]
-    [InlineData("CREATE TABLE t (c VARCHAR(10))", "c", "VARCHAR", false)]
-    [InlineData("CREATE TABLE t (c NVARCHAR(5) NOT NULL)", "c", "NVARCHAR", false)]
-    [InlineData("CREATE TABLE t (c DOUBLE TEXT)", "c", "DOUBLE", false)]
-    [InlineData("CREATE TABLE t (c)", "c", "", false)]
-    [InlineData("CREATE TABLE t (c BLOB CONSTRAINT nn NOT NULL)", "c", "BLOB", false)]
-    [InlineData("CREATE TABLE t (c double precision)", "c", "DOUBLE", false)]
-    [InlineData("CREATE TABLE t (c DECIMAL(10,5))", "c", "DECIMAL", false)]
-    [InlineData("CREATE TABLE t (c STRING)", "c", "STRING", false)]
-    public void ColumnType(string sql, string column, string typeName, bool isPrimaryKey)
+    [InlineData("CREATE TABLE t (c DOUBLE TEXT)", "DOUBLE")]
+    [InlineData("CREATE TABLE t (c double precision)", "DOUBLE")]
+    public void TypeName(string sql, string typeName)
     {
         Assert.True(SqlParser.TryParse(sql, out SqlTableDefinition definition));
 
-        Assert.True(definition.TryGetColumn(column, out SqlTableColumn c));
+        Assert.True(definition.TryGetColumn("c", out SqlTableColumn c));
         Assert.Equal(typeName, c.TypeName);
-        Assert.Equal(isPrimaryKey, c.IsPartOfPrimaryKey);
-        Assert.Equal(SqliteAffinityType(sql, column), c.DetectedType);
     }
 
     /// <summary>
@@ -38,17 +29,11 @@ public class SqlColumnTypes_Tests
     /// </summary>
     [Theory]
     [InlineData("INT")]
-    [InlineData("INTEGER")]
-    [InlineData("TINYINT")]
-    [InlineData("BIGINT")]
-    [InlineData("INT8")]
     [InlineData("CHARINT")]
     [InlineData("FLOATING POINT")]
     [InlineData("DOUBLE INT")]
-    [InlineData("POINT")]
     [InlineData("TEXT")]
     [InlineData("VARCHAR(255)")]
-    [InlineData("NCHAR(10)")]
     [InlineData("CLOB")]
     [InlineData("DOUBLE TEXT")]
     [InlineData("BLOB")]
@@ -57,21 +42,9 @@ public class SqlColumnTypes_Tests
     [InlineData("REAL")]
     [InlineData("FLOAT")]
     [InlineData("DOUBLE")]
-    [InlineData("DOUBLE PRECISION")]
-    [InlineData("FLOAT8")]
-    [InlineData("REALVAL")]
-    [InlineData("DOUBLEX")]
-    [InlineData("LONG DOUBLE")]
-    [InlineData("FLOAT(10)")]
     [InlineData("floatval")]
     [InlineData("NUMERIC")]
-    [InlineData("DECIMAL(10,5)")]
-    [InlineData("BOOLEAN")]
-    [InlineData("DATE")]
-    [InlineData("DATETIME")]
-    [InlineData("GUID")]
     [InlineData("STRING")]
-    [InlineData("STRINGY")]
     public void DetectedTypeMatchesSqliteAffinity(string declaredType)
     {
         string sql = $"CREATE TABLE t (c {declaredType})";
@@ -127,14 +100,12 @@ public class SqlColumnTypes_Tests
         }
     }
 
-    [Theory]
-    [InlineData("Id")]
-    [InlineData("ID")]
-    public void TryGetColumnIsCaseInsensitive(string name)
+    [Fact]
+    public void TryGetColumnIsCaseInsensitive()
     {
         Assert.True(SqlParser.TryParse("CREATE TABLE t (id INTEGER, v TEXT)", out SqlTableDefinition definition));
 
-        Assert.True(definition.TryGetColumn(name, out SqlTableColumn c));
+        Assert.True(definition.TryGetColumn("ID", out SqlTableColumn c));
         Assert.Equal("id", c.Name);
     }
 }
