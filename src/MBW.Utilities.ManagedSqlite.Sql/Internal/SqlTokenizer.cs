@@ -12,18 +12,21 @@ internal static class SqlTokenizer
     /// SQLite's whitespace is only space, tab, line feed, form feed and carriage return (CC_SPACE in tokenize.c). A
     /// vertical tab may continue a run of whitespace but not start one; SQLite rejects a statement with a token that
     /// starts with one. Every other character that .NET counts as whitespace, such as a no-break space, is an
-    /// identifier character to SQLite.
+    /// identifier character to SQLite. A byte order mark (U+FEFF) where a token starts is whitespace too (CC_BOM in
+    /// sqlite3GetToken, tokenize.c: https://sqlite.org/src/file?name=src/tokenize.c), but inside an identifier it is an
+    /// identifier character, like any character outside ASCII.
     /// </summary>
     private static TextParser<TextSpan> WhiteSpace { get; } =
-        Span.MatchedBy(Character.In(' ', '\t', '\n', '\f', '\r').IgnoreThen(Character.In(' ', '\t', '\n', '\v', '\f', '\r').Many()));
+        Span.MatchedBy(Character.In(' ', '\t', '\n', '\f', '\r', '\uFEFF').IgnoreThen(Character.In(' ', '\t', '\n', '\v', '\f', '\r').Many()));
 
     /// <summary>
     /// An identifier character in SQLite (IdChar in tokenize.c): an ASCII letter or digit, '_', '$', or any character
-    /// outside ASCII, so "a€", "b²" and names with emoji need no quotes. The first character may not be a digit or '$'.
+    /// outside ASCII, so "a€", "b²" and names with emoji need no quotes. The first character may not be a digit or '$',
+    /// and a byte order mark there is whitespace.
     /// </summary>
-    private static bool IsIdentifierStart(char c) => c > 0x7F || c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
+    private static bool IsIdentifierStart(char c) => (c > 0x7F && c != '\uFEFF') || c == '_' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 
-    private static bool IsIdentifierChar(char c) => IsIdentifierStart(c) || (c >= '0' && c <= '9') || c == '$';
+    private static bool IsIdentifierChar(char c) => c > 0x7F || IsIdentifierStart(c) || (c >= '0' && c <= '9') || c == '$';
 
     private static TextParser<TextSpan> NonquotedIdentifier { get; } =
         Span.MatchedBy(Character.Matching(IsIdentifierStart, "identifier").IgnoreThen(Character.Matching(IsIdentifierChar, "identifier").Many()));

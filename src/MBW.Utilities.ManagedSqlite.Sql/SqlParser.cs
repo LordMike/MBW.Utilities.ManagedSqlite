@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Sql.Internal;
 using Superpower.Model;
 
@@ -122,8 +123,9 @@ internal static class SqlParser
         int primaryKeyComponents = 0;
         SqlTableColumn? primaryKeyColumn = null;
 
-        // The primary key columns in key order, each once
-        List<SqlTableColumn> primaryKeyColumns = new List<SqlTableColumn>();
+        // The primary key terms in key order. A term that repeats an earlier one with the same collation is left out, as
+        // SQLite does (isDupColumn in build.c), but "a, a COLLATE NOCASE" is two terms.
+        List<(SqlTableColumn column, string? collation)> primaryKeyTerms = new List<(SqlTableColumn column, string? collation)>();
 
         // Columns that may alias the rowid if they turn out to be the sole primary key
         HashSet<SqlTableColumn> rowIdAliasCandidates = new HashSet<SqlTableColumn>();
@@ -143,9 +145,11 @@ internal static class SqlParser
             string name;
             if (isConstraint)
             {
-                // A table-constraint may be named: CONSTRAINT name PRIMARY KEY (...)
-                int pk = columnSet.Is(0, "CONSTRAINT") ? 2 : 0;
-                if (columnSet.Is(pk, "PRIMARY") && columnSet.Is(pk + 1, "KEY") && columnSet.IsGroup(pk + 2))
+                // Table constraints need no comma between them (tconscomma ::= in parse.y), so one comma-separated set
+                // can hold several, as in "UNIQUE (b) PRIMARY KEY (a)" or "CONSTRAINT name PRIMARY KEY (a)". Only one
+                // can be the primary key.
+                int pk = FindTablePrimaryKey(columnSet);
+                if (pk >= 0)
                 {
                     // GetGroup only returns group nodes, which always have Children
                     SqlNode pkColumns = columnSet.GetGroup(pk + 2);
@@ -167,8 +171,7 @@ internal static class SqlParser
 
                         primaryKeyComponents++;
                         primaryKeyColumn = columnObject;
-                        if (!primaryKeyColumns.Contains(columnObject))
-                            primaryKeyColumns.Add(columnObject);
+                        AddPrimaryKeyTerm(primaryKeyTerms, columnObject, GetCollation(pkColumn, 0) ?? columnObject.Collation);
                     }
                 }
 
@@ -184,20 +187,8 @@ internal static class SqlParser
             string[] typeStrings = columnSet.Children.Skip(1).Where(s => s.Is(SqlToken.String))
                 .Select(s => s.GetString()).ToArray();
 
-            string[] identifiedTypeStrings = typeStrings;
-
-            foreach ((string[] words, Type type) candidate in SqlKeywords.TypeKeywords)
-            {
-                if (!typeStrings.Take(candidate.words.Length).SequenceEqual(candidate.words, StringComparer.OrdinalIgnoreCase))
-                    continue;
-
-                identifiedTypeStrings = candidate.words;
-                break;
-            }
-
-            Type identifiedType = GetAffinityType(columnSet);
-
-            SqlTableColumn sqlTableColumn = new SqlTableColumn(columnIndex, name, string.Join(" ", identifiedTypeStrings), identifiedType);
+            SqlTableColumn sqlTableColumn = new SqlTableColumn(columnIndex, name, GetDeclaredTypeName(columnSet), GetAffinityType(columnSet));
+            sqlTableColumn.Collation = GetCollation(columnSet, 1);
             def.AddColumn(sqlTableColumn);
 
             sqlTableColumn.RecordIndex = columnIndex - virtualGeneratedColumns;
@@ -214,7 +205,7 @@ internal static class SqlParser
                 sqlTableColumn.IsPartOfPrimaryKey = true;
                 primaryKeyComponents++;
                 primaryKeyColumn = sqlTableColumn;
-                primaryKeyColumns.Add(sqlTableColumn);
+                AddPrimaryKeyTerm(primaryKeyTerms, sqlTableColumn, sqlTableColumn.Collation);
             }
 
             // A column declared as exactly "INTEGER" may alias the rowid. As a quirk, SQLite does not
@@ -233,17 +224,24 @@ internal static class SqlParser
             def.ConfigureRowIdColumn(primaryKeyColumn);
         }
 
-        // A WITHOUT ROWID table's record holds the primary key columns first, in key order and each once, then the
-        // other stored columns in declared order. VIRTUAL generated columns are not stored, and can't be in the key.
+        // A WITHOUT ROWID table's record holds the primary key terms first, in key order, then the other stored columns
+        // in declared order. A column that is in the key twice, with two collations, takes two positions, and is read
+        // from the first. VIRTUAL generated columns are not stored, and can't be in the key.
+        // convertToWithoutRowidTable in build.c: https://sqlite.org/src/file?name=src/build.c
         if (withoutRowId)
         {
+            HashSet<SqlTableColumn> keyColumns = new HashSet<SqlTableColumn>();
             int recordIndex = 0;
-            foreach (SqlTableColumn column in primaryKeyColumns)
-                column.RecordIndex = recordIndex++;
+            foreach ((SqlTableColumn column, _) in primaryKeyTerms)
+            {
+                if (keyColumns.Add(column))
+                    column.RecordIndex = recordIndex;
+                recordIndex++;
+            }
 
             foreach (SqlTableColumn column in def.Columns)
             {
-                if (!primaryKeyColumns.Contains(column) && !column.IsVirtualGenerated)
+                if (!keyColumns.Contains(column) && !column.IsVirtualGenerated)
                     column.RecordIndex = recordIndex++;
             }
         }
@@ -261,12 +259,74 @@ internal static class SqlParser
     }
 
     /// <summary>
+    /// The declared type as SQLite reports it (PRAGMA table_info): the words between the column name and its first
+    /// column constraint, unquoted, without a size such as "(10, 5)". sqlite3AddColumn in build.c:
+    /// https://sqlite.org/src/file?name=src/build.c
+    /// </summary>
+    private static string GetDeclaredTypeName(SqlNode columnSet)
+    {
+        return string.Join(" ", GetDeclaredType(columnSet).Where(s => s.Is(SqlToken.String)).Select(s => SqlNode.Unquote(s.GetString())));
+    }
+
+    /// <summary>
+    /// The collation named by "COLLATE name" in <paramref name="node"/>, from position <paramref name="start"/>, or
+    /// null for none
+    /// </summary>
+    private static string? GetCollation(SqlNode node, int start)
+    {
+        if (!node.IsGroup())
+            return null;
+
+        for (int i = start; i < node.Children.Count - 1; i++)
+        {
+            if (node.Is(i, "COLLATE") && node.Is(i + 1, SqlToken.String))
+                return node.GetString(i + 1);
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The position of "PRIMARY KEY (...)" among the table constraints in <paramref name="constraints"/>, or -1
+    /// </summary>
+    private static int FindTablePrimaryKey(SqlNode constraints)
+    {
+        Debug.Assert(constraints.IsGroup());
+
+        for (int i = 0; i < constraints.Children!.Count; i++)
+        {
+            if (constraints.Is(i, "PRIMARY") && constraints.Is(i + 1, "KEY") && constraints.IsGroup(i + 2))
+                return i;
+        }
+
+        return -1;
+    }
+
+    /// <summary>
+    /// Adds a primary key term, unless an earlier term has the same column and collation. A term without COLLATE has
+    /// its column's collation, and a column without one has BINARY; collation names compare ignoring ASCII case.
+    /// isDupColumn in build.c: https://sqlite.org/src/file?name=src/build.c
+    /// </summary>
+    private static void AddPrimaryKeyTerm(List<(SqlTableColumn column, string? collation)> terms, SqlTableColumn column, string? collation)
+    {
+        string effective = collation ?? "BINARY";
+
+        foreach ((SqlTableColumn existing, string? existingCollation) in terms)
+        {
+            if (existing == column && AsciiCaseInsensitiveComparer.Instance.Equals(existingCollation ?? "BINARY", effective))
+                return;
+        }
+
+        terms.Add((column, collation));
+    }
+
+    /// <summary>
     /// The CLR type of the column's affinity, which SQLite determines from substrings of the declared type, by the first
     /// rule that matches. https://www.sqlite.org/datatype3.html#determination_of_column_affinity
     /// </summary>
     private static Type GetAffinityType(SqlNode columnSet)
     {
-        string declaredType = string.Join(" ", GetDeclaredType(columnSet).Where(s => s.Is(SqlToken.String)).Select(s => s.GetString()));
+        string declaredType = GetDeclaredTypeName(columnSet);
 
         bool Contains(string value) => declaredType.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
 
@@ -287,9 +347,11 @@ internal static class SqlParser
     {
         List<SqlNode> declaredType = GetDeclaredType(columnSet);
 
+        // Exactly INTEGER once unquoted, so 'INTEGER' and [INTEGER] alias the rowid too (sqlite3AddColumn sets the
+        // column's eCType from the dequoted type text, in build.c)
         return declaredType.Count == 1 &&
                declaredType[0].Is(SqlToken.String) &&
-               string.Equals(declaredType[0].GetString().Trim('"', '[', ']', '`', '\''), "INTEGER", StringComparison.OrdinalIgnoreCase);
+               AsciiCaseInsensitiveComparer.Instance.Equals(SqlNode.Unquote(declaredType[0].GetString()), "INTEGER");
     }
 
     /// <summary>

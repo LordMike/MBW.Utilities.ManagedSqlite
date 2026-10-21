@@ -9,11 +9,24 @@ using Xunit;
 namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
 
 /// <summary>
-/// What the parser does with SQL that SQLite would not store. Syntax SQLite does store is compared with SQLite in
-/// <see cref="SqlSchemaParity_Tests"/>.
+/// The table definition's API, and what the parser does with SQL that SQLite would not store. Syntax SQLite does
+/// store is compared with SQLite in <see cref="SqlSchemaParity_Tests"/>.
 /// </summary>
-public class SqlParserSyntaxTests
+public class SqlTableDefinition_Tests
 {
+    /// <summary>
+    /// Names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c)
+    /// </summary>
+    [Fact]
+    public void TryGetColumnIgnoresAsciiCaseOnly()
+    {
+        Assert.True(SqlParser.TryParse("CREATE TABLE t (id INTEGER, é TEXT)", out SqlTableDefinition definition));
+
+        Assert.True(definition.TryGetColumn("ID", out SqlTableColumn c));
+        Assert.Equal("id", c.Name);
+        Assert.False(definition.TryGetColumn("É", out _));
+    }
+
     [Fact]
     public void VirtualGeneratedColumnHasNoValueByName()
     {

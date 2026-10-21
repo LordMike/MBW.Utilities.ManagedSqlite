@@ -300,22 +300,6 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Null(ex);
     }
 
-    [Theory]
-    [InlineData(10)]
-    [InlineData(11)]
-    public void ReservedSerialType_ReadsAsNull(byte serialType)
-    {
-        // SQLite reads the reserved serial types 10 and 11 as NULL. Small's row 1 stores NULL in its first column.
-        DbPatcher patcher = new DbPatcher(Base);
-        patcher.WriteByte(patcher.GetRecordOffset(SmallRoot, 0, out _) + 1, serialType);
-
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(patcher.Data));
-        Sqlite3Row row = db.GetTable("Small").EnumerateRows().First();
-
-        Assert.Null(row.ColumnData[0]);
-        Assert.Equal("one", row.ColumnData[1]);
-    }
-
     [Fact]
     public void Corruption_OverflowChainCycle_Terminates()
     {

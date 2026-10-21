@@ -78,6 +78,26 @@ public class Values_Tests
         });
     }
 
+    /// <summary>
+    /// SQLite reads the reserved serial types 10 and 11 as NULL (serialGet in vdbeaux.c,
+    /// https://sqlite.org/src/file?name=src/vdbeaux.c). The NULL in a's record header (serial type 0, the byte after the
+    /// header size) is overwritten, and the text after it proves no bytes are consumed.
+    /// </summary>
+    [Theory]
+    [InlineData(10)]
+    [InlineData(11)]
+    public void ReservedSerialTypeReadsAsNull(byte serialType)
+    {
+        SqliteParity.AssertSameAsSqlite("CREATE TABLE tbl (a, b TEXT); INSERT INTO tbl VALUES (NULL, 'one');", data =>
+        {
+            DbPatcher patcher = new DbPatcher(data);
+            int record = patcher.GetRecordOffset(2, 0, out _);
+            Assert.Equal(0, patcher.Data[record + 1]);
+
+            return patcher.WriteByte(record + 1, serialType).Data;
+        });
+    }
+
     public static TheoryData<string, string> TextCases()
     {
         TheoryData<string, string> data = new TheoryData<string, string>();

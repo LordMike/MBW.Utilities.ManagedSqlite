@@ -23,7 +23,16 @@ public class SqlRowIdAliasTests
         "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id))",
         "CREATE TABLE t (id integer, v TEXT, primary key (id))",
         "CREATE TABLE t (id INTEGER, v TEXT, PRIMARY KEY (id DESC))",
-        "CREATE TABLE t (id INTEGER, v TEXT, CONSTRAINT pk PRIMARY KEY (id))"
+        "CREATE TABLE t (id INTEGER, v TEXT, CONSTRAINT pk PRIMARY KEY (id))",
+        // The type is compared once unquoted
+        "CREATE TABLE t (id 'INTEGER' PRIMARY KEY, v TEXT)",
+        "CREATE TABLE t (id [INTEGER] PRIMARY KEY, v TEXT)",
+        // DEFERRABLE is a column constraint, so the type is still just INTEGER
+        "CREATE TABLE t (id INTEGER DEFERRABLE PRIMARY KEY, v TEXT)",
+        "CREATE TABLE t (id INTEGER PRIMARY KEY ASC ON CONFLICT ABORT AUTOINCREMENT, v TEXT)",
+        // Table constraints need no comma between them
+        "CREATE TABLE t (id INTEGER, v TEXT, UNIQUE (v) PRIMARY KEY (id))",
+        "CREATE TABLE t (id INTEGER, v TEXT, CHECK (id <> 0) CONSTRAINT pk PRIMARY KEY (id))"
     };
 
     private static readonly string[] NotAlias =

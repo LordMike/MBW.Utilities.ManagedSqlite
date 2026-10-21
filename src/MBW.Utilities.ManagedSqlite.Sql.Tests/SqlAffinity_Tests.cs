@@ -4,24 +4,8 @@ using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
 
-public class SqlColumnTypes_Tests
+public class SqlAffinity_Tests
 {
-    /// <summary>
-    /// TypeName reports a known multi-word type by its first word, where SQLite's declared type is the whole text
-    /// ("DOUBLE TEXT", "double precision"). Other declared types are compared with SQLite in
-    /// <see cref="SqlSchemaParity_Tests"/>.
-    /// </summary>
-    [Theory]
-    [InlineData("CREATE TABLE t (c DOUBLE TEXT)", "DOUBLE")]
-    [InlineData("CREATE TABLE t (c double precision)", "DOUBLE")]
-    public void TypeName(string sql, string typeName)
-    {
-        Assert.True(SqlParser.TryParse(sql, out SqlTableDefinition definition));
-
-        Assert.True(definition.TryGetColumn("c", out SqlTableColumn c));
-        Assert.Equal(typeName, c.TypeName);
-    }
-
     /// <summary>
     /// SQLite picks a column's affinity from substrings of its declared type, in this order: "INT" is INTEGER; "CHAR",
     /// "CLOB" or "TEXT" is TEXT; "BLOB", or no type, is BLOB; "REAL", "FLOA" or "DOUB" is REAL; anything else is NUMERIC
@@ -98,14 +82,5 @@ public class SqlColumnTypes_Tests
             default:
                 throw new InvalidOperationException($"Unexpected CAST results {reader.GetString(0)}/{reader.GetString(1)} for type {declaredType}");
         }
-    }
-
-    [Fact]
-    public void TryGetColumnIsCaseInsensitive()
-    {
-        Assert.True(SqlParser.TryParse("CREATE TABLE t (id INTEGER, v TEXT)", out SqlTableDefinition definition));
-
-        Assert.True(definition.TryGetColumn("ID", out SqlTableColumn c));
-        Assert.Equal("id", c.Name);
     }
 }

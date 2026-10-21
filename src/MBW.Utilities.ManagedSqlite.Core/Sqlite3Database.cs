@@ -94,13 +94,16 @@ public sealed class Sqlite3Database : IDisposable
 
     private Sqlite3SchemaRow? FindTable(string name)
     {
-        if (string.Equals(name, "sqlite_master", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(name, "sqlite_schema", StringComparison.OrdinalIgnoreCase))
+        // Names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c), so tables named
+        // "é" and "É" are two tables
+        AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
+
+        if (names.Equals(name, "sqlite_master") || names.Equals(name, "sqlite_schema"))
             return _masterSchemaRow;
 
         foreach (Sqlite3SchemaRow tbl in GetTables())
         {
-            if (tbl.Type == "table" && string.Equals(tbl.Name, name, StringComparison.OrdinalIgnoreCase))
+            if (tbl.Type == "table" && names.Equals(tbl.Name, name))
                 return tbl;
         }
 

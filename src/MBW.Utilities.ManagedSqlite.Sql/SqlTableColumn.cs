@@ -28,6 +28,11 @@ public sealed class SqlTableColumn
     /// </summary>
     internal int RecordIndex { get; set; }
 
+    /// <summary>
+    /// The collation from the column's COLLATE constraint, or null for the default, BINARY
+    /// </summary>
+    internal string? Collation { get; set; }
+
     internal SqlTableColumn(int ordinal, string name, string typeName, Type detectedType)
     {
         Ordinal = ordinal;

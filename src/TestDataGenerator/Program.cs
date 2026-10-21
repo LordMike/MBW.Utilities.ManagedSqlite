@@ -10,6 +10,15 @@ namespace TestDataGenerator;
 
 class Program
 {
+    // Type names and their CLR types, for the generated column descriptions
+    private static readonly (string[] words, Type type)[] TypeKeywords =
+        new[] {
+            (new[] { "INT", "INTEGER", "TINYINT", "SMALLINT", "MEDIUMINT", "BIGINT", "INT2", "INT8", "BIG INT", "NUMERIC", "DECIMAL", "BOOL", "BOOLEAN", "DATE", "DATETIME", "UNSIGNED" }, typeof(long)),
+            (new[] { "CHARACTER", "VARCHAR", "VARYING CHARACTER","NCHAR", "NATIVE CHARACTER", "NVARCHAR", "TEXT", "CLOB", "LONGVARCHAR" }, typeof(string)),
+            (new[] { "BLOB", "GUID" }, typeof(byte[])),
+            (new[] { "REAL", "DOUBLE", "DOUBLE PRECISION", "FLOAT" }, typeof(double)),
+        }.SelectMany(s => s.Item1.Select(x => (x.Split(' '), s.Item2))).ToArray();
+
     static void Main(string[] args)
     {
         ConvertCreateTablesForTests("CreateTableStatementsForTests.txt", "out.txt");
@@ -80,8 +89,8 @@ class Program
                     if (SqlKeywords.NonColumnKeywords.Contains(colNames.First()))
                         continue;
 
-                    var types = colNames.Where(s => SqlKeywords.TypeKeywords.Any(x => x.words.Contains(s))).ToArray();
-                    Type clrType = SqlKeywords.TypeKeywords.FirstOrDefault(s => s.words.Intersect(colNames).Any()).type;
+                    var types = colNames.Where(s => TypeKeywords.Any(x => x.words.Contains(s))).ToArray();
+                    Type clrType = TypeKeywords.FirstOrDefault(s => s.words.Intersect(colNames).Any()).type;
 
                     sw.Write('\t');
 

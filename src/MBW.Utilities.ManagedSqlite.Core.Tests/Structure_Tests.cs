@@ -62,6 +62,16 @@ PRAGMA page_size = 512;
 CREATE TABLE t (k TEXT PRIMARY KEY, v BLOB) WITHOUT ROWID;
 WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 200)
 INSERT INTO t SELECT printf('%04d', x) || printf('%.*c', x * 3, 'k'), CASE WHEN x = 100 THEN zeroblob(20000) ELSE x END FROM seq;" },
+        // Pointer map pages sit between the b-tree pages, and are not part of any b-tree
+        { "auto_vacuum with pointer map pages", @"
+PRAGMA page_size = 512;
+PRAGMA auto_vacuum = FULL;
+CREATE TABLE a (Id INTEGER PRIMARY KEY, Value TEXT);
+CREATE TABLE b (Id INTEGER PRIMARY KEY, Value BLOB);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 300)
+INSERT INTO a SELECT x, 'a' || x FROM seq;
+INSERT INTO b VALUES (1, zeroblob(3000));
+DELETE FROM a WHERE Id % 3 = 0;" },
         { "deleted rows leave freeblocks and free pages", @"
 PRAGMA page_size = 512;
 CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
@@ -90,6 +100,12 @@ INSERT INTO tbl VALUES (0, 0), (1, 500), (2, 1000);
 ALTER TABLE tbl ADD COLUMN NewColumn INTEGER;
 UPDATE tbl SET NewColumn = 500 WHERE Id = 1;
 INSERT INTO tbl VALUES (3, 1500, 3000);" },
+            // Names ignore the case of ASCII letters only, as in SQLite, so these are two tables
+            { "table names differing in non-ASCII case", @"
+CREATE TABLE é (v TEXT);
+CREATE TABLE É (v TEXT);
+INSERT INTO é VALUES ('lower');
+INSERT INTO É VALUES ('upper');" },
             { "index, view, trigger and sqlite_sequence", @"
 CREATE TABLE tbl (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE);
 CREATE INDEX tbl_name ON tbl (name DESC);
@@ -125,6 +141,14 @@ INSERT INTO tbl (v, w, k) VALUES ('first', 1, 'b'), ('second', 2, 'a');" },
     [Theory]
     [MemberData(nameof(PageSizes))]
     public void PageSize(string name, string script) => SqliteParity.AssertSameAsSqlite(script);
+
+    /// <summary>
+    /// Bytes reserved at the end of each page shrink the usable size that the cell and overflow layout is computed
+    /// from. 32 of 512 leaves 480, the smallest usable size SQLite allows.
+    /// https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
+    /// </summary>
+    [Fact]
+    public void ReservedBytesPerPage() => SqliteParity.AssertSameAsSqlite(32, PageSizeScript(512));
 
     [Theory]
     [MemberData(nameof(BTreeShapes))]

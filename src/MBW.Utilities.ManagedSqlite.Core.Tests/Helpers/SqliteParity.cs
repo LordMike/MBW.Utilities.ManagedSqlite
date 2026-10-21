@@ -32,13 +32,30 @@ internal static class SqliteParity
     public static void AssertSameAsSqlite(string script) => AssertSameAsSqlite(script, data => data);
 
     /// <summary>
+    /// As <see cref="AssertSameAsSqlite(string)"/>, for a database with <paramref name="reservedBytes"/> unused bytes at
+    /// the end of every page (the header's "reserved space", offset 20), which no SQL statement can set.
+    /// </summary>
+    public static void AssertSameAsSqlite(int reservedBytes, string script)
+    {
+        byte[] data;
+        using (SqliteConnection connection = Run(script, reservedBytes))
+            data = Serialize(connection);
+
+        Assert.Equal(reservedBytes, data[20]);
+        AssertSameAsSqlite(data);
+    }
+
+    /// <summary>
     /// Both SQLite and the library read the database file that <paramref name="script"/> produced, after
     /// <paramref name="patch"/> has changed its bytes, for cases SQLite itself never writes.
     /// </summary>
     public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch)
     {
-        byte[] data = patch(Build(script));
+        AssertSameAsSqlite(patch(Build(script)));
+    }
 
+    private static void AssertSameAsSqlite(byte[] data)
+    {
         string expected;
         using (SqliteConnection connection = OpenBytes(data))
             expected = DumpWithSqlite(connection);
@@ -177,12 +194,21 @@ internal static class SqliteParity
     }
 
     /// <summary>
-    /// Runs <paramref name="script"/> against a new in-memory database; nothing touches the disk.
+    /// Runs <paramref name="script"/> against a new in-memory database; nothing touches the disk. A database with
+    /// <paramref name="reservedBytes"/> gets them before the script runs, through SQLITE_FCNTL_RESERVE_BYTES
+    /// (https://www.sqlite.org/c3ref/c_fcntl_begin_atomic_write.html#sqlitefcntlreservebytes).
     /// </summary>
-    private static SqliteConnection Run(string script)
+    private static SqliteConnection Run(string script, int reservedBytes = 0)
     {
         SqliteConnection connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
+
+        if (reservedBytes != 0)
+        {
+            int rc = sqlite3_file_control(connection.Handle.DangerousGetHandle(), "main", SqliteFcntlReserveBytes, ref reservedBytes);
+            if (rc != raw.SQLITE_OK)
+                throw new InvalidOperationException($"sqlite3_file_control failed: {rc}");
+        }
 
         using SqliteCommand command = connection.CreateCommand();
         command.CommandText = script;
@@ -190,6 +216,12 @@ internal static class SqliteParity
 
         return connection;
     }
+
+    private const int SqliteFcntlReserveBytes = 38;
+
+    // SQLitePCLRaw does not wrap sqlite3_file_control, so it is called in the SQLite library it loaded, e_sqlite3
+    [DllImport("e_sqlite3", CallingConvention = CallingConvention.Cdecl)]
+    private static extern int sqlite3_file_control(IntPtr db, [MarshalAs(UnmanagedType.LPUTF8Str)] string dbName, int op, ref int arg);
 
     /// <summary>
     /// Opens a database file's bytes with SQLite, read-only and in memory; nothing touches the disk. Uses
