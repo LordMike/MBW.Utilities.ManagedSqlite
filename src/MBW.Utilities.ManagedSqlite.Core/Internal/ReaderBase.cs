@@ -116,6 +116,10 @@ internal sealed class ReaderBase : IDisposable
         if (stream == null)
             throw new ArgumentNullException(nameof(stream));
 
+        // A caller error, so it fails for every file, not only for those whose encoding field is 0
+        if (settings.FallbackEncoding is { } fallback && fallback is not (SqliteEncoding.UTF8 or SqliteEncoding.UTF16LE or SqliteEncoding.UTF16BE))
+            throw new SqliteInvalidEncodingException(fallback);
+
         byte[] headerData = new byte[DatabaseHeader.HeaderSize];
 
         int read = stream.ReadFully(headerData, 0, headerData.Length);
@@ -168,7 +172,7 @@ internal sealed class ReaderBase : IDisposable
             SqliteEncoding.UTF8 => Encoding.UTF8,
             SqliteEncoding.UTF16LE => Encoding.Unicode,
             SqliteEncoding.UTF16BE => Encoding.BigEndianUnicode,
-            _ => throw new SqliteInvalidEncodingException(textEncoding)
+            _ => throw new InvalidOperationException($"unexpected encoding {textEncoding}")
         };
 
         return new ReaderBase(stream, source, header, settings, textEncoding, encoding);
