@@ -74,6 +74,8 @@ internal sealed class ReaderBase : IDisposable
         uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
+        // The pages that do exist are intact in such a file (truncated, or a wrong header), so this is a strict check that a
+        // Lenient validation mode may replace by using the file's count; see issue #58.
         if (headerSizeValid && header.DatabaseSizeInPages > filePages)
             throw new SqliteCorruptException($"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}", structure: "file length");
 
