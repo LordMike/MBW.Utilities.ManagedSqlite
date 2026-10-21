@@ -139,10 +139,8 @@ public sealed class Sqlite3Table
             if (dataSizeInCell < dataSize)
                 throw new SqliteCorruptException($"the overflow chain of {RowName(rowId)} ended with {dataSize - dataSizeInCell} bytes of the payload left", page.Page, "overflow chain");
 
-            // All data is on this page
-            _reader.SeekPage(page.Page, dataOffset);
-            if (_reader.Read(payload, 0, payloadSize) != payloadSize)
-                throw new EndOfStreamException();
+            // All data is on this page, which the reader has in memory
+            _reader.ReadFromPage(page.Page, dataOffset, payload, 0, payloadSize);
         }
         else
         {
