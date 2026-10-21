@@ -29,7 +29,11 @@ internal sealed class Sqlite3Record
     private readonly byte[] _payload;
 
     private readonly int _length;
-    private readonly long _headerSize;
+
+    /// <summary>
+    /// The header size (SQLite's <c>aOffset[0]</c>), read by the first <see cref="Parse"/>
+    /// </summary>
+    private long _headerSize;
 
     /// <summary>
     /// Where the next serial type starts, as SQLite's <c>iHdrOffset</c>
@@ -37,11 +41,16 @@ internal sealed class Sqlite3Record
     private int _headerPos;
 
     /// <summary>
-    /// Serial types of the fields parsed so far, and the offsets of their values: field i's value starts at
-    /// <c>_offsets[i]</c>, and <c>_offsets[0]</c> is the header size (SQLite's <c>aType</c> and <c>aOffset</c>)
+    /// Field i's serial type at <c>[2 * i]</c> and the offset of its value at <c>[2 * i + 1]</c> (SQLite's
+    /// <c>aType</c> and <c>aOffset</c>), for the fields parsed so far. Allocated by the first <see cref="Parse"/>, so a
+    /// row whose values are never read costs nothing here.
     /// </summary>
-    private long[]? _types;
-    private long[]? _offsets;
+    private long[]? _fields;
+
+    /// <summary>
+    /// Where the value after the last parsed field starts (SQLite's <c>aOffset[nHdrParsed]</c>)
+    /// </summary>
+    private long _nextOffset;
 
     /// <summary>
     /// Fields parsed so far (SQLite's <c>nHdrParsed</c>), -1 before the first parse
@@ -55,22 +64,6 @@ internal sealed class Sqlite3Record
         _rowId = rowId;
         _payload = payload;
         _length = length;
-
-        // The header size is a varint at the start of the payload. A 0-byte payload has none, and SQLite reads the byte
-        // after the cell instead (aOffset[0] = pC->aRow[0]), which the caller put in the payload's one byte.
-        int pos = 0;
-        bool read = TryReadVarInt32(payload, Math.Max(length, 1), ref pos, out _headerSize);
-        _headerPos = pos;
-
-        // REC-03, CELL-21: a header larger than the payload, or larger than any record SQLite writes, is corrupt.
-        // SQLite tests this only when the header is not in the cell's local bytes, but a header that is local is no larger
-        // than they are, so the test holds for every record. OP_Column in vdbe.c:
-        //   if( aOffset[0] > 98307 || aOffset[0] > pC->payloadSize ){
-        //     goto op_column_corrupt;
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3072 (OP_Column)
-        // A header size that runs past the payload is larger than the payload.
-        Checks.Strict(read && _headerSize <= MaxHeaderSize && _headerSize <= length, "REC-03",
-            $"record header size {_headerSize} of {RowName} is outside the payload of {length} bytes", page, "record header");
     }
 
     private string RowName => _rowId.HasValue ? $"row {_rowId.Value}" : "a WITHOUT ROWID row";
@@ -101,13 +94,14 @@ internal sealed class Sqlite3Record
             return false;
         }
 
-        value = Decode(_types![index], (int)_offsets![index]);
+        value = Decode(_fields![2 * index], (int)_fields[2 * index + 1]);
         return true;
     }
 
     /// <summary>
     /// Parses the header up to and including field <paramref name="p2"/>, or to its end. This is SQLite's
-    /// op_column_read_header loop, with its checks on the part parsed so far.
+    /// op_column_read_header loop, with its checks on the part parsed so far. Like SQLite, the state moves on only when
+    /// the checks pass, so a record that failed fails again on every read.
     /// </summary>
     private void Parse(int p2)
     {
@@ -116,10 +110,28 @@ internal sealed class Sqlite3Record
 
         if (_parsed < 0)
         {
-            _parsed = 0;
-            _offsets = new long[Math.Min(16, _headerSize + 1)];
-            _types = new long[_offsets.Length];
-            _offsets[0] = _headerSize;
+            // The header size is a varint at the start of the payload, read when a value is first read, as OP_Column
+            // reads it. A 0-byte payload has none, and SQLite reads the byte after the cell instead
+            // (aOffset[0] = pC->aRow[0]), which the caller put in the payload's one byte.
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3048 (OP_Column)
+            int pos = 0;
+            bool read = TryReadVarInt32(_payload, Math.Max(_length, 1), ref pos, out long headerSize);
+
+            // REC-03, CELL-21: a header larger than the payload, or larger than any record SQLite writes, is corrupt.
+            // SQLite tests this only when the header is not in the cell's local bytes, but a header that is local is no
+            // larger than they are, so the test holds for every record. OP_Column in vdbe.c:
+            //   if( aOffset[0] > 98307 || aOffset[0] > pC->payloadSize ){
+            //     goto op_column_corrupt;
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3072 (OP_Column)
+            // A header size varint that runs past the payload is taken as larger than it. SQLite reads on into the bytes
+            // after the cell there, which only matters for a varint that still decodes to 0.
+            Checks.Strict(read && headerSize <= MaxHeaderSize && headerSize <= _length, "REC-03",
+                $"record header size {(read ? headerSize.ToString() : "varint")} of {RowName} runs past the payload of {_length} bytes", _page, "record header");
+
+            _headerSize = headerSize;
+            _headerPos = pos;
+            _nextOffset = headerSize;
+            _fields = new long[2 * Math.Min(8, headerSize + 1)];
 
             // REC-04, CELL-22: a header size of 0 is a record of no fields, so every column reads as its default or NULL.
             // SQLite parses one serial type past the (empty) header, finds the record corrupt, and then forgives it:
@@ -127,9 +139,10 @@ internal sealed class Sqlite3Record
             //     i = 0;
             //     zHdr = zEndHdr;
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3145 (OP_Column)
-            if (_headerSize == 0)
+            if (headerSize == 0)
             {
                 _headerPos = 0;
+                _parsed = 0;
                 return;
             }
         }
@@ -141,28 +154,27 @@ internal sealed class Sqlite3Record
 
         // The first parse reads at least one serial type, even when the header size leaves no room for one (a header
         // size of 1), which then fails the checks below (REC-05)
-        int i = _parsed;
-        long offset = _offsets![i];
+        int i = Math.Max(_parsed, 0);
+        int headerPos = _headerPos;
+        long offset = _nextOffset;
         bool overread = false;
         do
         {
-            if (i + 1 == _offsets.Length)
-            {
-                Array.Resize(ref _offsets, _offsets.Length * 2);
-                Array.Resize(ref _types, _offsets.Length);
-            }
+            if (2 * i + 2 > _fields!.Length)
+                Array.Resize(ref _fields, _fields.Length * 2);
 
             // A serial type that runs past the payload runs past the header too, which the checks below reject
-            if (!TryReadVarInt32(_payload, _length, ref _headerPos, out long serialType))
+            if (!TryReadVarInt32(_payload, _length, ref headerPos, out long serialType))
             {
                 overread = true;
                 break;
             }
 
-            _types![i] = serialType;
+            _fields[2 * i] = serialType;
+            _fields[2 * i + 1] = offset;
             offset += SerialTypeSize(serialType);
-            _offsets[++i] = offset;
-        } while (i <= p2 && _headerPos < _headerSize);
+            i++;
+        } while (i <= p2 && headerPos < _headerSize);
 
         // REC-05, CELL-23: the record is corrupt if (1) the serial types run past the declared header size, (2) the whole
         // header is parsed but the values do not fill the payload exactly, or (3) the values run past the payload.
@@ -176,12 +188,14 @@ internal sealed class Sqlite3Record
         //       ...
         //       goto op_column_corrupt;
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3142 (OP_Column)
-        bool corrupt = overread || (_headerPos >= _headerSize && (_headerPos > _headerSize || offset != _length)) || offset > _length;
+        bool corrupt = overread || (headerPos >= _headerSize && (headerPos > _headerSize || offset != _length)) || offset > _length;
         Checks.Strict(!corrupt, "CELL-23",
-            $"record of {RowName} has {(overread ? "a serial type past its payload" : $"a {_headerPos} byte header (declared {_headerSize}) and values up to byte {offset}")}, but the payload is {_length} bytes",
+            $"record of {RowName} has {(overread ? "a serial type past its payload" : $"a {headerPos} byte header (declared {_headerSize}) and values up to byte {offset}")}, but the payload is {_length} bytes",
             _page, "record header");
 
         _parsed = i;
+        _headerPos = headerPos;
+        _nextOffset = offset;
     }
 
     /// <summary>

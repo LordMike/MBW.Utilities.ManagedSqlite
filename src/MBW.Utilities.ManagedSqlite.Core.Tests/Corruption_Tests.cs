@@ -394,6 +394,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [InlineData("header size 0")]
     [InlineData("surplus field")]
     [InlineData("0-byte payload")]
+    [InlineData("WITHOUT ROWID header size 0")]
     public void Record_ReadLikeSqlite(string variant) =>
         SqliteParity.AssertSameAsSqlite(Script, data =>
         {
@@ -407,6 +408,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
                 case "surplus field":
                     DropSmallDataColumn(p);
                     p.WriteByte(record + 3, 0x7F);
+                    break;
+                case "WITHOUT ROWID header size 0":
+                    p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _), 0);
                     break;
                 default:
                     p.WriteByte(record - 2, 0).WriteByte(record, 0);
@@ -432,6 +436,19 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
         SqliteCorruptException ex = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadEverything(data)));
         Assert.Equal(check, ex.Check);
+    }
+
+    // A record that failed to read fails again on the next read, as in SQLite, instead of reading as fewer fields
+    [Fact]
+    public void Record_FailsOnEveryRead()
+    {
+        DbPatcher p = new DbPatcher(Base);
+        byte[] data = p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 1).Data;
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        Sqlite3Row row = db.GetTable("Small").EnumerateRows().First();
+        Assert.Equal("CELL-23", Assert.Throws<SqliteCorruptException>(() => row.TryGetOrdinal(1, out _)).Check);
+        Assert.Equal("CELL-23", Assert.Throws<SqliteCorruptException>(() => row.TryGetOrdinal(1, out _)).Check);
     }
 
     /// <summary>
