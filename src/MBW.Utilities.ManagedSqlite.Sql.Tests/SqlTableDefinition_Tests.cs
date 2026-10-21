@@ -10,7 +10,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
 
 /// <summary>
 /// The table definition's API, and what the parser does with SQL that SQLite would not store. Syntax SQLite does
-/// store is compared with SQLite in <see cref="SqlSchemaParity_Tests"/>.
+/// store is compared with SQLite in <see cref="SqlCreateTable_Tests"/>.
 /// </summary>
 public class SqlTableDefinition_Tests
 {

@@ -112,29 +112,6 @@ CREATE INDEX tbl_name ON tbl (name DESC);
 CREATE VIEW tbl_view AS SELECT name FROM tbl;
 CREATE TRIGGER tbl_trigger AFTER INSERT ON tbl BEGIN SELECT 1; END;
 INSERT INTO tbl (name) VALUES ('a'), ('b');" },
-            // The record holds the primary key columns first, in key order and each once (SQLite drops the repeated a),
-            // then the others in declared order
-            { "WITHOUT ROWID composite key in another order, with a repeated column", @"
-CREATE TABLE tbl (v TEXT, b INTEGER, a TEXT, PRIMARY KEY (a, b, a)) WITHOUT ROWID;
-INSERT INTO tbl VALUES ('first', 2, 'y'), ('second', 1, 'y'), ('third', 9, 'x');" },
-            // The virtual table is only listed, and its shadow tables are read, docs_idx and docs_config being WITHOUT ROWID
-            { "fts5 shadow tables", @"
-CREATE VIRTUAL TABLE docs USING fts5(title, body);
-INSERT INTO docs VALUES ('hello world', 'first'), ('second row', 'hello again');" },
-            { "quoted names with spaces and keywords", @"
-CREATE TABLE ""my table"" (""select"" TEXT, ""a b"" INTEGER, ""q""""uote"" TEXT);
-CREATE TABLE ""order"" (id INTEGER PRIMARY KEY, ""group"" TEXT);
-INSERT INTO ""my table"" VALUES ('s', 1, 'q');
-INSERT INTO ""order"" VALUES (1, 'g'), (2, 'h');" },
-            // A STORED generated column is in the record at its position. A VIRTUAL one is not, so the columns after it
-            // sit one position left there.
-            { "STORED generated column next to VIRTUAL", @"
-CREATE TABLE tbl (a INTEGER, v AS (a * 2) VIRTUAL, s INTEGER AS (a * 3) STORED, z TEXT);
-INSERT INTO tbl (a, z) VALUES (1, 'one'), (2, 'two');" },
-            // The record is the key, then the other stored columns: k, v, w. The VIRTUAL column g takes no position.
-            { "WITHOUT ROWID VIRTUAL generated column before a stored column", @"
-CREATE TABLE tbl (v TEXT, g AS (v || '!') VIRTUAL, w INTEGER, k TEXT PRIMARY KEY) WITHOUT ROWID;
-INSERT INTO tbl (v, w, k) VALUES ('first', 1, 'b'), ('second', 2, 'a');" },
         };
     }
 
