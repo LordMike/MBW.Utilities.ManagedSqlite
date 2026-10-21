@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core;
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using Xunit;
@@ -59,16 +60,28 @@ public class SqlTableDefinition_Tests
         Assert.Null(definition);
     }
 
+    // A view or a virtual table has no table definition, which is the caller's error, not damage
     [Fact]
-    public void GetTableDefinitionOnUnparseableSchemaThrows()
+    public void GetTableDefinitionOfNonTableThrows()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build("CREATE TABLE t(a); CREATE VIEW v AS SELECT a FROM t;")));
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(
+            "CREATE TABLE t(a); CREATE VIEW v AS SELECT a FROM t; CREATE VIRTUAL TABLE f USING fts5(a);")));
 
-        Sqlite3SchemaRow view = db.GetTables().Single(s => s.Name == "v");
+        Assert.Throws<InvalidOperationException>(() => db.GetTables().Single(s => s.Name == "v").GetTableDefinition());
+        Assert.Throws<NotSupportedException>(() => db.GetTables().Single(s => s.Name == "f").GetTableDefinition());
+    }
 
-        Assert.Throws<InvalidOperationException>(() => view.GetTableDefinition());
+    // SCHEMA-22: SQLite finds the whole schema malformed. We fail when the table's definition is asked for, every time,
+    // and the other tables stay readable.
+    [Fact]
+    public void GetTableDefinitionOfMalformedSqlIsCorrupt()
+    {
+        byte[] data = SqliteParity.Build("CREATE TABLE t(a); CREATE TABLE u(b); PRAGMA writable_schema = ON; UPDATE sqlite_schema SET sql = 'CREATE TABLE t(a' WHERE name = 't';");
+        SqliteParity.AssertSqliteReportsCorrupt(data, "u");
 
-        // A second call (cached failure) throws the same way
-        Assert.Throws<InvalidOperationException>(() => view.GetTableDefinition());
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        Assert.Equal("SCHEMA-22", Assert.Throws<SqliteCorruptException>(() => db.GetTable("t").GetTableDefinition()).Check);
+        Assert.Equal("SCHEMA-22", Assert.Throws<SqliteCorruptException>(() => db.GetTable("t").GetTableDefinition()).Check);
+        Assert.Equal("b", db.GetTable("u").GetTableDefinition().Columns.Single().Name);
     }
 }
