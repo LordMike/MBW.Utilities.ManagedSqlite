@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
@@ -16,8 +17,9 @@ public static class SqlExtensions
     /// <exception cref="SqliteCorruptException">The table's SQL does not parse</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
     {
-        // Only a table has a table definition, so asking for one elsewhere is the caller's error, not damage
-        if (!AsciiCaseInsensitiveComparer.Instance.Equals(schema.Type, "table"))
+        // Only a table has a table definition, so asking for one elsewhere is the caller's error, not damage. The row's
+        // statement decides, as in SQLite; Strict has made sure the type agrees (SCHEMA-26).
+        if (schema.Kind is not (SchemaObjectKind.Table or SchemaObjectKind.VirtualTable))
             throw new InvalidOperationException($"{schema.Type} '{schema.Name}' is not a table, so it has no table definition");
 
         if (schema.IsVirtual)
@@ -26,8 +28,10 @@ public static class SqlExtensions
         // A null value caches that the SQL could not be parsed
         Dictionary<Sqlite3SchemaRow, SqlTableDefinition?> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition?>());
 
+        bool parsed = false;
         if (!definitionCache.TryGetValue(schema, out SqlTableDefinition? definition))
         {
+            parsed = true;
             if (!SqlParser.TryParse(schema.Sql, out definition))
                 definitionCache[schema] = null;
             else
@@ -43,6 +47,15 @@ public static class SqlExtensions
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L150 (sqlite3InitCallback)
         Checks.Strict(definition != null, "SCHEMA-22", $"malformed database schema ({schema.Name}): its SQL does not parse as CREATE TABLE",
             structure: "table definition");
+
+        // DDL-03: the row's name must be the name in its statement, ignoring ASCII case. SQLite checks it while it
+        // loads the schema, and skips it with writable_schema on. sqlite3CheckObjectName in build.c:
+        //    || sqlite3_stricmp(zName, db->init.azInit[1])
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1047 (sqlite3CheckObjectName)
+        // Lenient reports it once, when the SQL is parsed, and reads on: the table's rows are the same under either name.
+        if (parsed || schema.Database.Settings.Validation == SqliteValidation.Strict)
+            Checks.Relaxable(AsciiCaseInsensitiveComparer.Instance.Equals(definition!.TableName, schema.Name), schema.Database.Settings, "DDL-03",
+                $"malformed database schema ({schema.Name}): its SQL creates table {definition.TableName}", structure: "table definition");
 
         return definition!;
     }

@@ -60,7 +60,9 @@ internal static class SqliteParity
         string expected;
         using (SqliteConnection connection = Open(data))
         {
-            List<object[]> schema = Query(connection, "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY rowid");
+            // The schema as SQLite's schema loader sees it: every value as text, ending at a NUL (SCHEMA-08, SCHEMA-09)
+            List<object[]> schema = Query(connection, "SELECT CAST(type AS TEXT), CAST(name AS TEXT), CAST(tbl_name AS TEXT), CAST(sql AS TEXT) FROM sqlite_master ORDER BY rowid")
+                .Select(r => r.Select(v => v is string text && text.IndexOf('\0') >= 0 ? text.Substring(0, text.IndexOf('\0')) : v).ToArray()).ToList();
             expected = Dump(Query(connection, "PRAGMA encoding")[0][0].ToString().Replace("-", "").ToUpperInvariant(),
                 Query(connection, "PRAGMA page_size")[0][0].ToString(),
                 schema.Select(s => ((string)s[0], (string)s[1], (string)s[2], s[3] as string)),
@@ -243,7 +245,7 @@ internal static class SqliteParity
 
     private static bool IsReadableTable(string type, string sql)
     {
-        return type == "table" && (sql == null || !sql.TrimStart().StartsWith("CREATE VIRTUAL TABLE", StringComparison.OrdinalIgnoreCase));
+        return string.Equals(type, "table", StringComparison.OrdinalIgnoreCase) && (sql == null || !sql.TrimStart().StartsWith("CREATE VIRTUAL TABLE", StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

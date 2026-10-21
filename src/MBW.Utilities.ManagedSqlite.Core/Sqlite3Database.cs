@@ -24,6 +24,8 @@ public sealed class Sqlite3Database : IDisposable
 
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
+    internal Sqlite3Settings Settings => _reader.Settings;
+
     public Sqlite3Database(Stream file, Sqlite3Settings? settings = null)
     {
         if (file == null)
@@ -111,7 +113,9 @@ public sealed class Sqlite3Database : IDisposable
 
         foreach (Sqlite3SchemaRow tbl in GetTables())
         {
-            if (tbl.Type == "table" && names.Equals(tbl.Name, name))
+            // A table is known by its statement, as in SQLite. The type column must agree in Strict (SCHEMA-26), in
+            // any case, so "TABLE" is a table too.
+            if (tbl.Kind is SchemaObjectKind.Table or SchemaObjectKind.VirtualTable && names.Equals(tbl.Name, name))
                 return tbl;
         }
 

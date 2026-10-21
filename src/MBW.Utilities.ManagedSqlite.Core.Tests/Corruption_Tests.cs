@@ -446,6 +446,43 @@ PRAGMA writable_schema = ON;
     public void SchemaRow_RootPageBlob() =>
         SqliteParity.AssertSameAsSqlite(SchemaScript + "UPDATE sqlite_schema SET rootpage = CAST(CAST(rootpage AS TEXT) AS BLOB) WHERE name = 'u';");
 
+    /// <summary>
+    /// SCHEMA-26, DDL-03: a CREATE row's type, name and tbl_name must agree with its SQL. SQLite skips this with
+    /// writable_schema on, so Lenient reports it and reads the table by its statement.
+    /// </summary>
+    [Theory]
+    [InlineData("SCHEMA-26", "type = 'index' WHERE name = 'u'")]
+    [InlineData("SCHEMA-26", "type = NULL WHERE name = 'u'")]
+    [InlineData("SCHEMA-26", "tbl_name = 't' WHERE name = 'u'")]
+    [InlineData("DDL-03", "sql = 'CREATE TABLE w (b)' WHERE name = 'u'")]
+    public void SchemaRow_NamesDisagreeWithSql(string check, string update)
+    {
+        byte[] data = SqliteParity.Build(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+        SqliteParity.AssertSqliteReportsCorrupt(data, "t");
+
+        SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() =>
+        {
+            using Sqlite3Database strict = new Sqlite3Database(new MemoryStream(data));
+            strict.GetTable("u").GetTableDefinition();
+        });
+        Assert.Equal(check, ex.Check);
+
+        List<string> issues = new List<string>();
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        SqliteParity.AssertTablesSameAsSqlite(SchemaScript, db, "t", "u");
+        Assert.Equal(new[] { check }, issues);
+    }
+
+    /// <summary>
+    /// SCHEMA-08, SCHEMA-09, SCHEMA-26: what SQLite reads on from. Every value reads as text, a BLOB too, and ends at a
+    /// NUL; the type compares ignoring ASCII case.
+    /// </summary>
+    [Theory]
+    [InlineData("type = 'TABLE' WHERE name = 'u'")]
+    [InlineData("type = CAST(type AS BLOB), name = CAST(name AS BLOB), tbl_name = CAST(tbl_name AS BLOB), sql = CAST(sql AS BLOB) WHERE name = 'u'")]
+    [InlineData("sql = sql || char(0) || 'garbage ((' WHERE name = 'u'")]
+    public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+
     // SCHEMA-58: SQLite tolerates a rootpage on a virtual table, and never reads it as a b-tree
     [Fact]
     public void SchemaRow_VirtualTableWithRootPage()

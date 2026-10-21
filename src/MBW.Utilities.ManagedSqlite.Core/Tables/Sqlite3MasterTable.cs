@@ -25,7 +25,7 @@ internal class Sqlite3MasterTable
             string? rootPageText = Field(3);
             string? sql = Field(4);
 
-            uint rootPage = CheckRow(reader, name, rootPageText, sql, out SchemaObjectKind kind);
+            uint rootPage = CheckRow(reader, type, name, tableName, rootPageText, sql, out SchemaObjectKind kind);
 
             // CheckRow fails a row without a name
             Tables.Add(new Sqlite3SchemaRow(db, type, name!, tableName, rootPage, sql, kind));
@@ -37,7 +37,7 @@ internal class Sqlite3MasterTable
     /// while it loads the schema, so a bad row fails the database open, whatever its type. Returns the root page.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L96 (sqlite3InitCallback)
     /// </summary>
-    private static uint CheckRow(ReaderBase reader, string? name, string? rootPageText, string? sql, out SchemaObjectKind kind)
+    private static uint CheckRow(ReaderBase reader, string? type, string? name, string? tableName, string? rootPageText, string? sql, out SchemaObjectKind kind)
     {
         // SCHEMA-11: a NULL rootpage is corrupt, for every kind of row:
         //   if( argv[3]==0 ){
@@ -91,6 +91,31 @@ internal class Sqlite3MasterTable
         // SCHEMA-22: SQL that starts with "cr" but is not a CREATE statement does not parse
         Checks.Strict(kind != SchemaObjectKind.Unknown, "SCHEMA-22", $"malformed database schema ({name ?? "?"}): its SQL is not a CREATE statement",
             1, "sqlite_schema");
+
+        // SCHEMA-26, DDL-03: the type must name the statement's kind, and a table's or view's tbl_name its own name, both
+        // compared ignoring ASCII case. (The name itself is compared with the statement when the SQL is parsed.)
+        // sqlite3StartTable passes its own name as zTblName. sqlite3CheckObjectName in build.c:
+        //   if( sqlite3_stricmp(zType, db->init.azInit[0])
+        //    || sqlite3_stricmp(zName, db->init.azInit[1])
+        //    || sqlite3_stricmp(zTblName, db->init.azInit[2])
+        //   ){
+        //     sqlite3ErrorMsg(pParse, ""); /* corruptSchema() will supply the error */
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1046 (sqlite3CheckObjectName)
+        // SQLite skips this with writable_schema on, and the rows read the same either way, so Lenient reports it and
+        // goes by the statement: a table is found by its kind, not its type column.
+        string expectedType = kind switch
+        {
+            SchemaObjectKind.Table or SchemaObjectKind.VirtualTable => "table",
+            SchemaObjectKind.View => "view",
+            SchemaObjectKind.Index => "index",
+            _ => "trigger"
+        };
+        AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
+        Checks.Relaxable(names.Equals(type, expectedType), reader.Settings, "SCHEMA-26",
+            $"malformed database schema ({name}): its type is {type ?? "NULL"}, but its SQL creates a {expectedType}", 1, "sqlite_schema");
+        if (kind is SchemaObjectKind.Table or SchemaObjectKind.VirtualTable or SchemaObjectKind.View)
+            Checks.Relaxable(names.Equals(tableName, name), reader.Settings, "SCHEMA-26",
+                $"malformed database schema ({name}): its tbl_name is {tableName ?? "NULL"}, not its own name", 1, "sqlite_schema");
 
         // SCHEMA-19: a table, view or virtual table with rootpage 1 is taken for the schema table itself, named
         // sqlite_master, so its name no longer matches the row and the schema is malformed. sqlite3StartTable in build.c
