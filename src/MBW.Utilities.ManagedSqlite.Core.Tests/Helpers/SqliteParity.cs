@@ -168,7 +168,7 @@ internal static class SqliteParity
 
         try
         {
-            IntPtr copy = raw.sqlite3_malloc(data.Length);
+            IntPtr copy = raw.sqlite3_malloc(Math.Max(1, data.Length));
             if (copy == IntPtr.Zero)
                 throw new OutOfMemoryException();
 

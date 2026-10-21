@@ -208,8 +208,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     // File length
 
+    // HDR-01: SQLite opens a 0-byte file as an empty database
     [Fact]
-    public void Truncated_EmptyFile() => AssertCorrupt("file length", p => p.Truncate(0));
+    public void Truncated_EmptyFile() => SqliteParity.AssertSameAsSqlite("", _ => new byte[0]);
 
     [Fact]
     public void Truncated_InsideTheHeader() => AssertCorrupt("file length", p => p.Truncate(50));

@@ -19,6 +19,11 @@ internal sealed class ReaderBase : IDisposable
     public long Position => _stream.Position;
 
     private readonly Stream _stream;
+
+    /// <summary>
+    /// The caller's stream when <see cref="_stream"/> stands in for it (a 0-byte file), so it is still disposed
+    /// </summary>
+    private readonly Stream? _source;
     private readonly Encoding _encoding;
     private readonly byte[] _uint32Buffer = new byte[4];
 
@@ -55,9 +60,10 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     public uint PageCount { get; }
 
-    private ReaderBase(Stream stream, DatabaseHeader header, Sqlite3Settings settings, SqliteEncoding textEncoding, Encoding encoding)
+    private ReaderBase(Stream stream, Stream? source, DatabaseHeader header, Sqlite3Settings settings, SqliteEncoding textEncoding, Encoding encoding)
     {
         _stream = stream;
+        _source = source;
         Length = stream.Length;
 
         Header = header;
@@ -114,6 +120,30 @@ internal sealed class ReaderBase : IDisposable
 
         int read = stream.ReadFully(headerData, 0, headerData.Length);
 
+        // HDR-01, PAGE-17: a 0-byte file is a valid empty database. SQLite skips every header check when the file has no
+        // pages, and a cursor on the schema's root page 1 is then empty. lockBtree and btreeCursor in btree.c:
+        //   if( nPage>0 ){
+        //     ...
+        //   if( iTable<=1 ){
+        //     if( iTable<1 ){
+        //       return SQLITE_CORRUPT_BKPT;
+        //     }else if( btreePagecount(pBt)==0 ){
+        //       assert( wrFlag==0 );
+        //       iTable = 0;
+        //     }
+        //   }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3306 (lockBtree)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L4719 (btreeCursor)
+        // This reader stands in the database SQLite would create in that file: one empty schema page with the default
+        // page size, and an encoding field of 0, so the encoding is the default (or FallbackEncoding) as in SQLite.
+        Stream? source = null;
+        if (read == 0)
+        {
+            source = stream;
+            stream = new MemoryStream(EmptyDatabase(), false);
+            read = stream.ReadFully(headerData, 0, headerData.Length);
+        }
+
         DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
 
         // HDR-30: SQLite never rejects the text encoding field. A non-zero value is masked to its low two bits, where 0
@@ -141,12 +171,37 @@ internal sealed class ReaderBase : IDisposable
             _ => throw new SqliteInvalidEncodingException(textEncoding)
         };
 
-        return new ReaderBase(stream, header, settings, textEncoding, encoding);
+        return new ReaderBase(stream, source, header, settings, textEncoding, encoding);
+    }
+
+    /// <summary>
+    /// A database of one page, 4096 bytes (SQLite's default page size), whose schema table is an empty leaf page
+    /// </summary>
+    private static byte[] EmptyDatabase()
+    {
+        const int pageSize = 4096;
+        byte[] data = new byte[pageSize];
+
+        Encoding.UTF8.GetBytes("SQLite format 3\0", 0, 16, data, 0);
+        data[16] = pageSize >> 8;
+        data[18] = 1; // write version: legacy
+        data[19] = 1; // read version: legacy
+        data[21] = 64; // payload fractions
+        data[22] = 32;
+        data[23] = 32;
+        data[31] = 1; // database size in pages, valid since the version-valid-for number (0) equals the change counter (0)
+        data[47] = 4; // schema format
+
+        data[100] = 0x0D; // leaf table b-tree page, no freeblocks, no cells
+        data[105] = pageSize >> 8; // cell content area starts at the end of the page
+
+        return data;
     }
 
     public void Dispose()
     {
         _stream.Dispose();
+        _source?.Dispose();
     }
 
     internal void CheckSize(uint sizeWanted, bool throwException = true)
