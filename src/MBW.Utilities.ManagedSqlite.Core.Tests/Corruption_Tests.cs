@@ -136,6 +136,13 @@ INSERT INTO Small VALUES (1, 'one', NULL), (2, 'two', zeroblob(1500)), (3, 'thre
     [Fact]
     public void Header_UsableSizeBelow480() => AssertCorrupt("database header", p => p.SetReservedSpace(255));
 
+    // SQLite refuses a read version above 2 (a format newer than it knows) and payload fractions other than 64, 32, 32
+    [Fact]
+    public void Header_ReadVersionAbove2() => AssertCorrupt("database header", p => p.SetReadVersion(3));
+
+    [Fact]
+    public void Header_PayloadFractionNot64() => AssertCorrupt("database header", p => p.SetMaxEmbeddedPayloadFraction(65));
+
     // The in-header database size is valid (SQLite wrote the change counter and version-valid-for fields), so it decides
     // how many pages the database has: more than the file holds is corrupt, and pages after it are not read.
     // lockBtree in btree.c: https://sqlite.org/src/file?name=src/btree.c; https://www.sqlite.org/fileformat.html#in_header_database_size

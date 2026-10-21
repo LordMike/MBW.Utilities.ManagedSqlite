@@ -135,5 +135,15 @@ internal sealed class DatabaseHeader
         uint usableSize = PageSize - ReservedSpaceAtEndOfPage;
         if (usableSize < 480)
             throw new SqliteCorruptException($"usable page size {usableSize} is less than 480 (page size {PageSize}, reserved space {ReservedSpaceAtEndOfPage})", structure: "database header");
+
+        // https://www.sqlite.org/fileformat.html#file_format_version_numbers
+        // A read version above 2 means a format this reader (and SQLite) does not know, so SQLite treats the file as not a database
+        if ((byte)ReadVersion > 2)
+            throw new SqliteCorruptException($"file format read version {(byte)ReadVersion} is not supported (1 or 2)", structure: "database header");
+
+        // https://www.sqlite.org/fileformat.html#payload_fractions
+        // The payload fractions must be 64, 32 and 32, and SQLite rejects a file with other values
+        if (MaximumEmbeddedPayloadFraction != 64 || MinimumEmbeddedPayloadFraction != 32 || LeafPayloadFraction != 32)
+            throw new SqliteCorruptException($"payload fractions {MaximumEmbeddedPayloadFraction}, {MinimumEmbeddedPayloadFraction}, {LeafPayloadFraction} must be 64, 32, 32", structure: "database header");
     }
 }
