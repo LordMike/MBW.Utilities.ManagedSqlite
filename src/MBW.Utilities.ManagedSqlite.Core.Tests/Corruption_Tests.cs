@@ -391,11 +391,71 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0));
 
-    // 0xFF is the 1-byte integer -1
+    // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read
+    [Fact]
+    public void SchemaRootPage_Zero() => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, 0));
+
+    // Schema rows. Each script edits sqlite_schema with writable_schema, after a schema of a table, a view, a table with
+    // an automatic index and a virtual table.
+    private const string SchemaScript = @"
+CREATE TABLE t (a); INSERT INTO t VALUES (1);
+CREATE TABLE u (b); INSERT INTO u VALUES (2);
+CREATE VIEW v AS SELECT a FROM t;
+CREATE TABLE k (x PRIMARY KEY);
+CREATE VIRTUAL TABLE f USING fts5(c);
+PRAGMA writable_schema = ON;
+";
+
+    /// <summary>
+    /// The checks SQLite makes on each sqlite_schema row while it loads the schema: the open fails in either mode
+    /// </summary>
     [Theory]
-    [InlineData(0)]
-    [InlineData(0xFF)]
-    public void SchemaRootPage_Invalid(byte rootPage) => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, rootPage));
+    [InlineData("SCHEMA-11", "rootpage = NULL WHERE name = 'u'")]
+    [InlineData("SCHEMA-11", "rootpage = NULL WHERE name = 'v'")]
+    [InlineData("SCHEMA-13", "sql = ' ' || sql WHERE name = 'u'")]
+    [InlineData("SCHEMA-13", "sql = '/*x*/' || sql WHERE name = 'u'")]
+    [InlineData("SCHEMA-13", "sql = 'SELECT 1' WHERE name = 'u'")]
+    [InlineData("SCHEMA-13", "name = NULL WHERE name = 'sqlite_autoindex_k_1'")]
+    [InlineData("SCHEMA-15", "rootpage = 1 WHERE name = 'sqlite_autoindex_k_1'")]
+    [InlineData("SCHEMA-15", "rootpage = '3x' WHERE name = 'sqlite_autoindex_k_1'")]
+    [InlineData("SCHEMA-17", "rootpage = -2 WHERE name = 'u'")]
+    [InlineData("SCHEMA-17", "rootpage = 2.5 WHERE name = 'u'")]
+    [InlineData("SCHEMA-17", "rootpage = 'abc' WHERE name = 'u'")]
+    [InlineData("SCHEMA-17", "rootpage = rootpage + 4294967296 WHERE name = 'u'")]
+    [InlineData("SCHEMA-17", "rootpage = 999 WHERE name = 'u'")]
+    [InlineData("SCHEMA-19", "rootpage = 1 WHERE name = 'u'")]
+    [InlineData("SCHEMA-19", "rootpage = 1 WHERE name = 'f'")]
+    [InlineData("SCHEMA-22", "sql = 'CRxATE TABLE u (b)' WHERE name = 'u'")]
+    [InlineData("SCHEMA-26", "name = NULL WHERE name = 'u'")]
+    [InlineData("DDL-58", "rootpage = 2 WHERE name = 'v'")]
+    public void SchemaRow_CorruptLikeSqlite(string check, string update)
+    {
+        byte[] data = SqliteParity.Build(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+        SqliteParity.AssertSqliteReportsCorrupt(data, "t");
+
+        foreach (SqliteValidation validation in new[] { SqliteValidation.Strict, SqliteValidation.Lenient })
+        {
+            Sqlite3Settings settings = new Sqlite3Settings { Validation = validation };
+            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), settings)).Check);
+        }
+    }
+
+    // SCHEMA-08: SQLite reads a rootpage stored as a BLOB of digits as text, so as that page. (Text digits would be
+    // stored as an integer, the column's affinity.)
+    [Fact]
+    public void SchemaRow_RootPageBlob() =>
+        SqliteParity.AssertSameAsSqlite(SchemaScript + "UPDATE sqlite_schema SET rootpage = CAST(CAST(rootpage AS TEXT) AS BLOB) WHERE name = 'u';");
+
+    // SCHEMA-58: SQLite tolerates a rootpage on a virtual table, and never reads it as a b-tree
+    [Fact]
+    public void SchemaRow_VirtualTableWithRootPage()
+    {
+        byte[] data = SqliteParity.Build(SchemaScript + "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 't') WHERE name = 'f';");
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        Assert.Throws<NotSupportedException>(() => db.GetTable("f"));
+        SqliteParity.AssertTablesSameAsSqlite(SchemaScript, db, "t", "u");
+    }
 
     // Row 1 is the last cell on Small's page. Its payload size (the 1-byte varint 7, before the rowid varint and the
     // record) becomes 127, which no longer fits in the page.

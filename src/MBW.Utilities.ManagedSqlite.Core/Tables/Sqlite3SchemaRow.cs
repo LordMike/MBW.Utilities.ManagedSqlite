@@ -1,10 +1,8 @@
-using System;
-
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 public sealed class Sqlite3SchemaRow
 {
-    internal Sqlite3SchemaRow(Sqlite3Database database, string type, string name, string tableName, uint rootPage, string? sql)
+    internal Sqlite3SchemaRow(Sqlite3Database database, string? type, string name, string? tableName, uint rootPage, string? sql, SchemaObjectKind kind)
     {
         Database = database;
         Type = type;
@@ -12,14 +10,24 @@ public sealed class Sqlite3SchemaRow
         TableName = tableName;
         RootPage = rootPage;
         Sql = sql;
+        Kind = kind;
     }
 
     public Sqlite3Database Database { get; }
-    public string Type { get; }
+
+    /// <summary>
+    /// The row's type, as stored: "table", "index", "view" or "trigger". It can be NULL for an index that a PRIMARY KEY
+    /// or UNIQUE constraint created, as SQLite does not read it there.
+    /// </summary>
+    public string? Type { get; }
 
     public string Name { get; }
 
-    public string TableName { get; }
+    /// <summary>
+    /// The table the row belongs to, as stored. It can be NULL for an index that a PRIMARY KEY or UNIQUE constraint
+    /// created, as SQLite does not read it there.
+    /// </summary>
+    public string? TableName { get; }
 
     public uint RootPage { get; }
 
@@ -27,10 +35,14 @@ public sealed class Sqlite3SchemaRow
 
     /// <summary>
     /// True if this is a virtual table (<c>CREATE VIRTUAL TABLE ... USING module(...)</c>).
-    /// Virtual tables have no b-tree in the database file (rootpage 0), so their contents cannot be read directly.
-    /// Any shadow tables the module creates (e.g. <c>name_content</c> for FTS5) are ordinary tables.
+    /// Virtual tables have no b-tree in the database file, so their contents cannot be read directly; a rootpage other
+    /// than 0, which SQLite tolerates, is not read either. Any shadow tables the module creates (e.g.
+    /// <c>name_content</c> for FTS5) are ordinary tables.
     /// </summary>
-    public bool IsVirtual => RootPage == 0 &&
-                             Sql != null &&
-                             Sql.TrimStart().StartsWith("CREATE VIRTUAL TABLE", StringComparison.OrdinalIgnoreCase);
+    public bool IsVirtual => Kind == SchemaObjectKind.VirtualTable;
+
+    /// <summary>
+    /// The kind of object the row's CREATE statement creates
+    /// </summary>
+    internal SchemaObjectKind Kind { get; }
 }

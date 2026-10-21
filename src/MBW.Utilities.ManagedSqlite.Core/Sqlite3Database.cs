@@ -57,10 +57,10 @@ public sealed class Sqlite3Database : IDisposable
 
         // Fake the schema for the sqlite_master table
         schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
-            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);");
+            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);", SchemaObjectKind.Table);
 
         Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
-        return new Sqlite3MasterTable(this, table);
+        return new Sqlite3MasterTable(this, _reader, table);
     }
 
     /// <summary>
