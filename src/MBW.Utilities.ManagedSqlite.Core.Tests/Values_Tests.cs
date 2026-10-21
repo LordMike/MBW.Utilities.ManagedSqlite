@@ -1,3 +1,4 @@
+using System;
 using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 using Xunit;
 
@@ -53,9 +54,35 @@ public class Values_Tests
     [InlineData("4.9e-324")]
     [InlineData("2.2250738585072014e-308")]
     [InlineData("0.1")]
+    [InlineData("1e999")]
+    [InlineData("-1e999")]
     public void Reals(string literal)
     {
         SqliteParity.AssertSameAsSqlite($"CREATE TABLE tbl (v REAL); INSERT INTO tbl VALUES ({literal});");
+    }
+
+    /// <summary>
+    /// SQLite stores NULL instead of a NaN (sqlite3VdbeMemSetDouble in vdbemem.c), so no SQL statement can put one in a
+    /// file; a NaN comes only from another writer or damage, and serialGet in vdbeaux.c reads it as NULL. The stored 1.5
+    /// (big-endian 3FF8000000000000, serial type 7) is overwritten with a NaN's bits (sign bit set, non-canonical
+    /// payload); the text column after it proves the 8 bytes are still consumed.
+    /// https://sqlite.org/src/file?name=src/vdbeaux.c, https://www.sqlite.org/fileformat.html#record_format
+    /// </summary>
+    [Fact]
+    public void NaNReadsAsNull()
+    {
+        const ulong bits = 0xFFF0000000000001UL;
+
+        SqliteParity.AssertSameAsSqlite("CREATE TABLE tbl (v REAL, w TEXT); INSERT INTO tbl VALUES (1.5, 'x');", data =>
+        {
+            int at = data.AsSpan().IndexOf(new byte[] { 0x3F, 0xF8, 0, 0, 0, 0, 0, 0 });
+            Assert.True(at > 0);
+
+            for (int i = 0; i < 8; i++)
+                data[at + i] = (byte)(bits >> (56 - 8 * i));
+
+            return data;
+        });
     }
 
     public static TheoryData<string, string> TextCases()
