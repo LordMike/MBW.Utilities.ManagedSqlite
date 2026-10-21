@@ -6,7 +6,9 @@ namespace MBW.Utilities.ManagedSqlite.Core;
 public sealed class Sqlite3Settings
 {
     /// <summary>
-    /// Should the sqlite database have an invalid text encoding, it can be overridden here.
+    /// The text encoding to use when the database header's encoding field is 0, which SQLite never writes. Like SQLite,
+    /// which then uses the connection's default encoding, the default is UTF-8. Other values of the field are read as
+    /// SQLite reads them (the low two bits, where 0 means UTF-8), so this setting does not apply to them.
     ///
     /// This is a dangerous setting, as an incorrect encoding will provide garbage data.
     /// </summary>

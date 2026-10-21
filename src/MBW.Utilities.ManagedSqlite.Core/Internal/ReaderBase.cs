@@ -37,7 +37,8 @@ internal sealed class ReaderBase : IDisposable
     public Sqlite3Settings Settings { get; }
 
     /// <summary>
-    /// The text encoding in use: the header's, or the fallback from the settings when the header's is invalid
+    /// The text encoding in use: the header's, read as SQLite reads it, or the fallback from the settings when the
+    /// header's field is 0
     /// </summary>
     public SqliteEncoding TextEncoding { get; }
 
@@ -115,9 +116,22 @@ internal sealed class ReaderBase : IDisposable
 
         DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
 
-        SqliteEncoding textEncoding = header.TextEncoding;
-        if (!Enum.IsDefined(typeof(SqliteEncoding), textEncoding) && settings.FallbackEncoding.HasValue)
-            textEncoding = settings.FallbackEncoding.Value;
+        // HDR-30: SQLite never rejects the text encoding field. A non-zero value is masked to its low two bits, where 0
+        // means UTF-8; a field of 0 leaves the connection's default encoding, which is UTF-8 unless configured (here:
+        // FallbackEncoding). sqlite3InitOne in prepare.c:
+        //   if( meta[BTREE_TEXT_ENCODING-1] ){
+        //     ...
+        //     encoding = (u8)meta[BTREE_TEXT_ENCODING-1] & 3;
+        //     if( encoding==0 ) encoding = SQLITE_UTF8;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L300
+        uint rawEncoding = (uint)header.TextEncoding;
+        SqliteEncoding textEncoding;
+        if (rawEncoding == 0)
+            textEncoding = settings.FallbackEncoding ?? SqliteEncoding.UTF8;
+        else if ((rawEncoding & 3) == 0)
+            textEncoding = SqliteEncoding.UTF8;
+        else
+            textEncoding = (SqliteEncoding)(rawEncoding & 3);
 
         Encoding encoding = textEncoding switch
         {

@@ -66,7 +66,7 @@ internal static class SqliteParity
         using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
         {
             List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
-            actual = Dump(db.Header.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
+            actual = Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
                 schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
                 schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
         }
