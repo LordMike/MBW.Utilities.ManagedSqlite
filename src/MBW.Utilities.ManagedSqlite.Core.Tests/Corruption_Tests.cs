@@ -281,9 +281,10 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void CellCount_PointerArrayPastEndOfSchemaPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(MasterRoot, 250));
 
-    // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells
+    // 249 pointers end at byte 8 + 2 * 249 = 506, past where the cells start, so they overlap the cells. SQLite does not
+    // check where cell pointers point (PAGE-11), so the garbage "cells" read as damaged records.
     [Fact]
-    public void CellCount_PointersOverlapCells() => AssertCorrupt("cell pointer array", p => p.SetCellCount(SmallRoot, 249));
+    public void CellCount_PointersOverlapCells() => AssertCorrupt("record header", p => p.SetCellCount(SmallRoot, 249));
 
     // Child pointers
 
@@ -316,6 +317,51 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     // The first key is the last cell on Keyed's first leaf, a 60 byte cell at offset 452. Its payload size (the 1-byte
     // varint 59, before the record) becomes 100, which is still below the index page overflow threshold of 102 and no
     // longer fits in the page.
+    // CELL-11: a payload that is all on its page is read straight from the page, even where it runs into the reserved
+    // bytes. Small's row 1 is the cell at the end of the usable area; its payload grows by 2 bytes into the 8 reserved
+    // bytes (zeros), and its text value from 3 to 5 bytes to match.
+    [Fact]
+    public void LeafCell_PayloadOverReservedBytes() =>
+        SqliteParity.AssertSameAsSqlite(Script, _ =>
+        {
+            byte[] data = SqliteParity.Build(Script, 8);
+            uint root;
+            using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+                root = db.GetTable("Small").SchemaDefinition.RootPage;
+
+            DbPatcher p = new DbPatcher(data);
+            int record = p.GetRecordOffset(root, 0, out long payloadSize);
+            Assert.Equal(7, payloadSize);
+            Assert.Equal(p.PageOffset(root) + p.PageSize - 8, record + 7);
+            return p.WriteByte(record - 2, 9).WriteByte(record + 2, 23).Data;
+        });
+
+    /// <summary>
+    /// Cells are read where SQLite reads them. PAGE-11, CELL-08: a cell pointer is masked to the page size, not checked,
+    /// so Small's first pointer plus the page size points at the same cell. CELL-01: the payload size varint keeps its
+    /// low 32 bits, so row 1 rewritten in free space with its size 7 encoded as the 5-byte varint of 2^32 + 7 reads as
+    /// before.
+    /// </summary>
+    [Theory]
+    [InlineData("pointer past the page")]
+    [InlineData("payload size over 32 bits")]
+    public void LeafCell_ReadLikeSqlite(string variant) =>
+        SqliteParity.AssertSameAsSqlite(Script, data =>
+        {
+            DbPatcher p = new DbPatcher(data);
+            int record = p.GetRecordOffset(SmallRoot, 0, out _);
+            int cell = record - 2 - p.PageOffset(SmallRoot);
+            if (variant == "pointer past the page")
+                return p.SetCellOffset(SmallRoot, 0, (ushort)(cell + p.PageSize)).Data;
+
+            const int at = 100;
+            byte[] rewritten = new byte[] { 0x90, 0x80, 0x80, 0x80, 0x07, data[record - 1] }.Concat(data.Skip(record).Take(7)).ToArray();
+            for (int i = 0; i < rewritten.Length; i++)
+                p.WriteByte(p.PageOffset(SmallRoot) + at + i, rewritten[i]);
+
+            return p.SetCellOffset(SmallRoot, 0, at).Data;
+        });
+
     [Fact]
     public void WithoutRowId_LeafCellPayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _) - 1, 100));
 

@@ -277,6 +277,12 @@ internal sealed class ReaderBase : IDisposable
     }
 
     /// <summary>
+    /// The bytes of <paramref name="page"/>, from the page buffer when it holds that page. Like <see cref="ReadPage"/>,
+    /// the buffer is overwritten when another page is read.
+    /// </summary>
+    internal byte[] GetPage(uint page) => page == _pageBufferPage && _pageBuffer != null ? _pageBuffer : ReadPage(page);
+
+    /// <summary>
     /// Copies <paramref name="count"/> bytes from <paramref name="offset"/> on <paramref name="page"/> into
     /// <paramref name="buffer"/>. The bytes come from the page buffer, which is filled when it holds another page, so
     /// the rows of a leaf page cost one read of the page and no seek and read of the stream per row.
@@ -298,8 +304,7 @@ internal sealed class ReaderBase : IDisposable
             return;
         }
 
-        byte[] data = page == _pageBufferPage && _pageBuffer != null ? _pageBuffer : ReadPage(page);
-        Buffer.BlockCopy(data, (int)offset, buffer, bufferOffset, count);
+        Buffer.BlockCopy(GetPage(page), (int)offset, buffer, bufferOffset, count);
     }
 
     /// <summary>

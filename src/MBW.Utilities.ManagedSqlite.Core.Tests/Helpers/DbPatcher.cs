@@ -72,6 +72,12 @@ internal sealed class DbPatcher
         return ReadUInt16(BTreeHeaderOffset(page) + headerSize + 2 * cell);
     }
 
+    public DbPatcher SetCellOffset(uint page, int cell, ushort offset)
+    {
+        int headerSize = IsInterior(page) ? 12 : 8;
+        return WriteUInt16(BTreeHeaderOffset(page) + headerSize + 2 * cell, offset);
+    }
+
     public uint GetChildPointer(uint page, int cell)
     {
         RequireInterior(page);

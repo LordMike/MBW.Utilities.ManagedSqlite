@@ -69,12 +69,10 @@ public sealed class Sqlite3Table
     {
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
-            BTreeLeafTablePage.Cell[] cells = leaf.Cells;
-            for (int i = 0; i < cells.Length; i++)
+            for (int i = 0; i < leaf.CellCount; i++)
             {
-                BTreeLeafTablePage.Cell cell = cells[i];
-                byte[] payload = ReadPayload(leaf, cell.RowId, leaf.CellOffsets[i] + (uint)cell.CellHeaderSize, cell.DataSize,
-                    cell.DataSizeInCell, cell.FirstOverflowPage);
+                BTreeLeafTablePage.Cell cell = leaf.GetCell(i);
+                byte[] payload = ReadPayload(leaf, cell.RowId, cell);
 
                 yield return new Sqlite3Row(this, cell.RowId, new Sqlite3Record(_reader, leaf.Page, cell.RowId, payload, (int)cell.DataSize));
             }
@@ -86,9 +84,8 @@ public sealed class Sqlite3Table
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells(root))
         {
             BTreeIndexPage page = entry.Key;
-            BTreeIndexPage.Cell cell = page.Cells[entry.Value];
-            byte[] payload = ReadPayload(page, null, page.CellOffsets[entry.Value] + (uint)cell.CellHeaderSize, cell.DataSize,
-                cell.DataSizeInCell, cell.FirstOverflowPage);
+            BTreeLeafTablePage.Cell cell = page.GetCell(entry.Value);
+            byte[] payload = ReadPayload(page, null, cell);
 
             // There is no rowid
             yield return new Sqlite3Row(this, 0, new Sqlite3Record(_reader, page.Page, null, payload, (int)cell.DataSize));
@@ -99,15 +96,34 @@ public sealed class Sqlite3Table
     /// Reads a cell's whole payload once, so the row can decode it from memory when its values are read.
     /// <paramref name="rowId"/> names the row in error messages, and is null in a WITHOUT ROWID table.
     /// </summary>
-    private byte[] ReadPayload(BTreePage page, long? rowId, uint dataOffset, long dataSize, uint dataSizeInCell, uint firstOverflowPage)
+    private byte[] ReadPayload(BTreePage page, long? rowId, BTreeLeafTablePage.Cell cell)
     {
-        // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
+        string structure = page is BTreeIndexPage { IsLeaf: false } ? "b-tree interior cell" : "b-tree leaf cell";
         long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
-        long maxPayload = Math.Min(int.MaxValue, dataSizeInCell + _reader.PageCount * (usableSize - 4));
-        if (dataSize < 0 || dataSize > maxPayload)
-            throw new SqliteCorruptException($"payload size {dataSize} of {RowName(rowId)} is larger than the database", page.Page, page is BTreeIndexPage { IsLeaf: false } ? "b-tree interior cell" : "b-tree leaf cell");
+        bool overflows = cell.DataSize > cell.DataSizeInCell;
+        long localEnd = (long)cell.PayloadOffset + cell.DataSizeInCell;
 
-        int payloadSize = checked((int)dataSize);
+        // CELL-10, CELL-11: the payload's bytes on the page must end inside the usable area when SQLite reads them
+        // through accessPayload, which a full row read does when the payload overflows or runs past the page:
+        //   if( (uptr)(aPayload - pPage->aData) > (pBt->usableSize - pCur->info.nLocal) ){
+        //     ...
+        //     return SQLITE_CORRUPT_PAGE(pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5154 (accessPayload)
+        // A payload that is all on the page and inside it is read straight from the page instead, even over the reserved
+        // bytes: fetchPayload only clamps it to the page end ("amt = MAX(0, (int)(pCur->pPage->aDataEnd - ...))").
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5401 (fetchPayload)
+        // SQLite does this per column, for the columns a statement reads past the local bytes; this reader reads the
+        // whole payload of a row, so it checks once per row.
+        Checks.Strict(localEnd <= usableSize || (!overflows && localEnd <= _reader.PageSize), "CELL-10",
+            $"the payload of {RowName(rowId)} at offset {cell.PayloadOffset} runs past the end of the page ({cell.DataSizeInCell} bytes on the page, {usableSize} usable)",
+            page.Page, structure);
+
+        // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
+        long maxPayload = Math.Min(int.MaxValue, cell.DataSizeInCell + _reader.PageCount * (usableSize - 4));
+        if (cell.DataSize > maxPayload)
+            throw new SqliteCorruptException($"payload size {cell.DataSize} of {RowName(rowId)} is larger than the database", page.Page, structure);
+
+        int payloadSize = (int)cell.DataSize;
 
         // REC-04: SQLite reads the header size of a 0-byte payload from the byte after the cell (aOffset[0] =
         // pC->aRow[0] in OP_Column, vdbe.c), so a 0 there is a record of no fields and anything else is corrupt. That
@@ -117,32 +133,37 @@ public sealed class Sqlite3Table
         if (payloadSize == 0)
         {
             byte[] next = new byte[1];
-            if (dataOffset < _reader.PageSize)
-                _reader.ReadFromPage(page.Page, dataOffset, next, 0, 1);
+            if (cell.PayloadOffset < _reader.PageSize)
+                _reader.ReadFromPage(page.Page, cell.PayloadOffset, next, 0, 1);
 
             return next;
         }
 
         byte[] payload = new byte[payloadSize];
 
-        if (firstOverflowPage == 0)
+        if (!overflows)
         {
-            // The payload spills past this page, but there is no overflow chain to hold the rest
-            if (dataSizeInCell < dataSize)
-                throw new SqliteCorruptException($"the overflow chain of {RowName(rowId)} ended with {dataSize - dataSizeInCell} bytes of the payload left", page.Page, "overflow chain");
-
             // All data is on this page, which the reader has in memory
-            _reader.ReadFromPage(page.Page, dataOffset, payload, 0, payloadSize);
+            _reader.ReadFromPage(page.Page, cell.PayloadOffset, payload, 0, payloadSize);
+            return payload;
         }
-        else
-        {
-            // The data continues on overflow pages
-            using SqliteDataStream dataStream = new SqliteDataStream(_reader, page.Page, dataOffset,
-                dataSizeInCell, firstOverflowPage, dataSize);
 
-            if (dataStream.ReadFully(payload, 0, payloadSize) != payloadSize)
-                throw new EndOfStreamException();
-        }
+        // The first overflow page's number follows the local bytes. accessPayload reads it with get4byte, past the
+        // usable size when the reserved space is under 4 bytes, so only the page end limits it.
+        Checks.Strict(localEnd + 4 <= _reader.PageSize, "CELL-10",
+            $"the overflow page number of {RowName(rowId)} at offset {localEnd} runs past the end of the page", page.Page, structure);
+        uint firstOverflowPage = _reader.ReadUInt32FromPage(page.Page, (uint)localEnd);
+
+        // CELL-13: the payload spills past this page, but there is no overflow chain to hold the rest
+        Checks.Strict(firstOverflowPage != 0, "CELL-13",
+            $"the overflow chain of {RowName(rowId)} ended with {cell.DataSize - cell.DataSizeInCell} bytes of the payload left", page.Page, "overflow chain");
+
+        // The data continues on overflow pages
+        using SqliteDataStream dataStream = new SqliteDataStream(_reader, page.Page, cell.PayloadOffset,
+            cell.DataSizeInCell, firstOverflowPage, cell.DataSize);
+
+        if (dataStream.ReadFully(payload, 0, payloadSize) != payloadSize)
+            throw new EndOfStreamException();
 
         return payload;
     }

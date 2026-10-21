@@ -42,12 +42,12 @@ internal static class BTreeTools
             // The right-most child comes after the cells. Every interior page has one, so 0 is rejected as corrupt by ParseChild.
             uint childPage;
             string structure;
-            if (child < interior.Cells.Length)
+            if (child < interior.CellCount)
             {
-                childPage = interior.Cells[child].LeftPagePointer;
+                childPage = interior.GetChildPointer(child);
                 structure = "interior cell child pointer";
             }
-            else if (child == interior.Cells.Length)
+            else if (child == interior.CellCount)
             {
                 childPage = interior.Header.RightMostPointer;
                 structure = "right-most pointer";
@@ -87,25 +87,25 @@ internal static class BTreeTools
 
             if (page.IsLeaf)
             {
-                for (int i = 0; i < page.Cells.Length; i++)
+                for (int i = 0; i < page.CellCount; i++)
                     yield return new KeyValuePair<BTreeIndexPage, int>(page, i);
 
                 continue;
             }
 
             // The left child of cell child - 1 is done, so that cell is next
-            if (child > 0 && child <= page.Cells.Length)
+            if (child > 0 && child <= page.CellCount)
                 yield return new KeyValuePair<BTreeIndexPage, int>(page, child - 1);
 
             // The right-most child comes after the cells. Every interior page has one, so 0 is rejected as corrupt by ParseChild.
             uint childPage;
             string structure;
-            if (child < page.Cells.Length)
+            if (child < page.CellCount)
             {
-                childPage = page.Cells[child].LeftPagePointer;
+                childPage = page.GetChildPointer(child);
                 structure = "interior cell child pointer";
             }
-            else if (child == page.Cells.Length)
+            else if (child == page.CellCount)
             {
                 childPage = page.Header.RightMostPointer;
                 structure = "right-most pointer";

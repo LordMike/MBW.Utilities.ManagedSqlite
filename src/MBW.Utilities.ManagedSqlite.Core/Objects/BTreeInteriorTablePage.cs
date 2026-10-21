@@ -1,5 +1,4 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Helpers;
-using MBW.Utilities.ManagedSqlite.Core.Internal;
+﻿using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Objects;
@@ -9,38 +8,15 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects;
 /// </summary>
 internal class BTreeInteriorTablePage : BTreePage
 {
-    public Cell[] Cells { get; }
-
-    public BTreeInteriorTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets, byte[] data, int length)
+    public BTreeInteriorTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
         : base(reader, page, header, cellOffsets)
     {
-        Cells = ParseCells(data, length);
     }
 
-    private Cell[] ParseCells(byte[] data, int length)
-    {
-        Cell[] cells = new Cell[CellOffsets.Length];
-
-        for (int i = 0; i < cells.Length; i++)
-        {
-            int pos = CellOffsets[i];
-
-            uint leftPagePointer = ByteArrayReader.ReadUInt32(data, length, ref pos);
-            long intKey = ByteArrayReader.ReadVarInt(data, length, ref pos);
-
-            cells[i] = new Cell
-            {
-                LeftPagePointer = leftPagePointer,
-                IntegerKey = intKey
-            };
-        }
-
-        return cells;
-    }
-
-    public struct Cell
-    {
-        public uint LeftPagePointer;
-        public long IntegerKey;
-    }
+    /// <summary>
+    /// The left child pointer of cell <paramref name="index"/>. PAGE-13, CELL-04: the cell's integer key is never read,
+    /// as a scan in SQLite never reads it (moveToLeftmost only does get4byte(findCell(pPage, pCur->ix))).
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5649 (moveToLeftmost)
+    /// </summary>
+    public uint GetChildPointer(int index) => ReadCellUInt32(GetData(), GetCellOffset(index));
 }
