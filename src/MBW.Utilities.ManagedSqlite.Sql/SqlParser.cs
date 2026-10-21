@@ -24,9 +24,18 @@ internal static class SqlParser
 
             if (tmp.Value.Kind == SqlToken.Comma)
             {
-                // Commas are only meaningful inside parentheses
+                // Outside parentheses a comma only separates the table options after the column list, as in
+                // "(...) STRICT, WITHOUT ROWID". It carries no structure there, so it is dropped when it follows a
+                // complete option; anywhere else at the top level it is an error, as in SQLite.
                 if (stack.Count < 2)
+                {
+                    List<SqlNode>? top = stack.Peek().Children;
+                    SqlNode? last = top?.Count > 0 ? top[top.Count - 1] : null;
+                    if (last != null && (last.Is("ROWID") || last.Is("STRICT")))
+                        continue;
+
                     return false;
+                }
 
                 stack.Pop();
 
@@ -113,6 +122,9 @@ internal static class SqlParser
         int primaryKeyComponents = 0;
         SqlTableColumn? primaryKeyColumn = null;
 
+        // The primary key columns in key order, each once
+        List<SqlTableColumn> primaryKeyColumns = new List<SqlTableColumn>();
+
         // Columns that may alias the rowid if they turn out to be the sole primary key
         HashSet<SqlTableColumn> rowIdAliasCandidates = new HashSet<SqlTableColumn>();
 
@@ -131,10 +143,12 @@ internal static class SqlParser
             string name;
             if (isConstraint)
             {
-                if (columnSet.Is(0, "PRIMARY") && columnSet.Is(1, "KEY") && columnSet.IsGroup(2))
+                // A table-constraint may be named: CONSTRAINT name PRIMARY KEY (...)
+                int pk = columnSet.Is(0, "CONSTRAINT") ? 2 : 0;
+                if (columnSet.Is(pk, "PRIMARY") && columnSet.Is(pk + 1, "KEY") && columnSet.IsGroup(pk + 2))
                 {
                     // GetGroup only returns group nodes, which always have Children
-                    SqlNode pkColumns = columnSet.GetGroup(2);
+                    SqlNode pkColumns = columnSet.GetGroup(pk + 2);
                     Debug.Assert(pkColumns.IsGroup());
 
                     foreach (SqlNode pkColumn in pkColumns.Children!)
@@ -153,6 +167,8 @@ internal static class SqlParser
 
                         primaryKeyComponents++;
                         primaryKeyColumn = columnObject;
+                        if (!primaryKeyColumns.Contains(columnObject))
+                            primaryKeyColumns.Add(columnObject);
                     }
                 }
 
@@ -198,6 +214,7 @@ internal static class SqlParser
                 sqlTableColumn.IsPartOfPrimaryKey = true;
                 primaryKeyComponents++;
                 primaryKeyColumn = sqlTableColumn;
+                primaryKeyColumns.Add(sqlTableColumn);
             }
 
             // A column declared as exactly "INTEGER" may alias the rowid. As a quirk, SQLite does not
@@ -207,10 +224,28 @@ internal static class SqlParser
                 rowIdAliasCandidates.Add(sqlTableColumn);
         }
 
+        bool withoutRowId = IsWithoutRowId(node);
+        def.IsWithoutRowId = withoutRowId;
+
         // Identify row-id substitutes
-        if (primaryKeyComponents == 1 && primaryKeyColumn != null && rowIdAliasCandidates.Contains(primaryKeyColumn) && !IsWithoutRowId(node))
+        if (primaryKeyComponents == 1 && primaryKeyColumn != null && rowIdAliasCandidates.Contains(primaryKeyColumn) && !withoutRowId)
         {
             def.ConfigureRowIdColumn(primaryKeyColumn);
+        }
+
+        // A WITHOUT ROWID table's record holds the primary key columns first, in key order and each once, then the
+        // other stored columns in declared order. VIRTUAL generated columns are not stored, and can't be in the key.
+        if (withoutRowId)
+        {
+            int recordIndex = 0;
+            foreach (SqlTableColumn column in primaryKeyColumns)
+                column.RecordIndex = recordIndex++;
+
+            foreach (SqlTableColumn column in def.Columns)
+            {
+                if (!primaryKeyColumns.Contains(column) && !column.IsVirtualGenerated)
+                    column.RecordIndex = recordIndex++;
+            }
         }
 
         tableDefinition = def;

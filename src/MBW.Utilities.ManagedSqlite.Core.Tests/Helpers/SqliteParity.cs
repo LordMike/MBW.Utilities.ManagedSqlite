@@ -73,6 +73,102 @@ internal static class SqliteParity
     }
 
     /// <summary>
+    /// Asserts that the Sql package parses every table's CREATE statement, as SQLite stored it in sqlite_schema, into
+    /// the columns SQLite reports for that table. Only the schema is compared, no rows, so WITHOUT ROWID tables work.
+    /// <para>
+    /// Per table (by name; sqlite_ internal tables left out): the table name and its rowid alias, then per column its
+    /// name, declared type, primary key membership and whether it is a VIRTUAL generated column. SQLite's side comes
+    /// from pragma_table_list (wr), pragma_table_xinfo (name, type, pk, hidden = 2) and pragma_index_list: a rowid table
+    /// (wr = 0) whose primary key has no automatic index (origin 'pk') has a rowid alias, its one pk column. The
+    /// declared type is compared without its size, in upper case, as <see cref="SqlTableColumn.TypeName"/> leaves
+    /// out "(10, 5)". The definition exposes neither STRICT nor the primary key's column order, so those are not
+    /// compared; WITHOUT ROWID shows through the rowid alias.
+    /// </para>
+    /// </summary>
+    public static void AssertSchemaSameAsSqlite(string script)
+    {
+        using SqliteConnection connection = Run(script);
+
+        StringBuilder expected = new StringBuilder();
+        // Shadow tables of virtual tables are ordinary tables, which the library reads; sorted here, with the same
+        // comparer as the library's side, as SQLite's BINARY order is byte order of the UTF-8 text.
+        foreach (object[] table in Query(connection, "SELECT name, wr FROM pragma_table_list WHERE schema = 'main' AND type IN ('table', 'shadow') AND name NOT LIKE 'sqlite~_%' ESCAPE '~'")
+                     .OrderBy(t => (string)t[0], StringComparer.Ordinal))
+        {
+            string name = (string)table[0];
+
+            List<object[]> columns = Query(connection, $"SELECT name, type, pk, hidden FROM pragma_table_xinfo({Literal(name)}) ORDER BY cid");
+            List<object[]> pkColumns = columns.Where(c => (long)c[2] > 0).ToList();
+            bool pkHasIndex = Query(connection, $"SELECT 1 FROM pragma_index_list({Literal(name)}) WHERE origin = 'pk'").Any();
+            string rowIdAlias = (long)table[1] == 0 && pkColumns.Count == 1 && !pkHasIndex ? (string)pkColumns[0][0] : null;
+
+            AppendSchemaTable(expected, name, rowIdAlias, columns.Select(c =>
+                ((string)c[0], Regex.Replace(Regex.Replace((string)c[1], @"\(.*\)$", ""), @"\s+", " ").Trim().ToUpperInvariant(), (long)c[2] > 0, (long)c[3] == 2)));
+        }
+
+        StringBuilder actual = new StringBuilder();
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(Serialize(connection))))
+        {
+            foreach (Sqlite3SchemaRow entry in db.GetTables().Where(s => IsReadableTable(s.Type, s.Sql) && !s.Name.StartsWith("sqlite_", StringComparison.OrdinalIgnoreCase))
+                         .OrderBy(s => s.Name, StringComparer.Ordinal))
+            {
+                SqlTableDefinition definition;
+                try
+                {
+                    definition = entry.GetTableDefinition();
+                }
+                catch (InvalidOperationException)
+                {
+                    actual.Append("table ").Append(Quote(entry.Name)).AppendLine(" unparseable");
+                    continue;
+                }
+
+                AppendSchemaTable(actual, definition.TableName, definition.RowIdColumn?.Name, definition.Columns.OrderBy(c => c.Ordinal)
+                    .Select(c => (c.Name, c.TypeName.ToUpperInvariant(), c.IsPartOfPrimaryKey, c.IsVirtualGenerated)));
+            }
+        }
+
+        Assert.Equal(expected.ToString(), actual.ToString());
+    }
+
+    private static void AppendSchemaTable(StringBuilder sb, string name, string rowIdAlias,
+        IEnumerable<(string name, string type, bool pk, bool virtualGenerated)> columns)
+    {
+        sb.Append("table ").Append(Quote(name)).Append(" rowid alias ").AppendLine(rowIdAlias == null ? "none" : Quote(rowIdAlias));
+        foreach ((string column, string type, bool pk, bool virtualGenerated) in columns)
+            sb.Append("  column ").Append(Quote(column)).Append(" type ").Append(Quote(type))
+                .Append(pk ? " pk" : "").AppendLine(virtualGenerated ? " virtual" : "");
+    }
+
+    /// <summary>
+    /// Asserts that real SQLite reports SQLITE_CORRUPT when it reads the rows of <paramref name="table"/> from the
+    /// database file <paramref name="data"/>, for a damaged database the library must also reject.
+    /// </summary>
+    public static void AssertSqliteReportsCorrupt(byte[] data, string table)
+    {
+        IntPtr image = Marshal.AllocHGlobal(data.Length);
+        try
+        {
+            Marshal.Copy(data, 0, image, data.Length);
+
+            // Unpooled, so SQLite is done with the image when the connection is disposed, before it is freed
+            using SqliteConnection connection = new SqliteConnection("Data Source=:memory:;Pooling=False");
+            connection.Open();
+
+            int rc = raw.sqlite3_deserialize(connection.Handle, "main", image, data.Length, data.Length, raw.SQLITE_DESERIALIZE_READONLY);
+            if (rc != raw.SQLITE_OK)
+                throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
+
+            SqliteException ex = Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM \"{table.Replace("\"", "\"\"")}\""));
+            Assert.Equal(raw.SQLITE_CORRUPT, ex.SqliteErrorCode);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(image);
+        }
+    }
+
+    /// <summary>
     /// Runs <paramref name="script"/> against a new in-memory database; nothing touches the disk.
     /// </summary>
     private static SqliteConnection Run(string script)
@@ -133,7 +229,7 @@ internal static class SqliteParity
         // Column names as SELECT * reports them, which unlike PRAGMA table_info includes generated columns. VIRTUAL
         // generated columns (hidden = 2) are left out: they are not stored, and the library does not compute them.
         HashSet<string> virtualGenerated = new HashSet<string>(
-            Query(connection, $"SELECT name FROM pragma_table_xinfo('{name.Replace("'", "''")}') WHERE hidden = 2").Select(s => (string)s[0]),
+            Query(connection, $"SELECT name FROM pragma_table_xinfo({Literal(name)}) WHERE hidden = 2").Select(s => (string)s[0]),
             StringComparer.OrdinalIgnoreCase);
         List<string> allColumns = ColumnNames(connection, $"SELECT * FROM {quoted} LIMIT 0");
         List<string> columns = allColumns.Where(c => !virtualGenerated.Contains(c)).ToList();
@@ -174,8 +270,6 @@ internal static class SqliteParity
     private static void AppendTableWithLibrary(StringBuilder sb, Sqlite3Database db, string name)
     {
         Sqlite3Table table = db.GetTable(name);
-        string sql = db.GetTables().First(s => s.Type == "table" && s.Name == name).Sql;
-        bool withoutRowId = sql != null && WithoutRowIdClause.IsMatch(sql);
         List<string> columns = table.GetTableDefinition().Columns.Where(s => !s.IsVirtualGenerated).OrderBy(s => s.Ordinal)
             .Select(s => s.Name).ToList();
         AppendTableHeader(sb, name, columns);
@@ -185,15 +279,9 @@ internal static class SqliteParity
             // By name, so a rowid alias column reads the rowid as SQLite does. A column missing from the record
             // (added by ALTER TABLE after the row was written) reads as NULL.
             IEnumerable<object> values = columns.Select(c => row.TryGetValueByName(c, out object value) ? value : null);
-            AppendRow(sb, withoutRowId ? null : row.RowId, values);
+            AppendRow(sb, table.IsWithoutRowId ? null : row.RowId, values);
         }
     }
-
-    /// <summary>
-    /// The WITHOUT ROWID table option, after the column list's closing parenthesis. The library does not expose it, and
-    /// SQLite's own answer (pragma_table_list) must not leak into the library's dump.
-    /// </summary>
-    private static readonly Regex WithoutRowIdClause = new Regex(@"\)[^)]*\bWITHOUT\s+ROWID\b[^)]*$", RegexOptions.IgnoreCase);
 
     private static bool IsReadableTable(string type, string sql)
     {

@@ -4,7 +4,11 @@ namespace MBW.Utilities.ManagedSqlite.Sql;
 
 public sealed class SqlTableColumn
 {
+    /// <summary>
+    /// The column's position in the declared column list, as in <c>SELECT *</c>
+    /// </summary>
     public int Ordinal { get; }
+
     public string Name { get; }
     public string TypeName { get; }
     public Type DetectedType { get; }
@@ -18,7 +22,9 @@ public sealed class SqlTableColumn
     public bool IsVirtualGenerated { get; internal set; }
 
     /// <summary>
-    /// The column's position in the stored record: its ordinal, minus the VIRTUAL generated columns before it
+    /// The column's position in the stored record, <see cref="MBW.Utilities.ManagedSqlite.Core.Tables.Sqlite3Row.ColumnData"/>.
+    /// In a rowid table it is <see cref="Ordinal"/>, minus the VIRTUAL generated columns before it. A WITHOUT ROWID
+    /// table's record holds the primary key columns first, in key order, then the other stored columns in declared order.
     /// </summary>
     internal int RecordIndex { get; set; }
 
