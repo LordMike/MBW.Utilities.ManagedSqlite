@@ -29,14 +29,22 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 /// </summary>
 internal static class SqliteParity
 {
-    public static void AssertSameAsSqlite(string script)
-    {
-        using SqliteConnection connection = Run(script);
+    public static void AssertSameAsSqlite(string script) => AssertSameAsSqlite(script, data => data);
 
-        string expected = DumpWithSqlite(connection);
+    /// <summary>
+    /// Both SQLite and the library read the database file that <paramref name="script"/> produced, after
+    /// <paramref name="patch"/> has changed its bytes, for cases SQLite itself never writes.
+    /// </summary>
+    public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch)
+    {
+        byte[] data = patch(Build(script));
+
+        string expected;
+        using (SqliteConnection connection = OpenBytes(data))
+            expected = DumpWithSqlite(connection);
 
         string actual;
-        using (Stream stream = new MemoryStream(Serialize(connection)))
+        using (Stream stream = new MemoryStream(data))
             actual = DumpWithLibrary(stream);
 
         Assert.Equal(expected, actual);
@@ -181,6 +189,38 @@ internal static class SqliteParity
         command.ExecuteNonQuery();
 
         return connection;
+    }
+
+    /// <summary>
+    /// Opens a database file's bytes with SQLite, read-only and in memory; nothing touches the disk. Uses
+    /// sqlite3_deserialize (https://www.sqlite.org/c3ref/deserialize.html), which makes the bytes the content of the
+    /// "main" schema of an open connection, so SQLite reads exactly the bytes the library is given.
+    /// </summary>
+    private static SqliteConnection OpenBytes(byte[] data)
+    {
+        SqliteConnection connection = new SqliteConnection("Data Source=:memory:");
+        connection.Open();
+
+        try
+        {
+            // SQLite owns the copy (SQLITE_DESERIALIZE_FREEONCLOSE): it frees it when the connection closes, and also when
+            // deserialize itself fails (end_deserialize in memdb.c), so the helper must not free it
+            IntPtr copy = raw.sqlite3_malloc(data.Length);
+            if (copy == IntPtr.Zero)
+                throw new OutOfMemoryException();
+
+            Marshal.Copy(data, 0, copy, data.Length);
+            int rc = raw.sqlite3_deserialize(connection.Handle, "main", copy, data.Length, data.Length, raw.SQLITE_DESERIALIZE_FREEONCLOSE | raw.SQLITE_DESERIALIZE_READONLY);
+            if (rc != raw.SQLITE_OK)
+                throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
+
+            return connection;
+        }
+        catch
+        {
+            connection.Dispose();
+            throw;
+        }
     }
 
     /// <summary>
