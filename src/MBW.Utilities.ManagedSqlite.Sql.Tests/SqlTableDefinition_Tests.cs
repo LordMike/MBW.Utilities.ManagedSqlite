@@ -30,7 +30,7 @@ public class SqlTableDefinition_Tests
     [Fact]
     public void VirtualGeneratedColumnHasNoValueByName()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(
             "CREATE TABLE t(a TEXT, b AS (a || '!'), c TEXT); INSERT INTO t (a, c) VALUES ('x', 'third');")));
 
         Sqlite3Row row = db.GetTable("t").EnumerateRows().Single();
@@ -62,7 +62,7 @@ public class SqlTableDefinition_Tests
     [Fact]
     public void GetTableDefinitionOnUnparseableSchemaThrows()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build("CREATE TABLE t(a); CREATE VIEW v AS SELECT a FROM t;")));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build("CREATE TABLE t(a); CREATE VIEW v AS SELECT a FROM t;")));
 
         Sqlite3SchemaRow view = db.GetTables().Single(s => s.Name == "v");
 

@@ -63,7 +63,7 @@ internal static class SqliteParity
         }
 
         string actual;
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+        using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
         {
             List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
             actual = Dump(db.Header.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),

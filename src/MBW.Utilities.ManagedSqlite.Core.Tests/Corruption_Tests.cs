@@ -49,7 +49,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     private static uint RootPage(string table)
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(Base));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(Base));
         return db.GetTable(table).SchemaDefinition.RootPage;
     }
 
@@ -71,7 +71,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     /// </summary>
     private static void ReadEverything(byte[] data)
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
         foreach (Sqlite3SchemaRow schema in db.GetTables().Where(s => s.Type == "table").ToList())
             ReadTable(db, schema.Name);
@@ -166,7 +166,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         DbPatcher patcher = new DbPatcher(Base);
         byte[] data = patcher.SetVersionValidFor(patcher.ReadUInt32(24) + 1).SetDatabaseSizeInPages(PastTheEnd).Data;
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
     }
 
@@ -191,7 +191,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     {
         byte[] data = new DbPatcher(Base).Truncate(Base.Length - 1).Data;
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep");
     }
 
@@ -215,7 +215,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         Assert.Equal("b-tree page header", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Structure);
     }
 
@@ -288,7 +288,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
         Exception ex = RunBounded(() =>
         {
-            using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
             Assert.Equal(DeepLeft, Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep")).Page);
 

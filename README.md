@@ -13,7 +13,7 @@ Managed C# read-only parser for SQLite3 databases. Provides access to table and 
 
 ```csharp
 using (Stream fs = File.OpenRead("MyDb.db"))
-using (Sqlite3Database db = new Sqlite3Database(fs))
+using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
 {
     // Access all tables using db.GetTables(), or a single using db.GetTable("name")
     Sqlite3Table tbl = db.GetTable("MyTable");

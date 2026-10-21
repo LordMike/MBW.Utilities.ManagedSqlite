@@ -14,7 +14,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tests;
 /// </summary>
 public class Database_Tests
 {
-    private static Sqlite3Database Open() => new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+    private static Sqlite3Database Open() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
 CREATE TABLE MixedCaseTable (Id INTEGER PRIMARY KEY, Value TEXT);
 CREATE INDEX MixedCaseIndex ON MixedCaseTable (Value);
 CREATE VIEW MixedCaseView AS SELECT Value FROM MixedCaseTable;
@@ -84,7 +84,7 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
         Assert.Throws<SqliteInvalidEncodingException>(() =>
         {
             using Stream _stream = InvalidEncodingDb();
-            using (Sqlite3Database db = new Sqlite3Database(_stream))
+            using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(_stream))
             {
             }
         });
@@ -99,9 +99,49 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
         };
 
         using Stream _stream = InvalidEncodingDb();
-        using Sqlite3Database db = new Sqlite3Database(_stream, sqlite3Settings);
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(_stream, sqlite3Settings);
 
         Assert.Equal(SqliteEncoding.UTF8, db.TextEncoding);
         Assert.Equal((SqliteEncoding)0, db.Header.TextEncoding);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DisposeClosesTheStreamUnlessLeftOpen(bool leaveOpen)
+    {
+        MemoryStream stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
+
+        Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen).Dispose();
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FailedOpenClosesTheStreamUnlessLeftOpen(bool leaveOpen)
+    {
+        MemoryStream stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);").Take(50).ToArray());
+
+        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen));
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    /// <summary>
+    /// The WAL flag is the file format read version, header byte 19; SQLite sets byte 18 (the write version) along with it
+    /// </summary>
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, true)]
+    public void IsWalModeFollowsTheReadVersion(byte version, bool expected)
+    {
+        byte[] bytes = SqliteParity.Build("CREATE TABLE t (a INTEGER);");
+        bytes[18] = bytes[19] = version;
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(bytes));
+
+        Assert.Equal(expected, db.IsWalMode);
     }
 }

@@ -10,15 +10,12 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 
 /// <summary>
 /// Reads pages of an opened database. Create it with <see cref="Open"/>, which reads the database header first, so
-/// the page size, encoding and page count are known and fixed for the reader's lifetime.
+/// the page size, encoding and page count are known and fixed for the reader's lifetime. Pages are cut from an
+/// <see cref="IFileView"/>, the bytes of the file as SQLite's pager would see them.
 /// </summary>
 internal sealed class ReaderBase : IDisposable
 {
-    public long Length { get; }
-
-    public long Position => _stream.Position;
-
-    private readonly Stream _stream;
+    private readonly IFileView _file;
     private readonly Encoding _encoding;
     private readonly byte[] _uint32Buffer = new byte[4];
 
@@ -49,10 +46,9 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     public uint PageCount { get; }
 
-    private ReaderBase(Stream stream, DatabaseHeader header, SqliteEncoding textEncoding, Encoding encoding)
+    private ReaderBase(IFileView file, DatabaseHeader header, SqliteEncoding textEncoding, Encoding encoding)
     {
-        _stream = stream;
-        Length = stream.Length;
+        _file = file;
 
         Header = header;
         PageSize = header.PageSize;
@@ -76,7 +72,7 @@ internal sealed class ReaderBase : IDisposable
         // ("nPage = (Pgno)((n+pPager->pageSize-1) / pPager->pageSize)"); SQLite then reads the missing bytes of that page
         // as zeros (SQLITE_IOERR_SHORT_READ handling in os_unix.c unixRead / os_win.c winRead), which this reader does not.
         // https://sqlite.org/src/file?name=src/pager.c (pagerPagecount)
-        uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
+        uint filePages = (uint)Math.Min(uint.MaxValue, (file.Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
         // The pages that do exist are intact in such a file (truncated, or a wrong header), so this is a strict check that a
@@ -88,17 +84,14 @@ internal sealed class ReaderBase : IDisposable
     }
 
     /// <summary>
-    /// Reads and validates the database header at the start of <paramref name="stream"/>, and returns a reader for
-    /// the database's pages
+    /// Reads and validates the database header at the start of <paramref name="file"/>, and returns a reader for the
+    /// database's pages. The reader owns <paramref name="file"/> and disposes it.
     /// </summary>
-    internal static ReaderBase Open(Stream stream, Sqlite3Settings settings)
+    internal static ReaderBase Open(IFileView file, Sqlite3Settings settings)
     {
-        if (stream == null)
-            throw new ArgumentNullException(nameof(stream));
-
         byte[] headerData = new byte[DatabaseHeader.HeaderSize];
 
-        int read = stream.ReadFully(headerData, 0, headerData.Length);
+        int read = file.Read(0, headerData, 0, headerData.Length);
 
         DatabaseHeader header = new DatabaseHeader(headerData, read);
 
@@ -114,63 +107,12 @@ internal sealed class ReaderBase : IDisposable
             _ => throw new SqliteInvalidEncodingException(textEncoding)
         };
 
-        return new ReaderBase(stream, header, textEncoding, encoding);
+        return new ReaderBase(file, header, textEncoding, encoding);
     }
 
     public void Dispose()
     {
-        _stream.Dispose();
-    }
-
-    internal void CheckSize(uint sizeWanted, bool throwException = true)
-    {
-        if (!throwException)
-            return;
-
-        long dataLeft = Length - _stream.Position;
-        if (dataLeft < sizeWanted)
-        {
-            throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
-            {
-                Data =
-                {
-                    { nameof(Stream.Position), _stream.Position },
-                    { nameof(sizeWanted), sizeWanted },
-                    { "SourceLength", Length }
-                }
-            };
-        }
-    }
-
-    internal void SetPositionAndCheckSize(ulong position, uint sizeWanted, bool throwException = true)
-    {
-        SetPosition(position);
-
-        CheckSize(sizeWanted, throwException);
-    }
-
-    internal void SetPosition(ulong position)
-    {
-        ulong newPosition = (ulong)_stream.Seek((long)position, SeekOrigin.Begin);
-
-        if (newPosition != position)
-            throw new SqliteCorruptException("unable to seek to a position the file refers to", structure: "file length")
-            {
-                Data = { { nameof(position), position } }
-            };
-    }
-
-    internal void SeekPage(uint page, uint offset = 0)
-    {
-        if (page == 0 || (PageCount > 0 && page > PageCount))
-            throw new SqliteCorruptException($"page number {page} is outside the database (1..{PageCount})", page, "page number");
-
-        // Note: Pages are 1-indexed
-        // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB
-        ulong position = (ulong)(page - 1) * PageSize;
-        position += offset;
-
-        SetPositionAndCheckSize(position, (uint)(PageSize - offset));
+        _file.Dispose();
     }
 
     /// <summary>
@@ -179,13 +121,28 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     internal byte[] ReadPage(uint page)
     {
-        SeekPage(page);
+        if (page == 0 || (PageCount > 0 && page > PageCount))
+            throw new SqliteCorruptException($"page number {page} is outside the database (1..{PageCount})", page, "page number");
+
+        // Note: Pages are 1-indexed
+        // Widen before multiplying: uint * uint is computed in 32 bits and wraps for offsets past 4 GiB
+        long position = (long)(page - 1) * PageSize;
+        if (_file.Length - position < PageSize)
+            throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
+            {
+                Data =
+                {
+                    { "Position", position },
+                    { "sizeWanted", PageSize },
+                    { "SourceLength", _file.Length }
+                }
+            };
 
         if (_pageBuffer == null || _pageBuffer.Length != PageSize)
             _pageBuffer = new byte[PageSize];
 
         _pageBufferPage = 0;
-        if (Read(_pageBuffer, 0, (int)PageSize) != PageSize)
+        if (_file.Read(position, _pageBuffer, 0, (int)PageSize) != PageSize)
             throw new EndOfStreamException();
 
         _pageBufferPage = page;
@@ -206,13 +163,11 @@ internal sealed class ReaderBase : IDisposable
     /// </remarks>
     internal void ReadFromPage(uint page, uint offset, byte[] buffer, int bufferOffset, int count)
     {
+        // SQLite never reads past the end of a page: accessPayload copies at most the local part of a payload, which
+        // fits in the page's usable size, and fetches every overflow page whole through the pager.
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5125 (accessPayload)
         if (offset + (ulong)count > PageSize)
-        {
-            SeekPage(page, offset);
-            if (Read(buffer, bufferOffset, count) != count)
-                throw new EndOfStreamException();
-            return;
-        }
+            throw new SqliteCorruptException($"a read of {count} bytes at offset {offset} runs past the end of the page", page, "page bounds");
 
         byte[] data = page == _pageBufferPage && _pageBuffer != null ? _pageBuffer : ReadPage(page);
         Buffer.BlockCopy(data, (int)offset, buffer, bufferOffset, count);
@@ -227,19 +182,6 @@ internal sealed class ReaderBase : IDisposable
 
         int pos = 0;
         return ByteArrayReader.ReadUInt32(_uint32Buffer, 4, ref pos);
-    }
-
-    public uint ReadUInt32()
-    {
-        int read = _stream.ReadFully(_uint32Buffer, 0, 4);
-
-        int pos = 0;
-        return ByteArrayReader.ReadUInt32(_uint32Buffer, read, ref pos);
-    }
-
-    public int Read(byte[] buffer, int offset, int count)
-    {
-        return _stream.ReadFully(buffer, offset, count);
     }
 
     internal string DecodeString(byte[] buffer, int offset, int count)

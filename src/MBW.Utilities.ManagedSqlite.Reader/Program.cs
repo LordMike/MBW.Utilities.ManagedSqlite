@@ -48,7 +48,7 @@ class Program
         try
         {
             stream = File.OpenRead(path);
-            db = new Sqlite3Database(stream);
+            db = Sqlite3Database.FromStreamWithNoJournal(stream);
 
             tables = db.GetTables().ToList();
         }
@@ -130,7 +130,7 @@ class Program
     }
 
     //using (FileStream fs = File.OpenRead("BigBlobDb.db"))
-    //using (Sqlite3Database db = new Sqlite3Database(fs))
+    //using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
     //{
     //    IEnumerable<Sqlite3SchemaRow> tables = db.GetTables();
 

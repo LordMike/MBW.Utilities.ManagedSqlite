@@ -45,7 +45,7 @@ public class SchemaBenchmarks
         _rawDb = _native.OpenRaw();
         _rawOpenTable = NativeDatabase.Prepare(_rawDb, _openTable.CommandText);
 
-        _db = new Sqlite3Database(new MemoryStream(image, false));
+        _db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(image, false));
 
         if (SqliteListTables() != ManagedListTables() || AdoNetListTables() != ManagedListTables())
             throw new InvalidOperationException("Native and managed disagree on the number of tables");
@@ -107,7 +107,7 @@ public class SchemaBenchmarks
     public int ManagedListTables()
     {
         int count = 0;
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(_image, false));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(_image, false));
         foreach (Sqlite3SchemaRow _ in db.GetTables())
             count++;
 

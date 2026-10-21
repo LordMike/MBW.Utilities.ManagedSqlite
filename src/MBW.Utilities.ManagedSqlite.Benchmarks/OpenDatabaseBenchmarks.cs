@@ -42,6 +42,6 @@ public class OpenDatabaseBenchmarks
     [Benchmark]
     public void Managed()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(_image, false));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(_image, false));
     }
 }

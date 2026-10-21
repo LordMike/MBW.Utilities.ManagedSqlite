@@ -24,22 +24,68 @@ public sealed class Sqlite3Database : IDisposable
 
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
-    public Sqlite3Database(Stream file, Sqlite3Settings? settings = null)
-    {
-        if (file == null)
-            throw new ArgumentNullException(nameof(file));
+    /// <summary>
+    /// True when the database is in WAL mode (file format read version 2, header byte 19). Such a database may have
+    /// committed changes in a <c>-wal</c> file next to it, which must be passed in to be seen.
+    /// </summary>
+    /// <remarks>
+    /// The flag stays set after the last connection closes and SQLite deletes the <c>-wal</c> file, so it does not mean
+    /// a <c>-wal</c> file exists. SQLite itself looks for one on every open, whatever the flag says.
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3341 (lockBtree)
+    /// </remarks>
+    public bool IsWalMode => _reader.Header.ReadVersion == FileReadVersion.WAL;
 
+    internal Sqlite3Database(IFileView file, Sqlite3Settings settings)
+    {
         _propertyStore = new Dictionary<string, object>();
 
         try
         {
-            _reader = ReaderBase.Open(file, settings ?? new Sqlite3Settings());
-            _masterTable = OpenMasterTable(out _masterSchemaRow);
+            try
+            {
+                _reader = ReaderBase.Open(file, settings);
+            }
+            catch
+            {
+                file.Dispose();
+                throw;
+            }
+
+            try
+            {
+                _masterTable = OpenMasterTable(out _masterSchemaRow);
+            }
+            catch
+            {
+                _reader.Dispose();
+                throw;
+            }
         }
         catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
         {
             throw new SqliteCorruptException("unable to read the database header or schema", innerException: e);
         }
+    }
+
+    /// <summary>
+    /// Opens a database from <paramref name="database"/>, a seekable stream of the main database file, and nothing
+    /// else: it must have no <c>-wal</c> file and no hot <c>-journal</c> next to it.
+    /// </summary>
+    /// <remarks>
+    /// SQLite keeps committed changes in a <c>-wal</c> file until a checkpoint copies them into the main file, and a
+    /// crashed write in rollback mode leaves a <c>-journal</c> file that must be played back. Neither leaves a mark in
+    /// the main file that this method could check, so a database opened without them may read stale or half-written
+    /// data. The database must not be written to while it is open.
+    /// </remarks>
+    /// <param name="database">The main database file</param>
+    /// <param name="settings">Settings, or null for the defaults</param>
+    /// <param name="leaveOpen">True to leave <paramref name="database"/> open when the database is disposed, or when opening it fails</param>
+    public static Sqlite3Database FromStreamWithNoJournal(Stream database, Sqlite3Settings? settings = null, bool leaveOpen = false)
+    {
+        if (database == null)
+            throw new ArgumentNullException(nameof(database));
+
+        return new Sqlite3Database(new StreamFileView(database, leaveOpen), settings ?? new Sqlite3Settings());
     }
 
     private Sqlite3MasterTable OpenMasterTable(out Sqlite3SchemaRow schemaRow)

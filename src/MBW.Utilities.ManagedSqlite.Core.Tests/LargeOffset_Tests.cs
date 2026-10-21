@@ -21,7 +21,7 @@ public class LargeOffset_Tests
     public void TestTableBeyond4GiB()
     {
         using Stream stream = LoadSparse("MBW.Utilities.ManagedSqlite.Core.Tests.Data.LargeOffset.sparse", out int pageSize);
-        using Sqlite3Database db = new Sqlite3Database(stream);
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(stream);
 
         // Computed in 32 bits, this offset wraps around to a page that is all zeros
         Sqlite3SchemaRow schema = db.GetTables().Single(s => s.TableName == TableName);
