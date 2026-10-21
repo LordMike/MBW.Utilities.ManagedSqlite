@@ -118,10 +118,12 @@ public sealed class Sqlite3Table
             $"the payload of {RowName(rowId)} at offset {cell.PayloadOffset} runs past the end of the page ({cell.DataSizeInCell} bytes on the page, {usableSize} usable)",
             page.Page, structure);
 
-        // A payload can't be larger than the pages that could hold it, nor larger than SQLite's maximum length
+        // CELL-38: a payload can't be larger than the pages that could hold it, nor larger than the largest array. This is
+        // the reader's own bound, not SQLite's: SQLite fails such a payload when its overflow chain ends early (CELL-13),
+        // but this reader allocates the payload first, so the bound keeps a damaged size from allocating up to 2 GB.
         long maxPayload = Math.Min(int.MaxValue, cell.DataSizeInCell + _reader.PageCount * (usableSize - 4));
-        if (cell.DataSize > maxPayload)
-            throw new SqliteCorruptException($"payload size {cell.DataSize} of {RowName(rowId)} is larger than the database", page.Page, structure);
+        Checks.Strict(cell.DataSize <= maxPayload, "CELL-38", $"payload size {cell.DataSize} of {RowName(rowId)} is larger than the database",
+            page.Page, structure);
 
         int payloadSize = (int)cell.DataSize;
 

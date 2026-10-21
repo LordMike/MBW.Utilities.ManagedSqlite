@@ -13,7 +13,8 @@ public enum SqliteValidation : byte
     /// <summary>
     /// Read on past damage that SQLite rejects but that leaves the data intact, such as an unknown file format version
     /// or a header page count larger than the file. Each such issue is reported to
-    /// <see cref="Sqlite3Settings.OnValidationIssue"/>. Damage that could yield wrong values still fails.
+    /// <see cref="Sqlite3Settings.OnValidationIssue"/>. Damage that could yield wrong values still fails. One exception
+    /// follows SQLite itself: a partial last page reads its missing bytes as zeros, as SQLite reads them.
     /// </summary>
     Lenient
 }

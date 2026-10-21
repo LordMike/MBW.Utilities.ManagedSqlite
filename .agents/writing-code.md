@@ -129,7 +129,8 @@ Rules:
 - **Pass the message as an interpolated string straight into the call.** The `CheckMessage` handler builds it only when
   the check fails, so a passing check allocates nothing. Don't build the message first.
 - **The check ID is the survey ID.** A check with no ID gets a new row in the right area table, with the next free
-  number, in the same PR (PAGE-39 is an example: the reader's own limit, reachable only in Lenient). An ID means one
+  number, in the same PR (CELL-38 is an example: the reader's own bound on a payload's size, which it needs because it allocates the payload
+  before SQLite would find the damage). An ID means one
   check: don't reuse SQLite's ID for a different bound.
 - **A Relaxable check that can fire repeatedly** (on every read of the same page) should report once; see HDR-17 in
   `ReaderBase.ReadPage`.

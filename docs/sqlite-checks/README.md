@@ -31,7 +31,7 @@ The code for each of these carries its ID in a comment.
 | HDR-17 | A partial last page: Strict fails reading it (stricter than SQLite), Lenient reads the missing bytes as zeros, as SQLite does |
 | HDR-20, INTEG-03 | The lock-byte page is never read |
 | HDR-30, REC-40, SCHEMA-01 | The text encoding field is read as SQLite reads it (`& 3`, 0 is UTF-8) and never rejected |
-| PAGE-03, INTEG-05 | At most (pageSize-8)/6 cells a page; Lenient allows up to PAGE-39 |
+| PAGE-03, INTEG-05 | At most (pageSize-8)/6 cells a page, in either mode |
 | PAGE-11, PAGE-12, PAGE-13, CELL-04, CELL-08, CELL-09 | Cells are parsed when they are reached, and not checked against the content area (SQLite does that only with `cell_size_check`) |
 | PAGE-18 | Page 1 must be a table b-tree page |
 | PAGE-19, PAGE-21 | Empty interior roots and empty child pages are corrupt; Lenient reports and walks on |
@@ -40,3 +40,4 @@ The code for each of these carries its ID in a comment.
 | CELL-13, CELL-16 | An overflow chain that ends early is corrupt; the last overflow page's next pointer is never read |
 | REC-03, REC-04, REC-05, REC-10, CELL-21, CELL-22, CELL-23 | Records are decoded lazily, up to the field read, with OP_Column's checks |
 | REC-21 | A rowid alias column reads the rowid even when the record is short |
+| CELL-38 | The reader's own bound: a payload no larger than the database's pages could hold |

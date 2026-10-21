@@ -360,35 +360,18 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void CellCount_PointerArrayPastEndOfSchemaPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(MasterRoot, 250));
 
-    // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold. Lenient allows any count whose pointers fit
-    // in the page: 249 pointers end at byte 506, past where the cells start, so they overlap the cells, and SQLite's
-    // pointers are not checked (PAGE-11), so the garbage "cells" read as damaged records.
-    [Fact]
-    public void CellCount_PointersOverlapCells()
+    // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold, in either mode. Their pointers would
+    // overlap the cells, which would then read as garbage.
+    [Theory]
+    [InlineData(SqliteValidation.Strict)]
+    [InlineData(SqliteValidation.Lenient)]
+    public void CellCount_PointersOverlapCells(SqliteValidation validation)
     {
         byte[] data = new DbPatcher(Base).SetCellCount(SmallRoot, 249).Data;
-
         SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
-        Assert.Equal("PAGE-03", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadEverything(data))).Check);
 
-        List<string> issues = new List<string>();
-        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient);
-        Assert.Equal("record header", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Small"))).Structure);
-        Assert.Equal(new[] { "PAGE-03" }, issues);
-    }
-
-    // PAGE-39: in Lenient, 260 cells pass the relaxed PAGE-03, but their 520 bytes of pointers do not fit in the page
-    [Fact]
-    public void CellCount_PointerArrayPastEndOfPageInLenient()
-    {
-        byte[] data = new DbPatcher(Base).SetCellCount(SmallRoot, 260).Data;
-
-        List<string> issues = new List<string>();
-        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient);
-        Assert.Equal("PAGE-39", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Small"))).Check);
-        Assert.Equal(new[] { "PAGE-03" }, issues);
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = validation });
+        Assert.Equal("PAGE-03", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Small"))).Check);
     }
 
     // Child pointers

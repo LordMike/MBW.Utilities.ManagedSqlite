@@ -48,15 +48,11 @@ internal abstract class BTreePage
         //     return SQLITE_CORRUPT_PAGE(pPage);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2247 (btreeInitPage)
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btreeInt.h#L229 (MX_CELL)
-        // Lenient allows more, up to a cell pointer array that fits in the usable area, as this reader did before.
+        // Strict in both modes: more pointers than that overlap the cells, which would then read as garbage. MX_CELL also
+        // keeps the pointer array inside the usable area of every page, page 1 included.
         uint maxCells = (reader.PageSize - 8) / 6;
-        Checks.Relaxable(header.CellCount <= maxCells, reader.Settings, "PAGE-03",
+        Checks.Strict(header.CellCount <= maxCells, "PAGE-03",
             $"cell count {header.CellCount} is more than a page can hold ({maxCells})", page, "b-tree page header");
-
-        // PAGE-39: the cell pointer array follows the header, and must be in the usable area to be read at all. This is the
-        // reader's own limit, not SQLite's; MX_CELL keeps any page within it, so only Lenient can reach it.
-        Checks.Strict(pos + 2L * header.CellCount <= reader.PageSize - reader.ReservedSpace, "PAGE-39",
-            $"cell count {header.CellCount} does not fit in the page", page, "b-tree page header");
 
         // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
         ushort[] cellOffsets = new ushort[header.CellCount];

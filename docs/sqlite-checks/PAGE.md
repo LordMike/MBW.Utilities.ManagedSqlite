@@ -50,7 +50,7 @@ Strict-required: Yes = SQLite always fails; Optional = only integrity_check / ce
 | PAGE-36 | Index key order | checkTreePage / index checks in integrity_check | integrity_check only | n/a | Optional | No | Consistent. We never open index b-trees for a table scan; SQLite's full scan does not either. |
 | PAGE-37 | Cells overlapping each other or freeblocks | [B:checkTreePage:11090](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L11090) ("Multiple uses for byte") | integrity_check only | n/a | Optional | No (duplicate pointers accepted) | Consistent. |
 | PAGE-38 | Cursor cell index `ix >= nCell` in accessPayload | [B:accessPayload:5145](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5145) | CORRUPT | cell read | Yes | N/A | Internal state check, unreachable for us (we index `Cells[]` directly). |
-| PAGE-39 | Cell pointer array fits in the usable area (`hdr + 2*nCell <= usableSize`) | none (this reader's own limit) | n/a | page load | n/a | Yes: `Core/Objects/BTreePage.cs` (`Checks.Strict`) | Added in #58. Not a SQLite check: MX_CELL (PAGE-03) keeps every page within it, so it is reachable only when Lenient relaxes PAGE-03. Without it the pointer array could not be read. |
+| PAGE-39 | Cell pointer array fits in the usable area (`hdr + 2*nCell <= usableSize`) | none (this reader's own limit) | n/a | page load | n/a | Removed | Added and removed in #58: with PAGE-03 Strict, MX_CELL keeps every page within it, so it could not fail. The ID is not reused. |
 
 ### Debug-only (assert, compiled out in release)
 - `btreeInitPage`: `nCell==0` implies cell-content start == usableSize ([B:2256](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2256)).
