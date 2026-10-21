@@ -71,12 +71,12 @@ internal sealed class ReaderBase : IDisposable
         // change counter (offset 24). SQLite then trusts it over the file length (pages after it are not part of the
         // database, as after a rollback that did not truncate the file), and rejects a size larger than the file.
         // Otherwise the file length decides. This is lockBtree in btree.c:
-        //   nPage = get4byte(28+page1);
-        //   sqlite3PagerPagecount(pBt->pPager, &nPageFile);
-        //   if( nPage==0 || memcmp(24+page1, 92+page1, 4)!=0 ) nPage = nPageFile;
-        //   ...
-        //   if( nPage>nPageFile ) rc = SQLITE_CORRUPT_BKPT
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3282 (lockBtree)
+        //   nPage = get4byte(28+(u8*)pPage1->aData);
+        //   sqlite3PagerPagecount(pBt->pPager, (int*)&nPageFile);
+        //   if( nPage==0 || memcmp(24+(u8*)pPage1->aData, 92+(u8*)pPage1->aData,4)!=0 ){
+        //     nPage = nPageFile;
+        //   }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3298 (lockBtree)
         //
         // The file's page count rounds a partial last page up, as pagerPagecount in pager.c does
         // ("nPage = (Pgno)((n+pPager->pageSize-1) / pPager->pageSize)"); SQLite then reads the missing bytes of that page
@@ -85,8 +85,13 @@ internal sealed class ReaderBase : IDisposable
         uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
-        // HDR-14: a valid in-header size larger than the file is corrupt. The pages that do exist are intact in such a
-        // file (truncated, or a wrong header), so Lenient uses the file's count instead.
+        // HDR-14: a valid in-header size larger than the file is corrupt, unless writable_schema is on (which this reader
+        // has no equivalent of). lockBtree in btree.c:
+        //   if( nPage>nPageFile ){
+        //     if( sqlite3WritableSchema(pBt->db)==0 ){
+        //       rc = SQLITE_CORRUPT_BKPT;
+        // The pages that do exist are intact in such a file (truncated, or a wrong header), so Lenient uses the file's
+        // count instead, as SQLite does with writable_schema.
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3405 (lockBtree)
         PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= filePages, settings, "HDR-14",
                 $"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}",
@@ -135,7 +140,9 @@ internal sealed class ReaderBase : IDisposable
         if (!throwException)
             return;
 
-        // HDR-17: the file ends inside a structure (a page or the header) that the file refers to
+        // HDR-17: the file ends inside a structure that the file refers to. PAGE-14 keeps page numbers within the file's
+        // page count, so this fails only inside a partial last page. SQLite zero-fills that page instead (HDR-17 is
+        // tolerated there); this reader is stricter until part 1.7 of #58 settles it.
         long dataLeft = Length - _stream.Position;
         Checks.Strict(dataLeft >= sizeWanted, "HDR-17",
             $"the file is shorter than the structures in it say ({sizeWanted} bytes wanted at offset {_stream.Position}, the file is {Length} bytes)",

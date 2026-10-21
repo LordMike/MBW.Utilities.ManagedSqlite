@@ -174,6 +174,24 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal(new[] { check }, issues);
     }
 
+    /// <summary>
+    /// Strict checks hold in Lenient too: the open fails with the check's ID, and nothing is reported.
+    /// </summary>
+    [Theory]
+    [InlineData("HDR-03")]
+    [InlineData("HDR-09")]
+    public void Header_StrictInLenient(string check)
+    {
+        DbPatcher patcher = new DbPatcher(Base);
+        byte[] data = (check == "HDR-03" ? patcher.WriteByte(0, (byte)'X') : patcher.SetPageSizeField(1000)).Data;
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), lenient)).Check);
+        Assert.Empty(issues);
+    }
+
     [Fact]
     public void Header_PagesAfterDatabaseSize_AreNotRead() => AssertCorrupt("page number", p => p.AppendPages(1).SetOverflowPointer(SmallRoot, 1, PastTheEnd));
 

@@ -65,7 +65,8 @@ internal sealed class DatabaseHeader
     /// </summary>
     internal DatabaseHeader(byte[] data, int length, Sqlite3Settings settings)
     {
-        // HDR-02: SQLite zero-fills a header shorter than 100 bytes, which then fails the magic string check
+        // HDR-02: SQLite zero-fills a header shorter than 100 bytes, which then fails the magic string check or, if the
+        // magic string survives, the page 1 b-tree header checks. (A 0-byte file is a valid empty database, HDR-01.)
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3943 (sqlite3PagerReadFileheader)
         Checks.Strict(length >= HeaderSize, "HDR-02",
             $"the file is shorter than the structures in it say ({HeaderSize} byte header, the file is {length} bytes)",
