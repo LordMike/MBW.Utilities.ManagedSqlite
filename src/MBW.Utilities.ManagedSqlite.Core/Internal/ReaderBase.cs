@@ -177,6 +177,13 @@ internal sealed class ReaderBase : IDisposable
     /// <paramref name="buffer"/>. The bytes come from the page buffer, which is filled when it holds another page, so
     /// the rows of a leaf page cost one read of the page and no seek and read of the stream per row.
     /// </summary>
+    /// <remarks>
+    /// This is a one-page version of what SQLite's pager does: the b-tree layer never reads cell content from the file,
+    /// it gets the whole page from the page cache (btreeGetPage / sqlite3PagerGet in btree.c and pager.c) and
+    /// accessPayload copies the local part of a payload out of that page before walking the overflow chain, each
+    /// overflow page again fetched whole through the cache.
+    /// https://sqlite.org/src/file?name=src/btree.c (accessPayload), https://sqlite.org/src/file?name=src/pager.c
+    /// </remarks>
     internal void ReadFromPage(uint page, uint offset, byte[] buffer, int bufferOffset, int count)
     {
         if (offset + (ulong)count > PageSize)
