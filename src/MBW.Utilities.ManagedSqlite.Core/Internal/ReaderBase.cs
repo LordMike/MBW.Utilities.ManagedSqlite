@@ -57,7 +57,7 @@ internal sealed class ReaderBase : IDisposable
     /// <summary>
     /// The page that holds byte offset 0x40000000 (SQLite's PENDING_BYTE), which SQLite never uses
     /// </summary>
-    private uint LockBytePage => 0x40000000 / PageSize + 1;
+    private readonly uint _lockBytePage;
 
     /// <summary>
     /// Reserved space at the end of every page
@@ -79,6 +79,7 @@ internal sealed class ReaderBase : IDisposable
         Header = header;
         Settings = settings;
         PageSize = header.PageSize;
+        _lockBytePage = 0x40000000 / PageSize + 1;
         ReservedSpace = header.ReservedSpaceAtEndOfPage;
         TextEncoding = textEncoding;
         _encoding = encoding;
@@ -264,7 +265,7 @@ internal sealed class ReaderBase : IDisposable
         //     rc = SQLITE_CORRUPT_BKPT;
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5628 (getPageNormal)
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3858 (lckPgno = PENDING_BYTE/pageSize + 1)
-        Checks.Strict(page != LockBytePage, "HDR-20", $"page {page} is the lock-byte page, which holds no data", page, "page number");
+        Checks.Strict(page != _lockBytePage, "HDR-20", $"page {page} is the lock-byte page, which holds no data", page, "page number");
 
         // Note: Pages are 1-indexed
         // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB

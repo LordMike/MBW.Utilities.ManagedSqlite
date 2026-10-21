@@ -523,10 +523,12 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal("CELL-13", corrupt.Check);
     }
 
-    // HDR-20: the lock-byte page is never data. The database is padded with zero pages past 1 GiB, and Small's overflow
-    // chain points at the page holding byte 0x40000000.
-    [Fact]
-    public void Overflow_PointerToLockBytePage()
+    // HDR-20: the lock-byte page is never data, in either mode. The database is padded with zero pages past 1 GiB, and
+    // Small's overflow chain points at the page holding byte 0x40000000.
+    [Theory]
+    [InlineData(SqliteValidation.Strict)]
+    [InlineData(SqliteValidation.Lenient)]
+    public void Overflow_PointerToLockBytePage(SqliteValidation validation)
     {
         DbPatcher patcher = new DbPatcher(Base);
         uint lockBytePage = (uint)(0x40000000 / patcher.PageSize + 1);
@@ -536,9 +538,12 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         for (int page = 1; page <= patcher.PageCount; page++)
             pages[page] = data.AsSpan(patcher.PageOffset((uint)page), patcher.PageSize).ToArray();
 
-        using Sqlite3Database db = new Sqlite3Database(new PageMappedStream(patcher.PageSize, (lockBytePage + 1L) * patcher.PageSize, pages));
+        List<string> issues = new List<string>();
+        Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
+        using Sqlite3Database db = new Sqlite3Database(new PageMappedStream(patcher.PageSize, (lockBytePage + 1L) * patcher.PageSize, pages), settings);
         SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Small"));
         Assert.Equal("HDR-20", ex.Check);
+        Assert.Empty(issues);
     }
 
     [Fact]
