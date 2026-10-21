@@ -26,7 +26,8 @@ public sealed class Sqlite3Database : IDisposable
 
     /// <summary>
     /// True when the database is in WAL mode (file format read version 2, header byte 19). Such a database may have
-    /// committed changes in a <c>-wal</c> file next to it, which this reader does not see.
+    /// committed changes in a <c>-wal</c> file next to it, which only <c>FromPath</c> and
+    /// <see cref="FromStreamWithWal"/> read.
     /// </summary>
     /// <remarks>
     /// The flag stays set after the last connection closes and SQLite deletes the <c>-wal</c> file, so it does not mean
@@ -35,21 +36,17 @@ public sealed class Sqlite3Database : IDisposable
     /// </remarks>
     public bool IsWalMode => _reader.Header.ReadVersion == FileReadVersion.WAL;
 
-    internal Sqlite3Database(IFileView file, Sqlite3Settings settings)
+    /// <summary>
+    /// Opens the database in <paramref name="main"/>, with its optional rollback journal and WAL. The database owns the
+    /// files and disposes them, also when the open fails.
+    /// </summary>
+    internal Sqlite3Database(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
     {
         _propertyStore = new Dictionary<string, object>();
 
         try
         {
-            try
-            {
-                _reader = ReaderBase.Open(file, settings);
-            }
-            catch
-            {
-                DisposeQuietly(file);
-                throw;
-            }
+            _reader = ReaderBase.Open(main, journal, wal, settings);
 
             try
             {
@@ -75,7 +72,8 @@ public sealed class Sqlite3Database : IDisposable
     /// SQLite keeps committed changes in a <c>-wal</c> file until a checkpoint copies them into the main file, and a
     /// crashed write in rollback mode leaves a <c>-journal</c> file that must be played back. Neither leaves a mark in
     /// the main file that this method could check, so a database opened without them may read stale or half-written
-    /// data. The database must not be written to while it is open.
+    /// data. Use <see cref="FromStreamWithWal"/> or <see cref="FromStreamWithJournal"/> when such a file exists. The
+    /// database must not be written to while it is open.
     /// </remarks>
     /// <param name="database">The main database file, a seekable stream</param>
     /// <param name="settings">Settings, or null for the defaults</param>
@@ -86,23 +84,156 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="SqliteInvalidEncodingException">The header's text encoding is unknown and the settings give no fallback</exception>
     public static Sqlite3Database FromStreamWithNoJournal(Stream database, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
+        return FromStreams(database, null, null, settings, leaveOpen);
+    }
+
+    /// <summary>
+    /// Opens a database in WAL mode from <paramref name="database"/>, the main database file, and
+    /// <paramref name="wal"/>, its <c>-wal</c> file. Pages that a committed transaction in the WAL wrote are read from
+    /// the WAL, as SQLite does before a checkpoint copies them into the main file.
+    /// </summary>
+    /// <remarks>
+    /// The <c>-shm</c> file is not needed: it only caches an index of the WAL, which is rebuilt by reading the WAL, as
+    /// SQLite does when the <c>-shm</c> file is missing. Frames after the last commit, and frames from before the WAL
+    /// was last restarted, are ignored, as are a WAL with a broken header and an empty one. A WAL that belongs to
+    /// another database gives wrong results; this cannot be detected, as SQLite cannot detect it either. Neither file
+    /// may be written to while the database is open.
+    /// </remarks>
+    /// <param name="database">The main database file, a seekable stream</param>
+    /// <param name="wal">The database's <c>-wal</c> file, a seekable stream</param>
+    /// <param name="settings">Settings, or null for the defaults</param>
+    /// <param name="leaveOpen">True to leave both streams open when the database is disposed, or when opening it fails</param>
+    /// <exception cref="ArgumentNullException">A stream is null</exception>
+    /// <exception cref="ArgumentException">A stream is not readable, or is not seekable</exception>
+    /// <exception cref="SqliteException">The WAL has a format version other than 3007000</exception>
+    /// <exception cref="SqliteCorruptException">The database is corrupt, or the WAL's page size differs from the database's</exception>
+    /// <exception cref="SqliteInvalidEncodingException">The header's text encoding is unknown and the settings give no fallback</exception>
+    public static Sqlite3Database FromStreamWithWal(Stream database, Stream wal, Sqlite3Settings? settings = null, bool leaveOpen = false)
+    {
+        if (wal == null)
+            throw new ArgumentNullException(nameof(wal));
+
+        return FromStreams(database, null, wal, settings, leaveOpen);
+    }
+
+    /// <summary>
+    /// Opens a database in a rollback journal mode (DELETE, TRUNCATE, PERSIST) from <paramref name="database"/>, the
+    /// main database file, and <paramref name="journal"/>, its <c>-journal</c> file. When the journal is hot, left by a
+    /// write that never finished, it is played back in memory, so the database reads as it was before that write. The
+    /// files are not changed.
+    /// </summary>
+    /// <remarks>
+    /// A read-only SQLite connection refuses to read a database with a hot journal (SQLITE_READONLY_ROLLBACK); a
+    /// writable one plays the journal back into the file first. This method gives what the writable connection would
+    /// read. A journal that is not hot (empty, or with a zeroed header after a commit) is ignored. A journal that names
+    /// a super-journal is always played back; if that multi-database transaction did commit, the database reads as it
+    /// was just before it. A journal that belongs to another database gives wrong results. Neither file may be written
+    /// to while the database is open.
+    /// </remarks>
+    /// <param name="database">The main database file, a seekable stream</param>
+    /// <param name="journal">The database's <c>-journal</c> file, a seekable stream</param>
+    /// <param name="settings">Settings, or null for the defaults</param>
+    /// <param name="leaveOpen">True to leave both streams open when the database is disposed, or when opening it fails</param>
+    /// <exception cref="ArgumentNullException">A stream is null</exception>
+    /// <exception cref="ArgumentException">A stream is not readable, or is not seekable</exception>
+    /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
+    /// <exception cref="SqliteInvalidEncodingException">The header's text encoding is unknown and the settings give no fallback</exception>
+    public static Sqlite3Database FromStreamWithJournal(Stream database, Stream journal, Sqlite3Settings? settings = null, bool leaveOpen = false)
+    {
+        if (journal == null)
+            throw new ArgumentNullException(nameof(journal));
+
+        return FromStreams(database, journal, null, settings, leaveOpen);
+    }
+
+#if NETSTANDARD2_0_OR_GREATER
+    /// <summary>
+    /// Opens the database file at <paramref name="path"/>, with the <c>-wal</c> or <c>-journal</c> file next to it
+    /// when one exists, the way SQLite finds them. The <c>-shm</c> file is not read.
+    /// </summary>
+    /// <remarks>
+    /// The files are opened for reading, allowing others to read them too. The database must not be written to while
+    /// it is open, and its side files must belong to it: SQLite leaves no mark in the main file that says a side file
+    /// should exist, so a deleted or misplaced journal cannot be detected. See <see cref="FromStreamWithWal"/> and
+    /// <see cref="FromStreamWithJournal"/> for how each side file is read.
+    /// </remarks>
+    /// <param name="path">The path of the main database file</param>
+    /// <param name="settings">Settings, or null for the defaults</param>
+    /// <exception cref="ArgumentNullException"><paramref name="path"/> is null</exception>
+    /// <exception cref="IOException">A file could not be opened</exception>
+    /// <exception cref="SqliteException">The WAL has a format version other than 3007000</exception>
+    /// <exception cref="SqliteCorruptException">The database is corrupt, or the WAL's page size differs from the database's</exception>
+    /// <exception cref="SqliteInvalidEncodingException">The header's text encoding is unknown and the settings give no fallback</exception>
+    public static Sqlite3Database FromPath(string path, Sqlite3Settings? settings = null)
+    {
+        if (path == null)
+            throw new ArgumentNullException(nameof(path));
+
+        Stream? database = null, journal = null, wal = null;
+        try
+        {
+            database = OpenRead(path);
+
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5180 (hasHotJournal) and
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3385 (pagerOpenWalIfPresent)
+            // SQLite looks for both on every open, whatever the header's journal mode says
+            if (File.Exists(path + "-journal"))
+                journal = OpenRead(path + "-journal");
+            if (File.Exists(path + "-wal"))
+                wal = OpenRead(path + "-wal");
+        }
+        catch
+        {
+            foreach (Stream? stream in new[] { database, journal, wal })
+                stream?.Dispose();
+            throw;
+        }
+
+        return FromStreams(database, journal, wal, settings, false);
+    }
+
+    private static FileStream OpenRead(string path)
+    {
+        return new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+    }
+#endif
+
+    /// <summary>
+    /// Wraps the streams in file views and opens the database. Unless <paramref name="leaveOpen"/>, the streams are
+    /// disposed when the open fails, and the database disposes them otherwise.
+    /// </summary>
+    private static Sqlite3Database FromStreams(Stream database, Stream? journal, Stream? wal, Sqlite3Settings? settings, bool leaveOpen)
+    {
         if (database == null)
             throw new ArgumentNullException(nameof(database));
 
-        StreamFileView file;
+        IFileView main;
+        IFileView? journalView = null, walView = null;
         try
         {
             CheckStream(database, nameof(database));
-            file = new StreamFileView(database, leaveOpen);
+            if (journal != null)
+                CheckStream(journal, nameof(journal));
+            if (wal != null)
+                CheckStream(wal, nameof(wal));
+
+            main = new StreamFileView(database, leaveOpen);
+            journalView = journal != null ? new StreamFileView(journal, leaveOpen) : null;
+            walView = wal != null ? new StreamFileView(wal, leaveOpen) : null;
         }
         catch
         {
             if (!leaveOpen)
-                DisposeQuietly(database);
+            {
+                foreach (Stream? stream in new[] { database, journal, wal })
+                    if (stream != null)
+                        DisposeQuietly(stream);
+            }
+
             throw;
         }
 
-        return new Sqlite3Database(file, settings ?? new Sqlite3Settings());
+        return new Sqlite3Database(main, journalView, walView, settings ?? new Sqlite3Settings());
     }
 
     private static void CheckStream(Stream stream, string parameterName)

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
@@ -9,13 +10,16 @@ using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 
 /// <summary>
-/// Reads pages of an opened database. Create it with <see cref="Open"/>, which reads the database header first, so
+/// Reads pages of an opened database. Create it with <see cref="Open(IFileView, IFileView?, IFileView?, Sqlite3Settings)"/>, which reads the database header first, so
 /// the page size, encoding and page count are known and fixed for the reader's lifetime. Pages are cut from an
-/// <see cref="IFileView"/>, the bytes of the file as SQLite's pager would see them.
+/// <see cref="IFileView"/>, the bytes of the file as SQLite's pager would see them: the main file, with a hot rollback
+/// journal played back over it. A page that the <c>-wal</c> file holds a committed copy of is read from there instead.
 /// </summary>
 internal sealed class ReaderBase : IDisposable
 {
     private readonly IFileView _file;
+    private readonly WalIndex? _wal;
+    private readonly IDisposable[] _owned;
     private readonly Encoding _encoding;
     private readonly byte[] _uint32Buffer = new byte[4];
 
@@ -46,9 +50,11 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     public uint PageCount { get; }
 
-    private ReaderBase(IFileView file, DatabaseHeader header, SqliteEncoding textEncoding, Encoding encoding)
+    private ReaderBase(IFileView file, WalIndex? wal, IDisposable[] owned, DatabaseHeader header, SqliteEncoding textEncoding, Encoding encoding)
     {
         _file = file;
+        _wal = wal;
+        _owned = owned;
 
         Header = header;
         PageSize = header.PageSize;
@@ -72,7 +78,14 @@ internal sealed class ReaderBase : IDisposable
         // ("nPage = (Pgno)((n+pPager->pageSize-1) / pPager->pageSize)"); SQLite then reads the missing bytes of that page
         // as zeros (SQLITE_IOERR_SHORT_READ handling in os_unix.c unixRead / os_win.c winRead), which this reader does not.
         // https://sqlite.org/src/file?name=src/pager.c (pagerPagecount)
-        uint filePages = (uint)Math.Min(uint.MaxValue, (file.Length + PageSize - 1) / PageSize);
+        //
+        // With a WAL, the database size is the one its last committed transaction recorded, not the file's (WALJ-26):
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3338 (pagerPagecount)
+        //   nPage = sqlite3WalDbsize(pPager->pWal);
+        //   if( nPage==0 && ... ){ ... sqlite3OsFileSize(pPager->fd, &n) ...
+        uint filePages = wal != null
+            ? wal.PageCount
+            : (uint)Math.Min(uint.MaxValue, (file.Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
         // The pages that do exist are intact in such a file (truncated, or a wrong header), so this is a strict check that a
@@ -84,16 +97,67 @@ internal sealed class ReaderBase : IDisposable
     }
 
     /// <summary>
-    /// Reads and validates the database header at the start of <paramref name="file"/>, and returns a reader for the
-    /// database's pages. The reader owns <paramref name="file"/> and disposes it.
+    /// Reads and validates the database header, and returns a reader for the database's pages. A hot
+    /// <paramref name="journal"/> is played back over <paramref name="main"/> first, then the committed frames of
+    /// <paramref name="wal"/> are laid over the result, in the order SQLite's pager does it. The reader owns all three
+    /// files and disposes them, also when this method throws.
     /// </summary>
-    internal static ReaderBase Open(IFileView file, Sqlite3Settings settings)
+    internal static ReaderBase Open(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
     {
+        List<IDisposable> files = new List<IDisposable> { main };
+        if (journal != null)
+            files.Add(journal);
+        if (wal != null)
+            files.Add(wal);
+
+        IDisposable[] owned = files.ToArray();
+
+        try
+        {
+            return Open(main, journal, wal, owned, settings);
+        }
+        catch
+        {
+            foreach (IDisposable disposable in owned)
+                DisposeQuietly(disposable);
+            throw;
+        }
+    }
+
+    private static ReaderBase Open(IFileView main, IFileView? journal, IFileView? walFile, IDisposable[] owned, Sqlite3Settings settings)
+    {
+        IFileView file = main;
+
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5280-L5340 (sqlite3PagerSharedLock)
+        // A hot journal is played back first, then the WAL is opened on the result
+        // (pagerOpenWalIfPresent, https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3385).
+        if (journal != null)
+            file = RollbackJournalView.Apply(main, journal, InitialPageSize(main));
+
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3399-L3405 (pagerOpenWalIfPresent)
+        //   rc = pagerPagecount(pPager, &nPage);
+        //   if( nPage==0 ){
+        //     rc = sqlite3OsDelete(pPager->pVfs, pPager->zWal, 0);
+        // A WAL next to an empty database is not used; SQLite deletes it.
+        WalIndex? wal = walFile != null && file.Length > 0 ? WalIndex.Read(walFile) : null;
+
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3341-L3352 (lockBtree)
+        // Every header check runs on the newest committed page 1, which the WAL holds when a transaction changed it
+        // (WALJ-25). The main file's page 1 may then be stale.
         byte[] headerData = new byte[DatabaseHeader.HeaderSize];
 
-        int read = file.Read(0, headerData, 0, headerData.Length);
+        int read = wal != null && wal.TryReadPage(1, headerData, headerData.Length)
+            ? headerData.Length
+            : file.Read(0, headerData, 0, headerData.Length);
 
         DatabaseHeader header = new DatabaseHeader(headerData, read);
+
+        // WALJ-28: SQLite reads min(database page size, WAL page size) bytes of each frame, leaving the rest of the page
+        // undefined, and only fails on a write or checkpoint. That cannot be reproduced, so this fails. A Lenient
+        // validation mode (issue #58) may instead ignore the WAL; this becomes Checks.Relaxable once that lands.
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L3666-L3672 (sqlite3WalReadFrame)
+        if (wal != null && wal.PageSize != header.PageSize)
+            throw new SqliteCorruptException($"the WAL page size {wal.PageSize} differs from the database page size {header.PageSize}", structure: "WAL header");
 
         SqliteEncoding textEncoding = header.TextEncoding;
         if (!Enum.IsDefined(typeof(SqliteEncoding), textEncoding) && settings.FallbackEncoding.HasValue)
@@ -107,12 +171,48 @@ internal sealed class ReaderBase : IDisposable
             _ => throw new SqliteInvalidEncodingException(textEncoding)
         };
 
-        return new ReaderBase(file, header, textEncoding, encoding);
+        return new ReaderBase(file, wal, owned, header, textEncoding, encoding);
+    }
+
+    /// <summary>
+    /// The page size the pager starts with, from the raw header bytes of the main file, before any journal playback.
+    /// An invalid value falls back to the default of 4096, as SQLite does.
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2707 (sqlite3BtreeOpen)
+    /// <code>
+    ///   pBt->pageSize = (zDbHeader[16]&lt;&lt;8) | (zDbHeader[17]&lt;&lt;16);
+    ///   if( pBt->pageSize&lt;512 || pBt->pageSize>SQLITE_MAX_PAGE_SIZE || ((pBt->pageSize-1)&amp;pBt->pageSize)!=0 ){
+    ///     pBt->pageSize = 0;
+    /// </code>
+    /// </summary>
+    private static uint InitialPageSize(IFileView main)
+    {
+        byte[] bytes = new byte[2];
+        if (main.Read(16, bytes, 0, 2) != 2)
+            return 4096;
+
+        uint pageSize = (uint)(bytes[0] << 8 | bytes[1] << 16);
+        if (pageSize < 512 || pageSize > 65536 || (pageSize & (pageSize - 1)) != 0)
+            return 4096;
+
+        return pageSize;
     }
 
     public void Dispose()
     {
-        _file.Dispose();
+        foreach (IDisposable disposable in _owned)
+            disposable.Dispose();
+    }
+
+    private static void DisposeQuietly(IDisposable disposable)
+    {
+        try
+        {
+            disposable.Dispose();
+        }
+        catch
+        {
+            // The open's own error is the one to report
+        }
     }
 
     /// <summary>
@@ -127,6 +227,30 @@ internal sealed class ReaderBase : IDisposable
         // Note: Pages are 1-indexed
         // Widen before multiplying: uint * uint is computed in 32 bits and wraps for offsets past 4 GiB
         long position = (long)(page - 1) * PageSize;
+
+        if (_pageBuffer == null || _pageBuffer.Length != PageSize)
+            _pageBuffer = new byte[PageSize];
+
+        _pageBufferPage = 0;
+        if (_wal != null)
+        {
+            if (_wal.TryReadPage(page, _pageBuffer, (int)PageSize))
+            {
+                _pageBufferPage = page;
+                return _pageBuffer;
+            }
+
+            // A committed transaction can grow the database without the file growing; the pages it did not write are
+            // zeros, as SQLite reads them past the end of the file.
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3082 (readDbPage)
+            if (position >= _file.Length)
+            {
+                Array.Clear(_pageBuffer, 0, _pageBuffer.Length);
+                _pageBufferPage = page;
+                return _pageBuffer;
+            }
+        }
+
         if (_file.Length - position < PageSize)
             throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
             {
@@ -138,10 +262,6 @@ internal sealed class ReaderBase : IDisposable
                 }
             };
 
-        if (_pageBuffer == null || _pageBuffer.Length != PageSize)
-            _pageBuffer = new byte[PageSize];
-
-        _pageBufferPage = 0;
         if (_file.Read(position, _pageBuffer, 0, (int)PageSize) != PageSize)
             throw new EndOfStreamException();
 
