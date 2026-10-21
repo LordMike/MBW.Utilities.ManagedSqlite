@@ -80,6 +80,9 @@ public sealed class Sqlite3Database : IDisposable
     /// <param name="database">The main database file, a seekable stream</param>
     /// <param name="settings">Settings, or null for the defaults</param>
     /// <param name="leaveOpen">True to leave <paramref name="database"/> open when the database is disposed, or when opening it fails</param>
+    /// <exception cref="ArgumentNullException"><paramref name="database"/> is null</exception>
+    /// <exception cref="ArgumentException"><paramref name="database"/> is not readable and seekable</exception>
+    /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
     public static Sqlite3Database FromStreamWithNoJournal(Stream database, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
         if (database == null)

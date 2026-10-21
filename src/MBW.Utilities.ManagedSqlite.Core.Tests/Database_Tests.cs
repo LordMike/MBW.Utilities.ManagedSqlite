@@ -120,6 +120,23 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void UnseekableStreamIsRejectedAndClosedUnlessLeftOpen(bool leaveOpen)
+    {
+        UnseekableStream stream = new UnseekableStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
+
+        Assert.Throws<ArgumentException>(() => Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen));
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    private sealed class UnseekableStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void FailedOpenClosesTheStreamUnlessLeftOpen(bool leaveOpen)
     {
         MemoryStream stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);").Take(50).ToArray());

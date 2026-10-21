@@ -17,6 +17,9 @@ internal sealed class StreamFileView : IFileView
 
     public StreamFileView(Stream stream, bool leaveOpen)
     {
+        // A disposed stream can neither read nor seek, so check reading first to give it the clearer message
+        if (!stream.CanRead)
+            throw new ArgumentException("The stream must be readable, and not disposed", nameof(stream));
         if (!stream.CanSeek)
             throw new ArgumentException("The stream must be seekable", nameof(stream));
 
