@@ -52,6 +52,10 @@ CREATE TABLE t (Value TEXT);
 INSERT INTO t (rowid, Value) VALUES (-9223372036854775808, 'min'), (-5, 'negative'), (-1, 'minus one'), (0, 'zero'),
     (127, 'max 1 byte'), (128, 'min 2 bytes'), (72057594037927935, 'max 8 bytes'), (72057594037927936, 'min 9 bytes'),
     (9223372036854775807, 'max');" },
+        // The overflow chain of the middle row is read between two rows whose payload is on the leaf page
+        { "local row, overflowing row, local row on one leaf", @"
+CREATE TABLE t (v);
+INSERT INTO t VALUES (1), (randomblob(5000)), (2);" },
         // An index b-tree, keys inserted out of order, with enough rows for interior pages, whose cells hold rows too
         { "WITHOUT ROWID 3000 rows, 3 levels", @"
 PRAGMA page_size = 512;
