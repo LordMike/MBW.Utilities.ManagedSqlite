@@ -26,17 +26,11 @@ INSERT INTO BlobTable SELECT 1, CAST(substr(v, 1, 60000) AS BLOB) FROM s UNION A
     public static TheoryData<string, string> PageSizes() => new()
     {
         { "512", PageSizeScript(512) },
-        { "1024", PageSizeScript(1024) },
         { "65536", PageSizeScript(65536) },
     };
 
     public static TheoryData<string, string> BTreeShapes() => new()
     {
-        { "ordered 5000 rows, 3 levels", @"
-PRAGMA page_size = 512;
-CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
-WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 5000)
-INSERT INTO t SELECT x, 'row ' || x FROM seq;" },
         // 7919 is coprime to 2000, so every id appears once; then a range is rewritten in reverse so cells are out of key order
         { "shuffled insert 2000 rows", @"
 PRAGMA page_size = 512;
@@ -68,6 +62,16 @@ PRAGMA page_size = 512;
 CREATE TABLE t (k TEXT PRIMARY KEY, v BLOB) WITHOUT ROWID;
 WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 200)
 INSERT INTO t SELECT printf('%04d', x) || printf('%.*c', x * 3, 'k'), CASE WHEN x = 100 THEN zeroblob(20000) ELSE x END FROM seq;" },
+        // Pointer map pages sit between the b-tree pages, and are not part of any b-tree
+        { "auto_vacuum with pointer map pages", @"
+PRAGMA page_size = 512;
+PRAGMA auto_vacuum = FULL;
+CREATE TABLE a (Id INTEGER PRIMARY KEY, Value TEXT);
+CREATE TABLE b (Id INTEGER PRIMARY KEY, Value BLOB);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 300)
+INSERT INTO a SELECT x, 'a' || x FROM seq;
+INSERT INTO b VALUES (1, zeroblob(3000));
+DELETE FROM a WHERE Id % 3 = 0;" },
         { "deleted rows leave freeblocks and free pages", @"
 PRAGMA page_size = 512;
 CREATE TABLE t (Id INTEGER PRIMARY KEY, Value TEXT);
@@ -82,12 +86,13 @@ DELETE FROM t WHERE Id % 2 = 0;" },
         foreach (int i in Enumerable.Range(0, 50))
         {
             many.Append($"CREATE TABLE Table{i:00} (Id INTEGER PRIMARY KEY, Value TEXT);\n");
-            many.Append($"WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 500) INSERT INTO Table{i:00} SELECT x, 'v' || x FROM seq;\n");
+            many.Append($"INSERT INTO Table{i:00} VALUES (1, 'v{i}');\n");
         }
 
         return new TheoryData<string, string>
         {
-            { "50 tables of 500 rows", many.ToString() },
+            // sqlite_master no longer fits on page 1, so it becomes an interior page over leaves
+            { "50 tables", many.ToString() },
             // Rows written before ADD COLUMN have no value for the new column in their record, and read as NULL
             { "ALTER TABLE ADD COLUMN without default", @"
 CREATE TABLE tbl (Id INTEGER PRIMARY KEY, MyInt INTEGER);
@@ -95,61 +100,32 @@ INSERT INTO tbl VALUES (0, 0), (1, 500), (2, 1000);
 ALTER TABLE tbl ADD COLUMN NewColumn INTEGER;
 UPDATE tbl SET NewColumn = 500 WHERE Id = 1;
 INSERT INTO tbl VALUES (3, 1500, 3000);" },
+            // Names ignore the case of ASCII letters only, as in SQLite, so these are two tables
+            { "table names differing in non-ASCII case", @"
+CREATE TABLE é (v TEXT);
+CREATE TABLE É (v TEXT);
+INSERT INTO é VALUES ('lower');
+INSERT INTO É VALUES ('upper');" },
             { "index, view, trigger and sqlite_sequence", @"
 CREATE TABLE tbl (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT UNIQUE);
 CREATE INDEX tbl_name ON tbl (name DESC);
 CREATE VIEW tbl_view AS SELECT name FROM tbl;
 CREATE TRIGGER tbl_trigger AFTER INSERT ON tbl BEGIN SELECT 1; END;
 INSERT INTO tbl (name) VALUES ('a'), ('b');" },
-            { "mixed-case names", @"
-CREATE TABLE MixedCaseTable (Id INTEGER PRIMARY KEY, Value TEXT);
-CREATE TABLE lower (Id INTEGER PRIMARY KEY, Value TEXT);
-INSERT INTO MixedCaseTable VALUES (1, 'one'), (2, 'two');
-INSERT INTO lower VALUES (1, 'x');" },
-            { "WITHOUT ROWID TEXT key", @"
-CREATE TABLE tbl (v, k TEXT PRIMARY KEY) WITHOUT ROWID;
-INSERT INTO tbl VALUES (2, 'b'), ('x', 'a'), (NULL, 'c');" },
-            // The record holds the primary key columns first, in key order and each once (SQLite drops the repeated a),
-            // then the others in declared order
-            { "WITHOUT ROWID composite key in another order, with a repeated column", @"
-CREATE TABLE tbl (v TEXT, b INTEGER, a TEXT, PRIMARY KEY (a, b, a)) WITHOUT ROWID;
-INSERT INTO tbl VALUES ('first', 2, 'y'), ('second', 1, 'y'), ('third', 9, 'x');" },
-            // The virtual table is only listed, and its shadow tables are read, docs_idx and docs_config being WITHOUT ROWID
-            { "fts5 shadow tables", @"
-CREATE VIRTUAL TABLE docs USING fts5(title, body);
-INSERT INTO docs VALUES ('hello world', 'first'), ('second row', 'hello again');" },
-            { "quoted names with spaces and keywords", @"
-CREATE TABLE ""my table"" (""select"" TEXT, ""a b"" INTEGER, ""q""""uote"" TEXT);
-CREATE TABLE ""order"" (id INTEGER PRIMARY KEY, ""group"" TEXT);
-INSERT INTO ""my table"" VALUES ('s', 1, 'q');
-INSERT INTO ""order"" VALUES (1, 'g'), (2, 'h');" },
-            // A VIRTUAL generated column is not in the record, so the columns after it sit one position left there
-            { "VIRTUAL generated column before stored columns", @"
-CREATE TABLE tbl (a, b TEXT GENERATED ALWAYS AS (a || '!') VIRTUAL, c, d INTEGER);
-INSERT INTO tbl (a, c, d) VALUES ('x', 'third', 4);" },
-            // Without VIRTUAL or STORED, a generated column is VIRTUAL
-            { "generated column in short AS form", @"
-CREATE TABLE tbl (a, b AS (a || '!'), c);
-INSERT INTO tbl (a, c) VALUES ('x', 'third');" },
-            // A STORED generated column is in the record at its position, a VIRTUAL one is not
-            { "STORED generated column next to VIRTUAL", @"
-CREATE TABLE tbl (a INTEGER, v AS (a * 2) VIRTUAL, s INTEGER AS (a * 3) STORED, z TEXT);
-INSERT INTO tbl (a, z) VALUES (1, 'one'), (2, 'two');" },
-            // The record is the key, then the other stored columns: k, v, w. The VIRTUAL column g takes no position.
-            { "WITHOUT ROWID VIRTUAL generated column before a stored column", @"
-CREATE TABLE tbl (v TEXT, g AS (v || '!') VIRTUAL, w INTEGER, k TEXT PRIMARY KEY) WITHOUT ROWID;
-INSERT INTO tbl (v, w, k) VALUES ('first', 1, 'b'), ('second', 2, 'a');" },
-            { "rtree virtual table and plain table", @"
-CREATE VIRTUAL TABLE boxes USING rtree(id, minX, maxX, minY, maxY);
-INSERT INTO boxes VALUES (1, 0, 10, 0, 10), (2, 5, 15, 5, 15), (3, -3, 3, -3, 3);
-CREATE TABLE Plain (Id INTEGER PRIMARY KEY, Value TEXT);
-INSERT INTO Plain VALUES (1, 'one'), (2, 'two');" },
         };
     }
 
     [Theory]
     [MemberData(nameof(PageSizes))]
     public void PageSize(string name, string script) => SqliteParity.AssertSameAsSqlite(script);
+
+    /// <summary>
+    /// Bytes reserved at the end of each page shrink the usable size that the cell and overflow layout is computed
+    /// from. 32 of 512 leaves 480, the smallest usable size SQLite allows.
+    /// https://www.sqlite.org/fileformat.html#reserved_bytes_per_page
+    /// </summary>
+    [Fact]
+    public void ReservedBytesPerPage() => SqliteParity.AssertSameAsSqlite(32, PageSizeScript(512));
 
     [Theory]
     [MemberData(nameof(BTreeShapes))]

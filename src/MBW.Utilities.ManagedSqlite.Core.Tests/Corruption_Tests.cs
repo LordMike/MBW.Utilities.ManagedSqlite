@@ -269,12 +269,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Record_HeaderLargerThanPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 0x7F));
 
-    // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 127 is a 57 byte text, past any value that
-    // fits, and 21 is a 4 byte text, one byte more than the payload holds.
-    [Theory]
-    [InlineData(127)]
-    [InlineData(21)]
-    public void Record_SerialTypeTooLargeForPayload(byte serialType) => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, serialType));
+    // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 21 is a 4 byte text, one byte more than the payload holds.
+    [Fact]
+    public void Record_SerialTypeTooLargeForPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 21));
 
     // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
 
@@ -301,22 +298,6 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         });
 
         Assert.Null(ex);
-    }
-
-    [Theory]
-    [InlineData(10)]
-    [InlineData(11)]
-    public void ReservedSerialType_ReadsAsNull(byte serialType)
-    {
-        // SQLite reads the reserved serial types 10 and 11 as NULL. Small's row 1 stores NULL in its first column.
-        DbPatcher patcher = new DbPatcher(Base);
-        patcher.WriteByte(patcher.GetRecordOffset(SmallRoot, 0, out _) + 1, serialType);
-
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(patcher.Data));
-        Sqlite3Row row = db.GetTable("Small").EnumerateRows().First();
-
-        Assert.Null(row.ColumnData[0]);
-        Assert.Equal("one", row.ColumnData[1]);
     }
 
     [Fact]

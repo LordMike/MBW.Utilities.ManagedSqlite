@@ -86,7 +86,7 @@ internal class SqlNode
     /// <summary>
     /// Removes identifier quoting ("x", 'x', `x` or [x]) and unescapes doubled quote characters, e.g. "col""two" is col"two
     /// </summary>
-    private static string Unquote(string value)
+    public static string Unquote(string value)
     {
         if (value.Length < 2)
             return value;
