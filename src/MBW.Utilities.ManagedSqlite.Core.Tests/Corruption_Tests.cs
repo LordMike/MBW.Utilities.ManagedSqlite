@@ -252,12 +252,13 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
             SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
             SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Keyed"));
             Assert.Equal("HDR-17", ex.Check);
+            Assert.Equal((uint)new DbPatcher(Base).PageCount, ex.Page);
         }
 
         List<string> issues = new List<string>();
-        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add($"{i.Check} page {i.Page}") };
         SqliteParity.AssertSameAsSqlite(Script, _ => data, lenient);
-        Assert.Equal(new[] { "HDR-17" }, issues);
+        Assert.Equal(new[] { $"HDR-17 page {new DbPatcher(Base).PageCount}" }, issues);
     }
 
     // B-tree page headers
