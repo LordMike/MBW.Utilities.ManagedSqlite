@@ -386,6 +386,19 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal(new[] { "PAGE-03" }, issues);
     }
 
+    // PAGE-39: in Lenient, 260 cells pass the relaxed PAGE-03, but their 520 bytes of pointers do not fit in the page
+    [Fact]
+    public void CellCount_PointerArrayPastEndOfPageInLenient()
+    {
+        byte[] data = new DbPatcher(Base).SetCellCount(SmallRoot, 260).Data;
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient);
+        Assert.Equal("PAGE-39", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Small"))).Check);
+        Assert.Equal(new[] { "PAGE-03" }, issues);
+    }
+
     // Child pointers
 
     // As in SQLite, the depth limit is what stops a cycle. Root and left page alternate, so the walk gives up at the

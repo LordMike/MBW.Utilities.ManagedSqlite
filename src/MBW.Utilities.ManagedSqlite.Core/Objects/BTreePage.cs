@@ -41,7 +41,7 @@ internal abstract class BTreePage
 
         BTreeHeader header = new BTreeHeader(data, length, ref pos);
 
-        // PAGE-03: a page holds at most (pageSize-8)/6 cells, the most that fit with the smallest cell and its pointer.
+        // PAGE-03, INTEG-05: a page holds at most (pageSize-8)/6 cells, the most that fit with the smallest cell and its pointer.
         // btreeInitPage in btree.c:
         //   if( pPage->nCell>MX_CELL(pBt) ){
         //     /* To many cells for a single page.  The page must be corrupt */
@@ -53,8 +53,9 @@ internal abstract class BTreePage
         Checks.Relaxable(header.CellCount <= maxCells, reader.Settings, "PAGE-03",
             $"cell count {header.CellCount} is more than a page can hold ({maxCells})", page, "b-tree page header");
 
-        // The cell pointer array follows the header, and must be in the page to be read at all
-        Checks.Strict(pos + 2L * header.CellCount <= reader.PageSize - reader.ReservedSpace, "PAGE-03",
+        // PAGE-39: the cell pointer array follows the header, and must be in the usable area to be read at all. This is the
+        // reader's own limit, not SQLite's; MX_CELL keeps any page within it, so only Lenient can reach it.
+        Checks.Strict(pos + 2L * header.CellCount <= reader.PageSize - reader.ReservedSpace, "PAGE-39",
             $"cell count {header.CellCount} does not fit in the page", page, "b-tree page header");
 
         // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
