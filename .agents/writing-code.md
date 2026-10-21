@@ -66,7 +66,7 @@ relaxes only the checks where the data that follows is still intact.
 
 1. **Find the SQLite code that does the same check.** The survey was made against SQLite 3.53.4. Look it up in the survey tables in `docs/sqlite-checks/` by area: HDR (file header),
    PAGE (b-tree pages), CELL (cells and overflow), REC (records), SCHEMA (sqlite_schema rows), DDL (CREATE statements),
-   WALJ (WAL and journals).
+   INTEG (`integrity_check` only, mostly not for the read path), WALJ (WAL and journals).
 2. **If SQLite has no such check, don't add one.** That holds even when the data looks wrong; for example, SQLite reads
    reserved serial types 10 and 11 as NULL. Checks that SQLite runs only in `PRAGMA integrity_check`, `quick_check` or
    with `cell_size_check=ON` don't belong on the read path either.
@@ -103,7 +103,8 @@ walk goes on as before, and no row moves.
 //     releasePage(pCur->pPage);
 //     rc = SQLITE_CORRUPT_PGNO(newPgno);
 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5471 (moveToChild)
-// Lenient reports it and walks on as before: an empty interior page still has its right-most child.
+// Lenient reports it and walks on as before: an empty leaf has no rows, and an empty interior page still has its
+// right-most child, so no row moves or appears.
 Checks.Relaxable(child.CellCount > 0, parent.Reader.Settings, "PAGE-21",
     $"child page {childPage} has no cells", childPage, "b-tree page header");
 
@@ -122,7 +123,9 @@ PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= fi
 ```
 
 Rules:
-- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID.
+- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. The
+  exceptions are the entry-point wrappers that turn an unexpected exception into a `SqliteCorruptException` with an
+  inner exception. A few older direct throws remain; move them to `Checks` when you touch them.
 - **Pass the message as an interpolated string straight into the call.** The `CheckMessage` handler builds it only when
   the check fails, so a passing check allocates nothing. Don't build the message first.
 - **The check ID is the survey ID.** A check with no ID gets a new row in the right area table, with the next free
@@ -155,7 +158,7 @@ Each check gets parity tests in the corruption suite (`Core.Tests/Corruption_Tes
 - [ ] SQLite does this check on the read path (cited by pinned link and function)
 - [ ] Strict vs Relaxable chosen by the table above, and the Lenient fallback cannot produce wrong values
 - [ ] The comment has the ID, the quoted condition and the link
-- [ ] The survey row's *Ours* cell is updated, and the ID is listed in `docs/sqlite-checks/README.md`
+- [ ] The ID is listed in `docs/sqlite-checks/README.md` (the survey tables' *Ours* column is a snapshot from before #58)
 - [ ] Parity tests for Strict, and for Lenient if Relaxable
 
 

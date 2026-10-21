@@ -179,9 +179,9 @@ internal sealed class ReaderBase : IDisposable
 
         DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
 
-        // HDR-30: SQLite never rejects the text encoding field. A non-zero value is masked to its low two bits, where 0
-        // means UTF-8; a field of 0 leaves the connection's default encoding, which is UTF-8 unless configured (here:
-        // FallbackEncoding). sqlite3InitOne in prepare.c:
+        // HDR-30, REC-40, SCHEMA-01: SQLite never rejects the text encoding field. A non-zero value is masked to its low
+        // two bits, where 0 means UTF-8; a field of 0 leaves the connection's default encoding, which is UTF-8 unless
+        // configured (here: FallbackEncoding). sqlite3InitOne in prepare.c:
         //   if( meta[BTREE_TEXT_ENCODING-1] ){
         //     ...
         //     encoding = (u8)meta[BTREE_TEXT_ENCODING-1] & 3;
@@ -274,8 +274,8 @@ internal sealed class ReaderBase : IDisposable
         Checks.Strict(page != 0, "PAGE-15", $"page number 0 is outside the database (1..{PageCount})", page, "page number");
         Checks.Strict(PageCount == 0 || page <= PageCount, "PAGE-14", $"page number {page} is outside the database (1..{PageCount})", page, "page number");
 
-        // HDR-20: the lock-byte page, which holds byte offset 0x40000000 (PENDING_BYTE) in a file over 1 GiB, is never
-        // part of the database, so a reference to it is corrupt in every mode. getPageNormal in pager.c:
+        // HDR-20, INTEG-03: the lock-byte page, which holds byte offset 0x40000000 (PENDING_BYTE) in a file over 1 GiB,
+        // is never part of the database, so a reference to it is corrupt in every mode. getPageNormal in pager.c:
         //   if( pgno==PAGER_SJ_PGNO(pPager) ){
         //     rc = SQLITE_CORRUPT_BKPT;
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5628 (getPageNormal)
