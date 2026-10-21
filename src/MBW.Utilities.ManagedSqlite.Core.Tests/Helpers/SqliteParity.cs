@@ -117,10 +117,16 @@ internal static class SqliteParity
         if (data == IntPtr.Zero)
             throw new InvalidOperationException("sqlite3_serialize failed");
 
-        byte[] bytes = new byte[size];
-        Marshal.Copy(data, bytes, 0, (int)size);
-        raw.sqlite3_free(data);
-        return bytes;
+        try
+        {
+            byte[] bytes = new byte[size];
+            Marshal.Copy(data, bytes, 0, (int)size);
+            return bytes;
+        }
+        finally
+        {
+            raw.sqlite3_free(data);
+        }
     }
 
     /// <summary>
@@ -160,16 +166,24 @@ internal static class SqliteParity
         SqliteConnection connection = new SqliteConnection("Data Source=:memory:");
         connection.Open();
 
-        IntPtr copy = raw.sqlite3_malloc(data.Length);
-        Marshal.Copy(data, 0, copy, data.Length);
-        int rc = raw.sqlite3_deserialize(connection.Handle, "main", copy, data.Length, data.Length, raw.SQLITE_DESERIALIZE_FREEONCLOSE | raw.SQLITE_DESERIALIZE_READONLY);
-        if (rc != raw.SQLITE_OK)
+        try
+        {
+            IntPtr copy = raw.sqlite3_malloc(data.Length);
+            if (copy == IntPtr.Zero)
+                throw new OutOfMemoryException();
+
+            Marshal.Copy(data, 0, copy, data.Length);
+            int rc = raw.sqlite3_deserialize(connection.Handle, "main", copy, data.Length, data.Length, raw.SQLITE_DESERIALIZE_FREEONCLOSE | raw.SQLITE_DESERIALIZE_READONLY);
+            if (rc != raw.SQLITE_OK)
+                throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
+
+            return connection;
+        }
+        catch
         {
             connection.Dispose();
-            throw new InvalidOperationException($"sqlite3_deserialize failed: {rc}");
+            throw;
         }
-
-        return connection;
     }
 
     /// <summary>
