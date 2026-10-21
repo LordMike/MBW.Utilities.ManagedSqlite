@@ -34,6 +34,11 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     private uint _pageBufferPage;
 
+    /// <summary>
+    /// Set once Lenient has reported the partial last page (HDR-17), so it is reported once, not on every read of it
+    /// </summary>
+    private bool _partialPageReported;
+
     public DatabaseHeader Header { get; }
 
     /// <summary>
@@ -215,9 +220,7 @@ internal sealed class ReaderBase : IDisposable
         if (!throwException)
             return;
 
-        // HDR-17: the file ends inside a structure that the file refers to. PAGE-14 keeps page numbers within the file's
-        // page count, so this fails only inside a partial last page. SQLite zero-fills that page instead (HDR-17 is
-        // tolerated there); this reader is stricter until part 1.7 of #58 settles it.
+        // HDR-17: the file ends inside a structure that the file refers to. ReadPage handles the partial last page.
         long dataLeft = Length - _stream.Position;
         Checks.Strict(dataLeft >= sizeWanted, "HDR-17",
             $"the file is shorter than the structures in it say ({sizeWanted} bytes wanted at offset {_stream.Position}, the file is {Length} bytes)",
@@ -239,7 +242,7 @@ internal sealed class ReaderBase : IDisposable
             structure: "file length");
     }
 
-    internal void SeekPage(uint page, uint offset = 0)
+    internal void SeekPage(uint page, uint offset = 0, bool checkSize = true)
     {
         // PAGE-15: page 0 does not exist, and PAGE-14: pages above the page count are not part of the database.
         // getPageNormal in pager.c, and getAndInitPage in btree.c:
@@ -254,7 +257,7 @@ internal sealed class ReaderBase : IDisposable
         ulong position = (ulong)(page - 1) * PageSize;
         position += offset;
 
-        SetPositionAndCheckSize(position, (uint)(PageSize - offset));
+        SetPositionAndCheckSize(position, (uint)(PageSize - offset), checkSize);
     }
 
     /// <summary>
@@ -263,14 +266,33 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     internal byte[] ReadPage(uint page)
     {
-        SeekPage(page);
+        SeekPage(page, checkSize: false);
 
         if (_pageBuffer == null || _pageBuffer.Length != PageSize)
             _pageBuffer = new byte[PageSize];
 
         _pageBufferPage = 0;
-        if (Read(_pageBuffer, 0, (int)PageSize) != PageSize)
-            throw new EndOfStreamException();
+        int read = Read(_pageBuffer, 0, (int)PageSize);
+        if (read != PageSize)
+        {
+            // HDR-17: the file ends inside its last page. SQLite counts that page (pagerPagecount rounds up) and reads the
+            // missing bytes as zeros, since a short read is not an error. readDbPage in pager.c:
+            //   rc = sqlite3OsRead(pPager->fd, pPg->pData, pPager->pageSize, iOffset);
+            //   if( rc==SQLITE_IOERR_SHORT_READ ){
+            //     rc = SQLITE_OK;
+            //   }
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3088 (readDbPage)
+            // Those zeros are not the file's data, so SQLite then returns damaged values without an error. Strict is
+            // stricter than SQLite here and fails; Lenient reads the zeros as SQLite does.
+            if (!_partialPageReported)
+            {
+                Checks.Relaxable(false, Settings, "HDR-17",
+                    $"page {page} is cut short by the end of the file ({read} of {PageSize} bytes)", page, "file length");
+                _partialPageReported = true;
+            }
+
+            Array.Clear(_pageBuffer, read, (int)PageSize - read);
+        }
 
         _pageBufferPage = page;
         return _pageBuffer;

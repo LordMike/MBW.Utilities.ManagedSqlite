@@ -50,7 +50,12 @@ internal static class SqliteParity
     /// </summary>
     public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch) => AssertSameAsSqlite(patch(Build(script)));
 
-    private static void AssertSameAsSqlite(byte[] data)
+    /// <summary>
+    /// After <paramref name="patch"/>, with the library opening the file with <paramref name="settings"/>
+    /// </summary>
+    public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch, Sqlite3Settings settings) => AssertSameAsSqlite(patch(Build(script)), settings);
+
+    private static void AssertSameAsSqlite(byte[] data, Sqlite3Settings settings = null)
     {
         string expected;
         using (SqliteConnection connection = Open(data))
@@ -63,7 +68,7 @@ internal static class SqliteParity
         }
 
         string actual;
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), settings))
         {
             List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
             actual = Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),

@@ -239,15 +239,25 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Truncated_LastPageMissing() => AssertCorrupt("file length", p => p.Truncate((p.PageCount - 1) * p.PageSize));
 
-    // A partial last page still counts as a page, so the file opens and a table that does not touch that page reads as
-    // before. (The last page holds Small's overflow; SQLite reads the missing bytes as zeros, which the reader does not yet.)
+    // HDR-17: a partial last page still counts as a page, so the file opens and a table that does not touch that page
+    // reads as before. The last page is a leaf of Keyed: Strict fails reading it, Lenient reads the missing bytes as
+    // zeros, as SQLite does, and reports it once.
     [Fact]
     public void Truncated_InsideTheLastPage()
     {
-        byte[] data = new DbPatcher(Base).Truncate(Base.Length - 1).Data;
+        byte[] data = new DbPatcher(Base).Truncate(Base.Length - 100).Data;
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
-        SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep");
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+        {
+            SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
+            SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Keyed"));
+            Assert.Equal("HDR-17", ex.Check);
+        }
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        SqliteParity.AssertSameAsSqlite(Script, _ => data, lenient);
+        Assert.Equal(new[] { "HDR-17" }, issues);
     }
 
     // B-tree page headers
