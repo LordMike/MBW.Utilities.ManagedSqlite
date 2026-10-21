@@ -63,7 +63,7 @@ public static class SqlExtensions
             return false;
 
         // Special case for row-id
-        if (tableDefinition.RowIdColumn != null && columnName.Equals(tableDefinition.RowIdColumn.Name, StringComparison.OrdinalIgnoreCase))
+        if (column == tableDefinition.RowIdColumn)
         {
             // Return the row-id
             value = row.RowId;

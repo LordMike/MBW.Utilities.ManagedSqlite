@@ -24,25 +24,11 @@ internal static class SqlKeywords
     /// </summary>
     public static HashSet<string> ColumnConstraintKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
     {
-        "CONSTRAINT", "PRIMARY", "NOT", "NULL", "UNIQUE", "CHECK", "DEFAULT", "COLLATE", "REFERENCES", "GENERATED", "AS"
+        "CONSTRAINT", "PRIMARY", "NOT", "NULL", "UNIQUE", "CHECK", "DEFAULT", "COLLATE", "REFERENCES", "GENERATED", "AS",
+
+        // defer_subclause is a column constraint of its own in SQLite's grammar (ccons ::= defer_subclause in parse.y),
+        // so "a INTEGER DEFERRABLE PRIMARY KEY" declares the type INTEGER. "NOT DEFERRABLE" starts with NOT, above.
+        "DEFERRABLE"
     };
 
-    /// <summary>
-    /// Type names reported as <see cref="SqlTableColumn.TypeName"/>. The parser does not use the types here: the
-    /// detected type follows SQLite's affinity rules instead.
-    /// </summary>
-    public static (string[] words, Type type)[] TypeKeywords =
-        new[] {
-            // integer, numeric
-            (new[] { "INT", "INTEGER", "TINYINT", "SMALLINT", "MEDIUMINT", "BIGINT", "INT2", "INT8", "BIG INT", "NUMERIC", "DECIMAL", "BOOL", "BOOLEAN", "DATE", "DATETIME", "UNSIGNED" }, typeof(long)),
-
-            // text
-            (new[] { "CHARACTER", "VARCHAR", "VARYING CHARACTER","NCHAR", "NATIVE CHARACTER", "NVARCHAR", "TEXT", "CLOB", "LONGVARCHAR" }, typeof(string)),
-
-            // blob
-            (new[] { "BLOB", "GUID" }, typeof(byte[])),
-
-            // real
-            (new[] { "REAL", "DOUBLE", "DOUBLE PRECISION", "FLOAT" }, typeof(double)),
-        }.SelectMany(s => s.Item1.Select(x => (x.Split(' '), s.Item2))).ToArray();
 }

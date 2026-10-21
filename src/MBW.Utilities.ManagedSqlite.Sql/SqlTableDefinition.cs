@@ -1,7 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
@@ -26,7 +26,8 @@ public sealed class SqlTableDefinition
     {
         TableName = name;
         _columns = new List<SqlTableColumn>();
-        _columnIndex = new Dictionary<string, SqlTableColumn>(StringComparer.OrdinalIgnoreCase);
+        // Column names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c)
+        _columnIndex = new Dictionary<string, SqlTableColumn>(AsciiCaseInsensitiveComparer.Instance);
 
         Columns = new ReadOnlyCollection<SqlTableColumn>(_columns);
     }
