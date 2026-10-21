@@ -227,7 +227,7 @@ internal static class SqlParser
         // A WITHOUT ROWID table's record holds the primary key terms first, in key order, then the other stored columns
         // in declared order. A column that is in the key twice, with two collations, takes two positions, and is read
         // from the first. VIRTUAL generated columns are not stored, and can't be in the key.
-        // convertToWithoutRowidTable in build.c: https://sqlite.org/src/file?name=src/build.c
+        // convertToWithoutRowidTable in build.c: https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L2354
         if (withoutRowId)
         {
             HashSet<SqlTableColumn> keyColumns = new HashSet<SqlTableColumn>();
@@ -253,7 +253,7 @@ internal static class SqlParser
     /// <summary>
     /// The declared type: everything between the column name and the first column constraint. GENERATED and ALWAYS
     /// are names SQLite's grammar also accepts in a type (%fallback ID in parse.y), so GENERATED starts a constraint
-    /// only as "GENERATED ALWAYS AS". Like sqlite3AddColumn in build.c (https://sqlite.org/src/file?name=src/build.c),
+    /// only as "GENERATED ALWAYS AS". Like sqlite3AddColumn in build.c (https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1490),
     /// a type text of 16 or more characters that ends in "always", or "generated always", loses those words.
     /// </summary>
     private static List<SqlNode> GetDeclaredType(SqlNode columnSet)
@@ -289,7 +289,7 @@ internal static class SqlParser
     /// The declared type's words, each unquoted, joined by one space, without a size such as "(10, 5)". For a type
     /// written the usual way this is the type SQLite reports (PRAGMA table_info) without its size; SQLite itself keeps
     /// the original spacing and dequotes the type text as a whole. sqlite3AddColumn in build.c:
-    /// https://sqlite.org/src/file?name=src/build.c
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1490
     /// </summary>
     private static string GetDeclaredTypeName(SqlNode columnSet)
     {
@@ -335,7 +335,7 @@ internal static class SqlParser
     /// <summary>
     /// Adds a primary key term, unless an earlier term has the same column and collation. A term without COLLATE has
     /// its column's collation, and a column without one has BINARY; collation names compare ignoring ASCII case.
-    /// isDupColumn in build.c: https://sqlite.org/src/file?name=src/build.c
+    /// isDupColumn in build.c: https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L2274
     /// </summary>
     private static void AddPrimaryKeyTerm(List<(SqlTableColumn column, string? collation)> terms, SqlTableColumn column, string? collation)
     {

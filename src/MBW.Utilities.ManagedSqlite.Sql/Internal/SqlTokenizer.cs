@@ -13,7 +13,7 @@ internal static class SqlTokenizer
     /// vertical tab may continue a run of whitespace but not start one; SQLite rejects a statement with a token that
     /// starts with one. Every other character that .NET counts as whitespace, such as a no-break space, is an
     /// identifier character to SQLite. A byte order mark (U+FEFF) where a token starts is whitespace too (CC_BOM in
-    /// sqlite3GetToken, tokenize.c: https://sqlite.org/src/file?name=src/tokenize.c), but inside an identifier it is an
+    /// sqlite3GetToken, tokenize.c: https://github.com/sqlite/sqlite/blob/version-3.53.4/src/tokenize.c#L273), but inside an identifier it is an
     /// identifier character, like any character outside ASCII.
     /// </summary>
     private static TextParser<TextSpan> WhiteSpace { get; } =

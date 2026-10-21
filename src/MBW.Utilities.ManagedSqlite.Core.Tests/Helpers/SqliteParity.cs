@@ -159,7 +159,7 @@ internal static class SqliteParity
     /// Opens a database file's bytes with SQLite, read-only and in memory, through sqlite3_deserialize
     /// (https://www.sqlite.org/c3ref/deserialize.html), so SQLite reads exactly the bytes the library is given. SQLite
     /// owns the copy (SQLITE_DESERIALIZE_FREEONCLOSE) and frees it when the connection closes, and also when
-    /// deserialize itself fails (end_deserialize in https://sqlite.org/src/file?name=src/memdb.c).
+    /// deserialize itself fails (end_deserialize in https://github.com/sqlite/sqlite/blob/version-3.53.4/src/memdb.c#L904).
     /// </summary>
     private static SqliteConnection Open(byte[] data)
     {

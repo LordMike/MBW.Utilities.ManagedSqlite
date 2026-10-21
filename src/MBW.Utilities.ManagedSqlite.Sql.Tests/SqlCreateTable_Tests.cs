@@ -161,7 +161,7 @@ public class SqlCreateTable_Tests
     /// <para>
     /// The table is an index b-tree. Its record starts with the primary key terms in key order, then the other stored
     /// columns in declared order. A term that repeats an earlier one with the same collation is left out (isDupColumn
-    /// in https://sqlite.org/src/file?name=src/build.c).
+    /// in https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L2274).
     /// </para>
     /// </summary>
     [Theory]

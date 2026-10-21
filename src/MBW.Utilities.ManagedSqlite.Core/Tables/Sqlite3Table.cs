@@ -228,8 +228,8 @@ public sealed class Sqlite3Table
                     // written, so binding, computing or casting a NaN all store NULL. When it reads a record, serialGet in
                     // vdbeaux.c does the same for a NaN that another writer or damage put in the file
                     // ("pMem->flags = IsNaN(x) ? MEM_Null : MEM_Real"), so a NaN reads as NULL here too.
-                    // https://sqlite.org/src/file?name=src/vdbeaux.c (serialGet, serial type 7)
-                    // https://sqlite.org/src/file?name=src/vdbemem.c (sqlite3VdbeMemSetDouble)
+                    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4071 (serialGet, serial type 7)
+                    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L1092 (sqlite3VdbeMemSetDouble)
                     double real = BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(payload, length, ref pos, 8));
                     rowData[i] = double.IsNaN(real) ? null : (object)real;
                     break;

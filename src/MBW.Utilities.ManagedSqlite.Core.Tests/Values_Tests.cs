@@ -59,7 +59,7 @@ public class Values_Tests
     /// file; a NaN comes only from another writer or damage, and serialGet in vdbeaux.c reads it as NULL. The stored 1.5
     /// (big-endian 3FF8000000000000, serial type 7) is overwritten with a NaN's bits (sign bit set, non-canonical
     /// payload); the text column after it proves the 8 bytes are still consumed.
-    /// https://sqlite.org/src/file?name=src/vdbeaux.c, https://www.sqlite.org/fileformat.html#record_format
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4123, https://www.sqlite.org/fileformat.html#record_format
     /// </summary>
     [Fact]
     public void NaNReadsAsNull()
@@ -80,7 +80,7 @@ public class Values_Tests
 
     /// <summary>
     /// SQLite reads the reserved serial types 10 and 11 as NULL (serialGet in vdbeaux.c,
-    /// https://sqlite.org/src/file?name=src/vdbeaux.c). The NULL in a's record header (serial type 0, the byte after the
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4071). The NULL in a's record header (serial type 0, the byte after the
     /// header size) is overwritten, and the text after it proves no bytes are consumed.
     /// </summary>
     [Theory]

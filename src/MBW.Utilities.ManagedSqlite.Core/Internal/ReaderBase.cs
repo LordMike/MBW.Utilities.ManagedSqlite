@@ -76,12 +76,12 @@ internal sealed class ReaderBase : IDisposable
         //   if( nPage==0 || memcmp(24+page1, 92+page1, 4)!=0 ) nPage = nPageFile;
         //   ...
         //   if( nPage>nPageFile ) rc = SQLITE_CORRUPT_BKPT
-        // https://sqlite.org/src/file?name=src/btree.c (lockBtree)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3282 (lockBtree)
         //
         // The file's page count rounds a partial last page up, as pagerPagecount in pager.c does
         // ("nPage = (Pgno)((n+pPager->pageSize-1) / pPager->pageSize)"); SQLite then reads the missing bytes of that page
         // as zeros (SQLITE_IOERR_SHORT_READ handling in os_unix.c unixRead / os_win.c winRead), which this reader does not.
-        // https://sqlite.org/src/file?name=src/pager.c (pagerPagecount)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3325 (pagerPagecount)
         uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
@@ -204,7 +204,7 @@ internal sealed class ReaderBase : IDisposable
     /// it gets the whole page from the page cache (btreeGetPage / sqlite3PagerGet in btree.c and pager.c) and
     /// accessPayload copies the local part of a payload out of that page before walking the overflow chain, each
     /// overflow page again fetched whole through the cache.
-    /// https://sqlite.org/src/file?name=src/btree.c (accessPayload), https://sqlite.org/src/file?name=src/pager.c
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5125 (accessPayload), https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5772
     /// </remarks>
     internal void ReadFromPage(uint page, uint offset, byte[] buffer, int bufferOffset, int count)
     {
