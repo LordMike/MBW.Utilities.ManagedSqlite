@@ -16,7 +16,8 @@ public class SqlSchemaChecks_Tests
 {
     private const string Schema =
         "CREATE TABLE u (b); INSERT INTO u VALUES (1); CREATE TABLE t (a PRIMARY KEY, c UNIQUE); CREATE INDEX i0 ON t (c); " +
-        "CREATE VIEW v AS SELECT 1 AS a; CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END; PRAGMA writable_schema = ON; " +
+        "CREATE TABLE w (p PRIMARY KEY, q UNIQUE) WITHOUT ROWID; CREATE VIEW v AS SELECT 1 AS a; CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END; " +
+        "PRAGMA writable_schema = ON; " +
         "INSERT INTO sqlite_schema VALUES ('table', 'vt', 'vt', 0, 'CREATE VIRTUAL TABLE vt USING nosuch (x)'); ";
 
     // A row's rootpage is u's page, which no index uses, or 0 for a view, a trigger or a virtual table
@@ -62,6 +63,7 @@ public class SqlSchemaChecks_Tests
     [InlineData("DDL-03", "index", "i2", "t", "CREATE INDEX i1 ON t (a)")]
     [InlineData("DDL-03", "index", "i1", "u", "CREATE INDEX i1 ON t (a)")]
     [InlineData("DDL-03", "view", "v2", "v2", "CREATE VIEW v1 AS SELECT 1")]
+    [InlineData("DDL-03", "table", "vt2", "vt2", "CREATE VIRTUAL TABLE vt9 USING nosuch")]
     [InlineData("DDL-03", "trigger", "tr1", "u", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN SELECT 1; END")]
     // CREATE INDEX: an ordinary table loaded before it, and terms and a WHERE that resolve against it
     [InlineData("DDL-65", "index", "i1", "nosuch", "CREATE INDEX i1 ON nosuch (a)")]
@@ -77,6 +79,7 @@ public class SqlSchemaChecks_Tests
     [InlineData("DDL-69", "index", "i1", "t", "CREATE INDEX i1 ON t (a) WHERE main.u.b")]
     [InlineData("DDL-69", "index", "i1", "t", "CREATE INDEX i1 ON t (a) WHERE a = ?")]
     [InlineData("DDL-69", "index", "i1", "t", "CREATE INDEX i1 ON t (a) WHERE count(a)")]
+    [InlineData("DDL-69", "index", "i1", "w", "CREATE INDEX i1 ON w (p) WHERE rowid")]
     [InlineData("DDL-51", "index", "i1", "t", "CREATE INDEX i1 ON t (a NULLS FIRST)")]
     // Views
     [InlineData("DDL-74", "view", "v1", "v1", "CREATE VIEW v1 AS SELECT ?")]
@@ -94,6 +97,13 @@ public class SqlSchemaChecks_Tests
     [InlineData("DDL-82", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN INSERT INTO u VALUES (1) RETURNING *; END")]
     [InlineData("DDL-82", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t WHEN EXISTS (SELECT 1 FROM temp.u) BEGIN SELECT 1; END")]
     [InlineData("DDL-82", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN UPDATE u SET b = 1 FROM aux.t; END")]
+    [InlineData("DDL-51", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN INSERT INTO u VALUES (1) ON CONFLICT (b NULLS FIRST) DO NOTHING; END")]
+    [InlineData("DDL-51", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN INSERT INTO u VALUES (1) ON CONFLICT (b NULLS LAST) WHERE b DO UPDATE SET b = 2; END")]
+    [InlineData("DDL-51", "trigger", "tr", "t", "CREATE TRIGGER IF NOT EXISTS tr AFTER INSERT ON t BEGIN INSERT INTO u VALUES (1) ON CONFLICT (b NULLS FIRST) DO NOTHING; END")]
+    [InlineData("DDL-82", "trigger", "tr", "t", "CREATE TRIGGER IF NOT EXISTS tr AFTER INSERT ON t BEGIN DELETE FROM t NOT INDEXED; END")]
+    [InlineData("DDL-82", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN UPDATE u SET (b, b) = (1, 2, 3); END")]
+    [InlineData("DDL-82", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN UPDATE u SET b = 1, (b, b) = 1; END")]
+    [InlineData("DDL-82", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN INSERT INTO u VALUES (1) ON CONFLICT DO UPDATE SET (b, b) = (1); END")]
     [InlineData("SCHEMA-22", "trigger", "tr1", "t", "CREATE TRIGGER tr1 AFTER INSERT ON t BEGIN SELECT; END")]
     public void RejectedLikeSqlite(string check, string type, string name, string tableName, string sql) =>
         AssertRejected(check, Build(type, name, tableName, sql));
@@ -114,6 +124,8 @@ public class SqlSchemaChecks_Tests
     [InlineData("trigger", "tr1", "t", "CREATE TRIGGER tr1 BEFORE UPDATE OF nosuch ON main.t WHEN new.nosuch BEGIN UPDATE nosuch SET x = 1; END")]
     [InlineData("trigger", "tr1", "v", "CREATE TRIGGER tr1 INSTEAD OF INSERT ON v BEGIN INSERT INTO u SELECT * FROM main.t; DELETE FROM u WHERE b = new.a; END")]
     [InlineData("trigger", "tr1", "u", "CREATE TRIGGER tr1 AFTER INSERT ON u BEGIN INSERT INTO t VALUES (1, 2) ON CONFLICT DO NOTHING; END")]
+    [InlineData("trigger", "tr1", "u", "CREATE TRIGGER tr1 AFTER INSERT ON nosuch.u BEGIN INSERT INTO u VALUES (1) ON CONFLICT (b) DO NOTHING ON CONFLICT (b NULLS FIRST) DO NOTHING; UPDATE u SET (b, b) = (SELECT 1, 2, 3); END")]
+    [InlineData("index", "i1", "sqlite_master", "CREATE INDEX i1 ON sqlite_schema (name) WHERE rowid > 0")]
     [InlineData("view", "v1", "v1", "CREATE VIEW v1 (x, y) AS SELECT nosuch FROM nosuch")]
     [InlineData("table", "vt1", "vt1", "CREATE VIRTUAL TABLE vt1 USING nosuch (x, (y, z), ''a'')")]
     public void AcceptedLikeSqlite(string type, string name, string tableName, string sql) =>
@@ -127,9 +139,33 @@ public class SqlSchemaChecks_Tests
     [InlineData("DDL-02", "INSERT INTO sqlite_schema VALUES ('index', 'sqlite_autoindex_u_1', 'u', 3, NULL)")]
     [InlineData("DDL-02", "INSERT INTO sqlite_schema VALUES ('index', 'i9', 't', 3, '')")]
     [InlineData("SCHEMA-15", "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'sqlite_autoindex_t_2') WHERE name = 'sqlite_autoindex_t_1'")]
+    [InlineData("SCHEMA-15", "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'w') WHERE name = 'sqlite_autoindex_w_2'")]
+    [InlineData("DDL-72", "INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', 0, 'CREATE INDEX i1 ON t (a)'); INSERT INTO sqlite_schema VALUES ('index', 'i2', 't', 0, 'CREATE INDEX i2 ON t (a)')")]
     [InlineData("DDL-72", "INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', (SELECT rootpage FROM sqlite_schema WHERE name = 'i0'), 'CREATE INDEX i1 ON t (a)')")]
     public void IndexRowsLikeSqlite(string check, string statement) =>
         AssertRejected(check, SqliteParity.Build(Schema + statement + ";"));
+
+    // A WITHOUT ROWID table's PRIMARY KEY index is the table's b-tree; a CREATE INDEX with rootpage 0 before the
+    // automatic index rows is no duplicate, as their root pages are not set yet
+    [Theory]
+    [InlineData("UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'w') WHERE name = 'sqlite_autoindex_w_1'")]
+    [InlineData("UPDATE sqlite_schema SET rowid = rowid + 100 WHERE name LIKE 'sqlite_autoindex_t_%'; INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', 0, 'CREATE INDEX i1 ON t (a)')")]
+    public void IndexRowsAcceptedLikeSqlite(string statement) => AssertAccepted(SqliteParity.Build(Schema + statement + ";"));
+
+    /// <summary>
+    /// A CREATE INDEX before a table can take the name of the table's automatic index, as sqlite_ names are only
+    /// reserved outside the schema load. SQLite then fails the load as out of memory, and this reader as corrupt.
+    /// </summary>
+    [Fact]
+    public void IndexTakingAnAutomaticIndexName()
+    {
+        byte[] data = SqliteParity.Build(Schema + "INSERT INTO sqlite_schema VALUES ('index', 'sqlite_autoindex_x_1', 'u', 0, 'CREATE INDEX sqlite_autoindex_x_1 ON u (b)'); " +
+                                         "INSERT INTO sqlite_schema VALUES ('table', 'x', 'x', (SELECT rootpage FROM sqlite_schema WHERE name = 'u'), 'CREATE TABLE x (q UNIQUE)');");
+        SqliteParity.AssertSqliteFails(data, "u");
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        Assert.Equal("DDL-10", Assert.Throws<SqliteCorruptException>(() => db.GetTable("u").GetTableDefinition()).Check);
+    }
 
     /// <summary>
     /// A virtual table's module arguments count toward the column limit (SQLITE_MAX_COLUMN, 2000), with the module, the

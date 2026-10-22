@@ -108,6 +108,40 @@ internal sealed partial class SchemaParser
                 break;
             case "trigger_cmd ::= scanpt insert_cmd INTO xfullname idlist_opt select upsert scanpt":
                 TriggerStep(I(3) != 0);
+
+                // sqlite3TriggerInsertStep in trigger.c: the first ON CONFLICT target may not have NULLS
+                //     if( pUpsert ){
+                //       sqlite3HasExplicitNulls(pParse, pUpsert->pUpsertTarget);
+                // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/trigger.c#L540 (sqlite3TriggerInsertStep)
+                HasExplicitNulls(L(6));
+                break;
+
+            // An upsert's value is the ON CONFLICT target of its first clause, which comes first in the chain
+            case "upsert ::= ON CONFLICT LP sortlist RP where_opt DO UPDATE SET setlist where_opt upsert":
+            case "upsert ::= ON CONFLICT LP sortlist RP where_opt DO NOTHING upsert":
+                a.Value = _stack[lhs + 3].Value;
+                break;
+            case "upsert ::= ON CONFLICT DO NOTHING returning":
+            case "upsert ::= ON CONFLICT DO UPDATE SET setlist where_opt returning":
+                a.Value = null;
+                break;
+
+            // sqlite3ExprListAppendVector in expr.c: "SET (a, b) = ..." needs as many values as names, unless the value
+            // is a subquery
+            //   if( pExpr->op!=TK_SELECT && pColumns->nId!=(n=sqlite3ExprVectorSize(pExpr)) ){
+            //     sqlite3ErrorMsg(pParse, "%d columns assigned %d values",
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/expr.c#L2113 (sqlite3ExprListAppendVector)
+            case "setlist ::= setlist COMMA LP idlist RP EQ expr":
+                AppendVector(I(3), E(6));
+                break;
+            case "setlist ::= LP idlist RP EQ expr":
+                AppendVector(I(1), E(4));
+                break;
+            case "idlist ::= nm":
+                a.Int = 1;
+                break;
+            case "idlist ::= idlist COMMA nm":
+                a.Int = I(0) + 1;
                 break;
 
             // sqlite3AddReturning in build.c
@@ -116,6 +150,8 @@ internal sealed partial class SchemaParser
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1439 (sqlite3AddReturning)
             case "returning ::= RETURNING selcollist":
             case "upsert ::= RETURNING selcollist":
+                a.Value = null;
+                goto case "where_opt_ret ::= RETURNING selcollist";
             case "where_opt_ret ::= RETURNING selcollist":
             case "where_opt_ret ::= WHERE expr RETURNING selcollist":
                 if (_newTrigger != null)
@@ -869,7 +905,9 @@ internal sealed partial class SchemaParser
 
     /// <summary>
     /// sqlite3SrcListAppend in build.c: with a second name, a FROM term's first name is its database. The first
-    /// database that is not the main one is kept for the view or trigger that holds it (sqlite3FixSelect).
+    /// database that is not the main one is kept for the view or trigger that holds it (sqlite3FixSelect). This is the
+    /// first in the text, where SQLite names the first its walk of the SELECT meets, so with two such databases the
+    /// error can name the other one; it is rejected either way.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L4879 (sqlite3SrcListAppend)
     /// </summary>
     private void FromDatabase(Token name, Token database)

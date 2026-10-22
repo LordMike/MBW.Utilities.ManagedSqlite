@@ -410,6 +410,15 @@ internal sealed partial class SchemaParser
     }
 
     /// <summary>
+    /// The names and values of "SET (a, b) = ..." in an UPDATE or upsert must match in number
+    /// </summary>
+    private void AppendVector(int columns, Expr value)
+    {
+        if (value.Op != TK.SELECT && columns != VectorSize(value))
+            Fail("DDL-82", $"{columns} columns assigned {VectorSize(value)} values");
+    }
+
+    /// <summary>
     /// triggerStepAllocate in trigger.c: an INSERT, UPDATE or DELETE step may not name the table's database
     ///     if( pNew
     ///      &amp;&amp; pNew->pSchema!=db->aDb[1].pSchema

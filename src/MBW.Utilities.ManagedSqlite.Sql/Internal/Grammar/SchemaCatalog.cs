@@ -90,12 +90,23 @@ internal sealed class SchemaCatalog
         }
     }
 
+    /// <summary>
+    /// sqlite3CreateIndex in build.c, at init: the index goes into idxHash. An automatic index is not looked up first,
+    /// so a CREATE INDEX before its table can have taken its name (sqlite_ names are only reserved outside init). SQLite
+    /// then finds the name in the hash and fails the schema load with SQLITE_NOMEM; this reader fails it as corrupt.
+    ///       p = sqlite3HashInsert(&amp;pIndex->pSchema->idxHash,
+    ///                             pIndex->zName, pIndex);
+    ///       if( p ){
+    ///         assert( p==pIndex );  /* Malloc must have failed */
+    ///         sqlite3OomFault(db);
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L4400 (sqlite3CreateIndex)
+    /// </summary>
     public void AddIndex(CatalogIndex index)
     {
-        // sqlite3HashInsert: a name already there is an out of memory fault in SQLite, not a schema error, and cannot
-        // be made by SQLite itself
-        if (!Indexes.ContainsKey(index.Name))
-            Indexes.Add(index.Name, index);
+        if (Indexes.ContainsKey(index.Name))
+            Checks.Fail("DDL-10", $"malformed database schema ({index.Table.Name}) - out of memory: index {index.Name} already exists", structure: "schema");
+
+        Indexes.Add(index.Name, index);
         index.Table.Indexes.Add(index);
     }
 
