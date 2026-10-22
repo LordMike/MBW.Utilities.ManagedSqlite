@@ -461,8 +461,10 @@ CREATE VIRTUAL TABLE f USING fts5(c);
 
         Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
 
-        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
+        List<string> issues = new List<string>();
+        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => lenient.GetTable(name)).Check);
+        Assert.Empty(issues);
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
     }
 
