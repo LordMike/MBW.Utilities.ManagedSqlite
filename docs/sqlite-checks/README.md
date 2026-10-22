@@ -41,3 +41,12 @@ The code for each of these carries its ID in a comment.
 | REC-03, REC-04, REC-05, REC-10, CELL-21, CELL-22, CELL-23 | Records are decoded lazily, up to the field read, with OP_Column's checks |
 | REC-21 | A rowid alias column reads the rowid even when the record is short |
 | CELL-38 | The reader's own bound: a payload no larger than the database's pages could hold |
+| SCHEMA-11, SCHEMA-13, SCHEMA-15, SCHEMA-17, SCHEMA-19, SCHEMA-22, SCHEMA-26, SCHEMA-58, DDL-58 | Schema rows are read as sqlite3InitCallback reads them: each value as text, cut at a NUL, and the open fails where SQLite's schema load does |
+| SCHEMA-26, DDL-03 | Relaxable: a row's type and tbl_name must agree with its SQL, and a table's name with its CREATE TABLE |
+| SCHEMA-22 | SQL SQLite cannot parse makes `GetTableDefinition` throw `SqliteCorruptException` with SQLite's message |
+| DDL-06, DDL-07, DDL-11, DDL-12, DDL-22, SCHEMA-24, SCHEMA-29, SCHEMA-30 | Table SQL is parsed by a port of SQLite's own parser (its Lemon tables, tokenizer and grammar actions), so TEMP, IF NOT EXISTS, text after the first statement or a NUL, and parameters in a DEFAULT are accepted, as SQLite accepts them |
+| DDL-18, DDL-20, DDL-21, DDL-24, DDL-25, DDL-27, DDL-29, SCHEMA-28 | Strict in both modes: syntax errors, unrecognized tokens, unknown table options and a qualified name fail as in SQLite |
+| DDL-34, DDL-37, DDL-48, DDL-49, DDL-50, DDL-54, DDL-61, DDL-85 | Strict in both modes: the build.c checks that decide the record layout (duplicate columns, keys and their terms, generated keys, WITHOUT ROWID without a key, expression depth) |
+| DDL-36, DDL-42, DDL-43, DDL-47, DDL-51, DDL-53, DDL-55, DDL-59, DDL-60, DDL-62 | Relaxable: build.c and resolve.c checks that do not change how rows read; Lenient reports them and keeps the table as SQLite has it at that point |
+| DDL-46 | CHECK constraints are dropped, as SQLite drops them for a read-only database |
+| REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity; a DEFAULT with a CAST is not evaluated |
