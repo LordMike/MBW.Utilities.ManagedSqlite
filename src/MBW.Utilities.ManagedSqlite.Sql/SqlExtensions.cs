@@ -5,6 +5,7 @@ using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql.Internal;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
@@ -14,7 +15,8 @@ public static class SqlExtensions
 
     /// <exception cref="InvalidOperationException">The row is not a table (a view, index or trigger)</exception>
     /// <exception cref="NotSupportedException">The row is a virtual table</exception>
-    /// <exception cref="SqliteCorruptException">The table's SQL does not parse</exception>
+    /// <exception cref="SqliteCorruptException">The table's SQL does not parse, or, in Strict, SQLite would find the schema
+    /// malformed</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
     {
         // Only a table has a table definition, so asking for one elsewhere is the caller's error, not damage. The row's
@@ -24,6 +26,9 @@ public static class SqlExtensions
 
         if (schema.IsVirtual)
             throw new NotSupportedException($"'{schema.Name}' is a virtual table, whose columns its module declares");
+
+        // SQLite loads the whole schema before it reads a table, and a malformed schema fails them all
+        SchemaValidator.Validate(schema.Database);
 
         // Only a definition that parsed is cached, so SQL that does not parse fails each time it is asked for
         Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
