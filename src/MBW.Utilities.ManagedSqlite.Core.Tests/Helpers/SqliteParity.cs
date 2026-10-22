@@ -35,6 +35,12 @@ internal static class SqliteParity
     public static void AssertSameAsSqlite(string script) => AssertSameAsSqlite(Build(script));
 
     /// <summary>
+    /// <see cref="AssertSameAsSqlite(string)"/> for the database <see cref="Build(string, string, int)"/> makes, with
+    /// <paramref name="schemaEdit"/> changing one sqlite_schema row
+    /// </summary>
+    public static void AssertSameAsSqlite(string script, string schemaEdit) => AssertSameAsSqlite(Build(script, schemaEdit));
+
+    /// <summary>
     /// For a database with <paramref name="reservedBytes"/> unused bytes at the end of every page (the header's
     /// "reserved space", offset 20), which no SQL statement can set.
     /// </summary>
@@ -139,7 +145,34 @@ internal static class SqliteParity
     public static byte[] Build(string script, int reservedBytes = 0)
     {
         using SqliteConnection connection = Run(script, reservedBytes);
+        return Serialize(connection);
+    }
 
+    /// <summary>
+    /// <see cref="Build(string, int)"/>, then <paramref name="schemaEdit"/> with writable_schema on, which must change
+    /// exactly <paramref name="rows"/> rows of sqlite_schema, so an edit that matches nothing fails instead of testing
+    /// the undamaged schema
+    /// </summary>
+    public static byte[] Build(string script, string schemaEdit, int rows = 1)
+    {
+        using SqliteConnection connection = Run(script);
+        using (SqliteCommand pragma = connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA writable_schema = ON";
+            pragma.ExecuteNonQuery();
+        }
+
+        using (SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = schemaEdit;
+            Assert.Equal(rows, command.ExecuteNonQuery());
+        }
+
+        return Serialize(connection);
+    }
+
+    private static byte[] Serialize(SqliteConnection connection)
+    {
         IntPtr data = raw.sqlite3_serialize(connection.Handle, "main", out long size, 0);
         if (data == IntPtr.Zero)
             throw new InvalidOperationException("sqlite3_serialize failed");

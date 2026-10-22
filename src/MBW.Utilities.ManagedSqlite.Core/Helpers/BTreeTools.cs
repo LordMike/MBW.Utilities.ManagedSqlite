@@ -144,12 +144,25 @@ internal static class BTreeTools
     {
         uint pageCount = parent.Reader.PageCount;
 
-        if (childPage == 0 || (pageCount > 0 && childPage > pageCount))
-            throw new SqliteCorruptException($"child page {childPage} is outside the database (1..{pageCount})", parent.Page, structure);
+        // PAGE-15: page 0 does not exist. getPageNormal in pager.c:
+        //   if( pgno==0 ) return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5597 (getPageNormal)
+        Checks.Strict(childPage != 0, "PAGE-15", $"child page {childPage} is outside the database (1..{pageCount})", parent.Page, structure);
 
-        // Like SQLite, this is also what stops a cycle (a child pointing back to itself or an ancestor)
-        if (depth + 1 >= MaxDepth)
-            throw new SqliteCorruptException($"the b-tree is deeper than {MaxDepth} levels", parent.Page, structure);
+        // PAGE-14: a child page must be in the database. getAndInitPage in btree.c:
+        //   if( pgno>btreePagecount(pBt) ){
+        //     *ppPage = 0;
+        //     return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2390 (getAndInitPage)
+        Checks.Strict(pageCount == 0 || childPage <= pageCount, "PAGE-14",
+            $"child page {childPage} is outside the database (1..{pageCount})", parent.Page, structure);
+
+        // PAGE-24: at most 20 levels, which is also what stops a cycle (a child pointing back to itself or an ancestor).
+        // moveToChild in btree.c:
+        //   if( pCur->iPage>=(BTCURSOR_MAX_DEPTH-1) ){
+        //     return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5460 (moveToChild)
+        Checks.Strict(depth + 1 < MaxDepth, "PAGE-24", $"the b-tree is deeper than {MaxDepth} levels", parent.Page, structure);
 
         BTreePage child = BTreePage.Parse(parent.Reader, childPage, kind);
 

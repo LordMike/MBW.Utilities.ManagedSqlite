@@ -75,7 +75,7 @@ public class SqlTableDefinition_Tests
     [Fact]
     public void GetTableDefinitionOfMalformedSqlIsCorrupt()
     {
-        byte[] data = SqliteParity.Build("CREATE TABLE t(a); CREATE TABLE u(b); PRAGMA writable_schema = ON; UPDATE sqlite_schema SET sql = 'CREATE TABLE t(a' WHERE name = 't';");
+        byte[] data = SqliteParity.Build("CREATE TABLE t(a); CREATE TABLE u(b);", "UPDATE sqlite_schema SET sql = 'CREATE TABLE t(a' WHERE name = 't'");
         SqliteParity.AssertSqliteReportsCorrupt(data, "u");
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));

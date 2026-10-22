@@ -268,9 +268,12 @@ internal sealed class ReaderBase : IDisposable
     {
         // PAGE-15: page 0 does not exist, and PAGE-14: pages above the page count are not part of the database.
         // getPageNormal in pager.c, and getAndInitPage in btree.c:
-        //   if( pgno>btreePagecount(pBt) ){ rc = SQLITE_CORRUPT_BKPT; goto getAndInitPage_error1; }
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5597
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2390
+        //   if( pgno==0 ) return SQLITE_CORRUPT_BKPT;
+        //   if( pgno>btreePagecount(pBt) ){
+        //     *ppPage = 0;
+        //     return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5597 (getPageNormal)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2390 (getAndInitPage)
         Checks.Strict(page != 0, "PAGE-15", $"page number 0 is outside the database (1..{PageCount})", page, "page number");
         Checks.Strict(PageCount == 0 || page <= PageCount, "PAGE-14", $"page number {page} is outside the database (1..{PageCount})", page, "page number");
 

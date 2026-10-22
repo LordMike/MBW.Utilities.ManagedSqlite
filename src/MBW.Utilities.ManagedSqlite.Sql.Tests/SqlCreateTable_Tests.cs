@@ -102,8 +102,8 @@ public class SqlCreateTable_Tests
     [InlineData("b REAL DEFAULT 3500000000000000.2500001, c NUMERIC DEFAULT '3500000000000000.2500001', d DEFAULT 12345678901234567890123, e NUMERIC DEFAULT ' +.5e1 ', f INTEGER DEFAULT '5.', g INTEGER DEFAULT '1e'")]
     [InlineData("b DEFAULT (1 + 2), c TEXT DEFAULT CURRENT_TIMESTAMP, d DEFAULT (abs(-1)), e INTEGER DEFAULT ('5' COLLATE nocase)")]
     [InlineData("b AS (5) STORED, c TEXT AS ('x') STORED, d AS (a * 2) STORED, e AS (7)")]
-    public void DefaultOfShortRecord(string columns) => AssertSameAsSqlite(
-        $"CREATE TABLE t (a); INSERT INTO t VALUES (1); PRAGMA writable_schema = ON; UPDATE sqlite_schema SET sql = 'CREATE TABLE t (a, {columns.Replace("'", "''")})' WHERE name = 't';");
+    public void DefaultOfShortRecord(string columns) => SqliteParity.AssertSameAsSqlite(
+        "CREATE TABLE t (a); INSERT INTO t VALUES (1);", $"UPDATE sqlite_schema SET sql = 'CREATE TABLE t (a, {columns.Replace("'", "''")})' WHERE name = 't'");
 
     /// <summary>
     /// <c>CREATE TABLE name (a INTEGER, b TEXT); INSERT INTO name VALUES (1, 'x')</c>

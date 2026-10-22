@@ -64,8 +64,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal(1, patcher.Data[record + 4]);
 
         int rootPageValue = record + patcher.Data[record] + 5 + 4 + 4;
-        Assert.Equal(DeepRoot, patcher.Data[rootPageValue]);
-        patcher.WriteByte(rootPageValue, value);
+        patcher.WriteByte(rootPageValue, (byte)DeepRoot, value);
     }
 
     /// <summary>
@@ -119,22 +118,25 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     /// <summary>
     /// Damages a copy of the database with <paramref name="patch"/>, reads everything, and asserts it fails with a
     /// <see cref="SqliteCorruptException"/> for <paramref name="structure"/>. Checking the structure makes a case fail
-    /// if a later, unrelated check is what catches it.
+    /// if a later, unrelated check is what catches it. <paramref name="check"/>, when given, is the check's ID.
     /// </summary>
-    private static void AssertCorrupt(string structure, Action<DbPatcher> patch)
+    private static void AssertCorrupt(string structure, Action<DbPatcher> patch, string check = null)
     {
         DbPatcher patcher = new DbPatcher(Base);
         patch(patcher);
 
         Exception ex = RunBounded(() => ReadEverything(patcher.Data));
 
-        Assert.Equal(structure, Assert.IsType<SqliteCorruptException>(ex).Structure);
+        SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(ex);
+        Assert.Equal(structure, corrupt.Structure);
+        if (check != null)
+            Assert.Equal(check, corrupt.Check);
     }
 
     // Database header
 
     [Fact]
-    public void Header_BadMagic() => AssertCorrupt("magic bytes", p => p.WriteByte(0, (byte)'X'));
+    public void Header_BadMagic() => AssertCorrupt("magic bytes", p => p.WriteByte(0, (byte)'S', (byte)'X'));
 
     // A page size is a power of two from 512 to 65536. The stored value 1 means 65536, read by Structure_Tests.
     [Theory]
@@ -164,7 +166,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
             "HDR-05" => patcher.SetReadVersion(3),
             "HDR-08" => patcher.SetMaxEmbeddedPayloadFraction(65),
             "HDR-14" => patcher.SetDatabaseSizeInPages((uint)patcher.PageCount + 1),
-            _ => patcher.WriteByte(47, 5)
+            _ => patcher.WriteByte(47, 4, 5)
         }).Data;
 
         SqliteParity.AssertSqliteFails(data, "Small");
@@ -187,7 +189,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     public void Header_StrictInLenient(string check)
     {
         DbPatcher patcher = new DbPatcher(Base);
-        byte[] data = (check == "HDR-03" ? patcher.WriteByte(0, (byte)'X') : patcher.SetPageSizeField(1000)).Data;
+        byte[] data = (check == "HDR-03" ? patcher.WriteByte(0, (byte)'S', (byte)'X') : patcher.SetPageSizeField(1000)).Data;
 
         List<string> issues = new List<string>();
         Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
@@ -200,6 +202,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Header_SchemaFormatLowByteOnly() => SqliteParity.AssertSameAsSqlite(Script, data =>
     {
+        Assert.Equal(new byte[] { 0, 0, 0, 4 }, data.AsSpan(44, 4).ToArray());
         data[46] = 1;
         return data;
     });
@@ -332,10 +335,10 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     }
 
     [Fact]
-    public void PageType_Unknown() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01));
+    public void PageType_Unknown() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x01), "PAGE-01");
 
     [Fact]
-    public void PageType_IndexPageInsideTableBTree() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A));
+    public void PageType_IndexPageInsideTableBTree() => AssertCorrupt("b-tree page header", p => p.SetPageType(DeepFirstLeaf, 0x0A), "PAGE-22");
 
     /// <summary>
     /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
@@ -379,23 +382,23 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     // As in SQLite, the depth limit is what stops a cycle. Root and left page alternate, so the walk gives up at the
     // root's first child pointer.
     [Fact]
-    public void Cycle_RightMostPointerBackToRoot() => AssertCorrupt("interior cell child pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot));
+    public void Cycle_RightMostPointerBackToRoot() => AssertCorrupt("interior cell child pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot), "PAGE-24");
 
     [Fact]
-    public void ChildPointer_PastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd));
+    public void ChildPointer_PastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd), "PAGE-14");
 
     [Fact]
     public void WithoutRowId_ChildPointerPastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(KeyedRoot, 0, PastTheEnd));
 
     // Every interior page has a right-most child
     [Fact]
-    public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0));
+    public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0), "PAGE-15");
 
     // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read
     [Fact]
     public void SchemaRootPage_Zero() => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, 0));
 
-    // Schema rows. Each script edits sqlite_schema with writable_schema, after a schema of tables, a view, an index, a
+    // Schema rows. Each case edits one sqlite_schema row with writable_schema, after a schema of tables, a view, an index, a
     // trigger, a table with an automatic index and a virtual table.
     private const string SchemaScript = @"
 CREATE TABLE t (a); INSERT INTO t VALUES (1);
@@ -405,7 +408,6 @@ CREATE INDEX i ON t (a);
 CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END;
 CREATE TABLE k (x PRIMARY KEY);
 CREATE VIRTUAL TABLE f USING fts5(c);
-PRAGMA writable_schema = ON;
 ";
 
     /// <summary>
@@ -436,7 +438,7 @@ PRAGMA writable_schema = ON;
     [InlineData("DDL-58", "sql = 'CREATE TABLE u AS SELECT 1' WHERE name = 'u'")]
     public void SchemaRow_CorruptLikeSqlite(string check, string update)
     {
-        byte[] data = SqliteParity.Build(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+        byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
         SqliteParity.AssertSqliteReportsCorrupt(data, "t");
 
         foreach (SqliteValidation validation in new[] { SqliteValidation.Strict, SqliteValidation.Lenient })
@@ -450,7 +452,7 @@ PRAGMA writable_schema = ON;
     // stored as an integer, the column's affinity.)
     [Fact]
     public void SchemaRow_RootPageBlob() =>
-        SqliteParity.AssertSameAsSqlite(SchemaScript + "UPDATE sqlite_schema SET rootpage = CAST(CAST(rootpage AS TEXT) AS BLOB) WHERE name = 'u';");
+        SqliteParity.AssertSameAsSqlite(SchemaScript, "UPDATE sqlite_schema SET rootpage = CAST(CAST(rootpage AS TEXT) AS BLOB) WHERE name = 'u'");
 
     /// <summary>
     /// SCHEMA-26, DDL-03: a CREATE row's type, name and tbl_name must agree with its SQL. SQLite skips this with
@@ -465,7 +467,7 @@ PRAGMA writable_schema = ON;
     [InlineData("DDL-03", "sql = 'CREATE TABLE w (b)' WHERE name = 'u'")]
     public void SchemaRow_NamesDisagreeWithSql(string check, string update)
     {
-        byte[] data = SqliteParity.Build(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+        byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
         SqliteParity.AssertSqliteReportsCorrupt(data, "t");
 
         SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() =>
@@ -491,13 +493,13 @@ PRAGMA writable_schema = ON;
     [InlineData("sql = sql || char(0) || 'garbage ((' WHERE name = 'u'")]
     [InlineData("rootpage = 1 WHERE name = 'tr'")]
     [InlineData("sql = 'CREATE  /* x */ VIRTUAL TABLE f USING fts5(c)' WHERE name = 'f'")]
-    public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+    public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript, $"UPDATE sqlite_schema SET {update}");
 
     // SCHEMA-58: SQLite tolerates a rootpage on a virtual table, and never reads it as a b-tree
     [Fact]
     public void SchemaRow_VirtualTableWithRootPage()
     {
-        byte[] data = SqliteParity.Build(SchemaScript + "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 't') WHERE name = 'f';");
+        byte[] data = SqliteParity.Build(SchemaScript, "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 't') WHERE name = 'f'");
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
         Assert.Throws<NotSupportedException>(() => db.GetTable("f"));
@@ -507,7 +509,7 @@ PRAGMA writable_schema = ON;
     // Row 1 is the last cell on Small's page. Its payload size (the 1-byte varint 7, before the rowid varint and the
     // record) becomes 127, which no longer fits in the page.
     [Fact]
-    public void LeafCell_PayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 0x7F));
+    public void LeafCell_PayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 7, 0x7F));
 
     // The first key is the last cell on Keyed's first leaf, a 60 byte cell at offset 452. Its payload size (the 1-byte
     // varint 59, before the record) becomes 100, which is still below the index page overflow threshold of 102 and no
@@ -528,7 +530,7 @@ PRAGMA writable_schema = ON;
             int record = p.GetRecordOffset(root, 0, out long payloadSize);
             Assert.Equal(7, payloadSize);
             Assert.Equal(p.PageOffset(root) + p.PageSize - 8, record + 7);
-            return p.WriteByte(record - 2, 9).WriteByte(record + 2, 23).Data;
+            return p.WriteByte(record - 2, 7, 9).WriteByte(record + 2, 19, 23).Data;
         });
 
     /// <summary>
@@ -552,22 +554,22 @@ PRAGMA writable_schema = ON;
             const int at = 100;
             byte[] rewritten = new byte[] { 0x90, 0x80, 0x80, 0x80, 0x07, data[record - 1] }.Concat(data.Skip(record).Take(7)).ToArray();
             for (int i = 0; i < rewritten.Length; i++)
-                p.WriteByte(p.PageOffset(SmallRoot) + at + i, rewritten[i]);
+                p.WriteByte(p.PageOffset(SmallRoot) + at + i, 0, rewritten[i]);
 
             return p.SetCellOffset(SmallRoot, 0, at).Data;
         });
 
     [Fact]
-    public void WithoutRowId_LeafCellPayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _) - 1, 100));
+    public void WithoutRowId_LeafCellPayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _) - 1, 59, 100));
 
     // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
 
     [Fact]
-    public void Record_HeaderLargerThanPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 0x7F));
+    public void Record_HeaderLargerThanPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 4, 0x7F));
 
     // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 21 is a 4 byte text, one byte more than the payload holds.
     [Fact]
-    public void Record_SerialTypeTooLargeForPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 21));
+    public void Record_SerialTypeTooLargeForPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 19, 21));
 
     /// <summary>
     /// Record headers SQLite reads although it never writes them. REC-04: a header size of 0 is a record of no fields,
@@ -588,17 +590,17 @@ PRAGMA writable_schema = ON;
             switch (variant)
             {
                 case "header size 0":
-                    p.WriteByte(record, 0);
+                    p.WriteByte(record, 4, 0);
                     break;
                 case "surplus field":
                     DropSmallDataColumn(p);
-                    p.WriteByte(record + 3, 0x7F);
+                    p.WriteByte(record + 3, 0, 0x7F);
                     break;
                 case "WITHOUT ROWID header size 0":
-                    p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _), 0);
+                    p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _), 3, 0);
                     break;
                 default:
-                    p.WriteByte(record - 2, 0).WriteByte(record, 0);
+                    p.WriteByte(record - 2, 7, 0).WriteByte(record, 4, 0);
                     break;
             }
 
@@ -616,7 +618,7 @@ PRAGMA writable_schema = ON;
     {
         DbPatcher p = new DbPatcher(Base);
         int record = p.GetRecordOffset(SmallRoot, 0, out _);
-        byte[] data = (variant == "header size 1" ? p.WriteByte(record, 1) : p.WriteByte(record - 2, 0)).Data;
+        byte[] data = (variant == "header size 1" ? p.WriteByte(record, 4, 1) : p.WriteByte(record - 2, 7, 0)).Data;
 
         SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
         SqliteCorruptException ex = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadEverything(data)));
@@ -628,7 +630,7 @@ PRAGMA writable_schema = ON;
     public void Record_FailsOnEveryRead()
     {
         DbPatcher p = new DbPatcher(Base);
-        byte[] data = p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 1).Data;
+        byte[] data = p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 4, 1).Data;
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
         Sqlite3Row row = db.GetTable("Small").EnumerateRows().First();
@@ -646,7 +648,7 @@ PRAGMA writable_schema = ON;
         int at = p.Data.AsSpan(0, p.PageSize).IndexOf(column);
         Assert.True(at > 0);
         for (int i = 0; i < column.Length; i++)
-            p.WriteByte(at + i, (byte)' ');
+            p.WriteByte(at + i, column[i], (byte)' ');
     }
 
     // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
@@ -732,7 +734,7 @@ PRAGMA writable_schema = ON;
         DbPatcher patcher = new DbPatcher(Base);
         uint first = patcher.GetOverflowPointer(SmallRoot, 1);
         uint second = patcher.ReadUInt32(patcher.PageOffset(first));
-        patcher.WriteUInt32(patcher.PageOffset(second), first);
+        patcher.SetOverflowNextPointer(second, first);
 
         AssertTerminatesGracefully(() => ReadEverything(patcher.Data));
     }
@@ -748,7 +750,7 @@ PRAGMA writable_schema = ON;
         {
             DbPatcher patcher = new DbPatcher(Base);
             for (int j = random.Next(1, 5); j > 0; j--)
-                patcher.WriteByte(random.Next(patcher.Data.Length), (byte)random.Next(256));
+                patcher.Data[random.Next(patcher.Data.Length)] = (byte)random.Next(256);
 
             AssertTerminatesGracefully(() => ReadEverything(patcher.Data));
         }
