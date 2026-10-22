@@ -115,9 +115,13 @@ public class EnumerateRowsBenchmarks
         int count = 0;
         foreach (Sqlite3Row row in _table.EnumerateRows())
         {
+            bool found = true;
             foreach (string column in Columns)
-                row.TryGetValueByName(column, out _);
-            count++;
+                found &= row.TryGetValueByName(column, out _);
+
+            // Setup compares the count, so a column name that no longer resolves fails it
+            if (found)
+                count++;
         }
 
         return count;
