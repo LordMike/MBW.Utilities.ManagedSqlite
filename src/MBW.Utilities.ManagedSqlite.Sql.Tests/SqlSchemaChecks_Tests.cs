@@ -16,15 +16,21 @@ public class SqlSchemaChecks_Tests
 {
     private const string Schema =
         "CREATE TABLE u (b); INSERT INTO u VALUES (1); CREATE TABLE t (a PRIMARY KEY, c UNIQUE); CREATE INDEX i0 ON t (c); " +
-        "CREATE TABLE w (p PRIMARY KEY, q UNIQUE) WITHOUT ROWID; CREATE VIEW v AS SELECT 1 AS a; CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END; " +
-        "PRAGMA writable_schema = ON; " +
-        "INSERT INTO sqlite_schema VALUES ('table', 'vt', 'vt', 0, 'CREATE VIRTUAL TABLE vt USING nosuch (x)'); ";
+        "CREATE TABLE w (p PRIMARY KEY, q UNIQUE) WITHOUT ROWID; CREATE VIEW v AS SELECT 1 AS a; CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END";
+
+    // A virtual table of a module the reader cannot load, which every edit adds before its own rows
+    private const string VirtualTable = "INSERT INTO sqlite_schema VALUES ('table', 'vt', 'vt', 0, 'CREATE VIRTUAL TABLE vt USING nosuch (x)'); ";
+
+    /// <summary>
+    /// The schema, then <paramref name="edit"/>, which must change <paramref name="rows"/> sqlite_schema rows
+    /// </summary>
+    private static byte[] Build(string edit, int rows) => SqliteParity.Build(Schema, VirtualTable + edit, rows + 1);
 
     // A row's rootpage is u's page, which no index uses, or 0 for a view, a trigger or a virtual table
     private static byte[] Build(string type, string name, string tableName, string sql)
     {
         string rootPage = type is "index" || (type == "table" && !sql.Contains("VIRTUAL")) ? "(SELECT rootpage FROM sqlite_schema WHERE name = 'u')" : "0";
-        return SqliteParity.Build(Schema + $"INSERT INTO sqlite_schema VALUES ('{type}', '{name}', '{tableName}', {rootPage}, '{sql.Replace("'", "''")}');");
+        return Build($"INSERT INTO sqlite_schema VALUES ('{type}', '{name}', '{tableName}', {rootPage}, '{sql.Replace("'", "''")}')", 1);
     }
 
     private static void AssertRejected(string check, byte[] data)
@@ -136,21 +142,20 @@ public class SqlSchemaChecks_Tests
     /// with a root page none of its table's other indexes have.
     /// </summary>
     [Theory]
-    [InlineData("DDL-02", "INSERT INTO sqlite_schema VALUES ('index', 'sqlite_autoindex_u_1', 'u', 3, NULL)")]
-    [InlineData("DDL-02", "INSERT INTO sqlite_schema VALUES ('index', 'i9', 't', 3, '')")]
-    [InlineData("SCHEMA-15", "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'sqlite_autoindex_t_2') WHERE name = 'sqlite_autoindex_t_1'")]
-    [InlineData("SCHEMA-15", "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'w') WHERE name = 'sqlite_autoindex_w_2'")]
-    [InlineData("DDL-72", "INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', 0, 'CREATE INDEX i1 ON t (a)'); INSERT INTO sqlite_schema VALUES ('index', 'i2', 't', 0, 'CREATE INDEX i2 ON t (a)')")]
-    [InlineData("DDL-72", "INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', (SELECT rootpage FROM sqlite_schema WHERE name = 'i0'), 'CREATE INDEX i1 ON t (a)')")]
-    public void IndexRowsLikeSqlite(string check, string statement) =>
-        AssertRejected(check, SqliteParity.Build(Schema + statement + ";"));
+    [InlineData("DDL-02", 1, "INSERT INTO sqlite_schema VALUES ('index', 'sqlite_autoindex_u_1', 'u', 3, NULL)")]
+    [InlineData("DDL-02", 1, "INSERT INTO sqlite_schema VALUES ('index', 'i9', 't', 3, '')")]
+    [InlineData("SCHEMA-15", 1, "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'sqlite_autoindex_t_2') WHERE name = 'sqlite_autoindex_t_1'")]
+    [InlineData("SCHEMA-15", 1, "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'w') WHERE name = 'sqlite_autoindex_w_2'")]
+    [InlineData("DDL-72", 2, "INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', 0, 'CREATE INDEX i1 ON t (a)'); INSERT INTO sqlite_schema VALUES ('index', 'i2', 't', 0, 'CREATE INDEX i2 ON t (a)')")]
+    [InlineData("DDL-72", 1, "INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', (SELECT rootpage FROM sqlite_schema WHERE name = 'i0'), 'CREATE INDEX i1 ON t (a)')")]
+    public void IndexRowsLikeSqlite(string check, int rows, string edit) => AssertRejected(check, Build(edit, rows));
 
     // A WITHOUT ROWID table's PRIMARY KEY index is the table's b-tree; a CREATE INDEX with rootpage 0 before the
     // automatic index rows is no duplicate, as their root pages are not set yet
     [Theory]
-    [InlineData("UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 'w') WHERE name = 'sqlite_autoindex_w_1'")]
-    [InlineData("UPDATE sqlite_schema SET rowid = rowid + 100 WHERE name LIKE 'sqlite_autoindex_t_%'; INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', 0, 'CREATE INDEX i1 ON t (a)')")]
-    public void IndexRowsAcceptedLikeSqlite(string statement) => AssertAccepted(SqliteParity.Build(Schema + statement + ";"));
+    [InlineData(1, "INSERT INTO sqlite_schema VALUES ('index', 'sqlite_autoindex_w_1', 'w', (SELECT rootpage FROM sqlite_schema WHERE name = 'w'), NULL)")]
+    [InlineData(3, "UPDATE sqlite_schema SET rowid = rowid + 100 WHERE name LIKE 'sqlite_autoindex_t_%'; INSERT INTO sqlite_schema VALUES ('index', 'i1', 't', 0, 'CREATE INDEX i1 ON t (a)')")]
+    public void IndexRowsAcceptedLikeSqlite(int rows, string edit) => AssertAccepted(Build(edit, rows));
 
     /// <summary>
     /// A CREATE INDEX before a table can take the name of the table's automatic index, as sqlite_ names are only
@@ -159,8 +164,8 @@ public class SqlSchemaChecks_Tests
     [Fact]
     public void IndexTakingAnAutomaticIndexName()
     {
-        byte[] data = SqliteParity.Build(Schema + "INSERT INTO sqlite_schema VALUES ('index', 'sqlite_autoindex_x_1', 'u', 0, 'CREATE INDEX sqlite_autoindex_x_1 ON u (b)'); " +
-                                         "INSERT INTO sqlite_schema VALUES ('table', 'x', 'x', (SELECT rootpage FROM sqlite_schema WHERE name = 'u'), 'CREATE TABLE x (q UNIQUE)');");
+        byte[] data = Build("INSERT INTO sqlite_schema VALUES ('index', 'sqlite_autoindex_x_1', 'u', 0, 'CREATE INDEX sqlite_autoindex_x_1 ON u (b)'); " +
+                            "INSERT INTO sqlite_schema VALUES ('table', 'x', 'x', (SELECT rootpage FROM sqlite_schema WHERE name = 'u'), 'CREATE TABLE x (q UNIQUE)')", 2);
         SqliteParity.AssertSqliteFails(data, "u");
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
