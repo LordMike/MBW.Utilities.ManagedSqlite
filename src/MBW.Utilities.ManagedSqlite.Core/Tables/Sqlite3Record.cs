@@ -24,7 +24,6 @@ internal struct Sqlite3Record
     private const long MaxHeaderSize = 98307;
 
     private readonly uint _page;
-    private readonly long? _rowId;
 
     /// <summary>
     /// The array that holds the payload, at <see cref="_start"/>: the page's for a payload that is all on its page,
@@ -65,30 +64,33 @@ internal struct Sqlite3Record
     /// </summary>
     private int _parsed = -1;
 
-    public Sqlite3Record(uint page, long? rowId, ArraySegment<byte> payload)
+    public Sqlite3Record(uint page, ArraySegment<byte> payload)
     {
         _page = page;
-        _rowId = rowId;
         _data = payload.Array!;
         _start = payload.Offset;
         _length = payload.Count;
     }
 
-    private string RowName => _rowId.HasValue ? $"row {_rowId.Value}" : "a WITHOUT ROWID row";
+    /// <summary>
+    /// The row in error messages. The record's methods take the row that holds it, for its rowid and its table's reader,
+    /// so the record need not keep them.
+    /// </summary>
+    private static string RowName(Sqlite3Row row) => row.Table.IsWithoutRowId ? "a WITHOUT ROWID row" : $"row {row.RowId}";
 
     /// <summary>
     /// The value of field <paramref name="index"/>, parsing the header up to it. False when the record has fewer
     /// fields, which SQLite reads as the column's default or NULL.
     /// </summary>
-    public bool TryGetValue(int index, ReaderBase reader, out object? value)
+    public bool TryGetValue(int index, Sqlite3Row row, out object? value)
     {
-        if (!ParseField(index))
+        if (!ParseField(index, row))
         {
             value = null;
             return false;
         }
 
-        value = Decode(reader, (uint)_fields![2 * index], _fields[2 * index + 1]);
+        value = Decode(row.Table.Reader, (uint)_fields![2 * index], _fields[2 * index + 1]);
         return true;
     }
 
@@ -97,9 +99,9 @@ internal struct Sqlite3Record
     /// without a copy. False when the record has fewer fields, or the field is not a BLOB. Like
     /// <see cref="TryGetValue"/>, a record that is malformed up to that field throws <see cref="Exceptions.SqliteCorruptException"/>.
     /// </summary>
-    public bool TryGetBlob(int index, out ReadOnlyMemory<byte> blob)
+    public bool TryGetBlob(int index, Sqlite3Row row, out ReadOnlyMemory<byte> blob)
     {
-        if (ParseField(index))
+        if (ParseField(index, row))
         {
             uint serialType = (uint)_fields![2 * index];
             if (serialType >= 12 && (serialType & 0x01) == 0x00)
@@ -117,9 +119,9 @@ internal struct Sqlite3Record
     /// True when fields <paramref name="a"/> and <paramref name="b"/> both exist and are stored alike: the same serial
     /// type and the same bytes, so they decode to equal values
     /// </summary>
-    public bool FieldsEqual(int a, int b)
+    public bool FieldsEqual(int a, int b, Sqlite3Row row)
     {
-        if (!ParseField(Math.Max(a, b)))
+        if (!ParseField(Math.Max(a, b), row))
             return false;
 
         int typeA = _fields![2 * a];
@@ -135,13 +137,13 @@ internal struct Sqlite3Record
     /// Parses the header up to field <paramref name="index"/>, keeping the fields. False when the record has fewer
     /// fields.
     /// </summary>
-    private bool ParseField(int index)
+    private bool ParseField(int index, Sqlite3Row row)
     {
         // ReadAll parsed the whole header without keeping the fields, so parse it again, keeping them
         if (_fields == null && _parsed > 0)
             _parsed = -1;
 
-        Parse(index, true);
+        Parse(index, true, row);
         return index < _parsed;
     }
 
@@ -150,9 +152,10 @@ internal struct Sqlite3Record
     /// before any value is decoded. The values are then decoded in one more walk over the header, so the fields are
     /// not kept.
     /// </summary>
-    public object?[] ReadAll(ReaderBase reader)
+    public object?[] ReadAll(Sqlite3Row row)
     {
-        Parse(int.MaxValue, false);
+        Parse(int.MaxValue, false, row);
+        ReaderBase reader = row.Table.Reader;
 
         object?[] values = new object?[_parsed];
         if (_fields != null)
@@ -185,7 +188,7 @@ internal struct Sqlite3Record
     /// the checks pass, so a record that failed fails again on every read. <paramref name="keep"/> keeps the fields in
     /// <see cref="_fields"/>, which is then allocated by the first parse.
     /// </summary>
-    private void Parse(int p2, bool keep)
+    private void Parse(int p2, bool keep, Sqlite3Row row)
     {
         if (_parsed > p2)
             return;
@@ -208,7 +211,7 @@ internal struct Sqlite3Record
             // A header size varint that runs past the payload is taken as larger than it. SQLite reads on into the bytes
             // after the cell there, which only matters for a varint that still decodes to 0.
             Checks.Strict(read && headerSize <= MaxHeaderSize && headerSize <= _length, "REC-03",
-                $"record header size {(read ? headerSize.ToString() : "varint")} of {RowName} runs past the payload of {_length} bytes", _page, "record header");
+                $"record header size {(read ? headerSize.ToString() : "varint")} of {RowName(row)} runs past the payload of {_length} bytes", _page, "record header");
 
             _headerSize = (int)headerSize;
             _headerPos = pos - _start;
@@ -282,7 +285,7 @@ internal struct Sqlite3Record
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3142 (OP_Column)
         bool corrupt = overread || (headerPos >= _headerSize && (headerPos > _headerSize || offset != _length)) || offset > _length;
         Checks.Strict(!corrupt, "CELL-23",
-            $"record of {RowName} has {(overread ? "a serial type past its payload" : $"a {headerPos} byte header (declared {_headerSize}) and values up to byte {offset}")}, but the payload is {_length} bytes",
+            $"record of {RowName(row)} has {(overread ? "a serial type past its payload" : $"a {headerPos} byte header (declared {_headerSize}) and values up to byte {offset}")}, but the payload is {_length} bytes",
             _page, "record header");
 
         _parsed = i;

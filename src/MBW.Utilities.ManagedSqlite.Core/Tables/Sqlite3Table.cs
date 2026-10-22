@@ -93,7 +93,7 @@ public sealed class Sqlite3Table
                 BTreePage.PayloadCell cell = leaf.GetCell(i, out long rowId);
                 ArraySegment<byte> payload = ReadPayload(leaf, rowId, cell);
 
-                yield return new Sqlite3Row(this, rowId, new Sqlite3Record(leaf.Page, rowId, payload));
+                yield return new Sqlite3Row(this, rowId, new Sqlite3Record(leaf.Page, payload));
             }
         }
     }
@@ -107,7 +107,7 @@ public sealed class Sqlite3Table
             ArraySegment<byte> payload = ReadPayload(page, null, cell);
 
             // There is no rowid
-            yield return new Sqlite3Row(this, 0, new Sqlite3Record(page.Page, null, payload));
+            yield return new Sqlite3Row(this, 0, new Sqlite3Record(page.Page, payload));
         }
     }
 

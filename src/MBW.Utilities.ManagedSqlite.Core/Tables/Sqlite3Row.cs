@@ -31,7 +31,7 @@ public sealed class Sqlite3Row
     /// The row reads its record from its b-tree page's bytes, so a row that is kept keeps its page in memory.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed</exception>
-    public object?[] ColumnData => _columnData ??= _record.ReadAll(Table.Reader);
+    public object?[] ColumnData => _columnData ??= _record.ReadAll(this);
 
     internal Sqlite3Row(Sqlite3Table table, long rowId, Sqlite3Record record)
     {
@@ -51,12 +51,12 @@ public sealed class Sqlite3Row
     /// <summary>
     /// True when fields <paramref name="a"/> and <paramref name="b"/> of the record exist and decode to equal values
     /// </summary>
-    internal bool FieldsEqual(int a, int b) => _record.FieldsEqual(a, b);
+    internal bool FieldsEqual(int a, int b) => _record.FieldsEqual(a, b, this);
 
     internal bool TryGetField(int index, out object? value)
     {
         if (_columnData == null)
-            return _record.TryGetValue(index, Table.Reader, out value);
+            return _record.TryGetValue(index, this, out value);
 
         bool exists = index < _columnData.Length;
         value = exists ? _columnData[index] : null;
@@ -70,7 +70,7 @@ public sealed class Sqlite3Row
     /// record has fewer fields, or the field holds another type.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
-    public bool TryGetBlob(ushort index, out ReadOnlyMemory<byte> value) => _record.TryGetBlob(index, out value);
+    public bool TryGetBlob(ushort index, out ReadOnlyMemory<byte> value) => _record.TryGetBlob(index, this, out value);
 
     public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
     {
