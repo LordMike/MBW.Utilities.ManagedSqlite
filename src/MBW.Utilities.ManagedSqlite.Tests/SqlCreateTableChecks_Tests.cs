@@ -21,13 +21,16 @@ public class SqlCreateTableChecks_Tests
         $"CREATE TABLE t (a{(sql.Contains("WITHOUT ROWID") ? " PRIMARY KEY) WITHOUT ROWID" : ")")}; INSERT INTO t VALUES (1); CREATE TABLE u (b);",
         $"UPDATE sqlite_schema SET sql = '{sql.Replace("'", "''")}' WHERE name = 't'");
 
-    // Strict fails the open, and Lenient the table
-    private static SqliteCorruptException ReadDefinition(byte[] data, Sqlite3Settings settings = null) =>
-        Assert.Throws<SqliteCorruptException>(() =>
-        {
-            using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), settings);
-            db.GetTable("t").GetTableDefinition();
-        });
+    // Strict fails the open
+    private static SqliteCorruptException Open(byte[] data) =>
+        Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data)));
+
+    // Lenient opens, and fails the table
+    private static SqliteCorruptException OpenLenient(byte[] data)
+    {
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
+        return Assert.Throws<SqliteCorruptException>(() => db.GetTable("t"));
+    }
 
     /// <summary>
     /// SQL SQLite finds malformed, which makes the whole schema corrupt. These decide how the table's rows read, so
@@ -77,8 +80,8 @@ public class SqlCreateTableChecks_Tests
         byte[] data = Build(sql);
         SqliteParity.AssertSqliteReportsCorrupt(data, "u");
 
-        Assert.Equal(check, ReadDefinition(data).Check);
-        Assert.Equal(check, ReadDefinition(data, new Sqlite3Settings { Validation = SqliteValidation.Lenient }).Check);
+        Assert.Equal(check, Open(data).Check);
+        Assert.Equal(check, OpenLenient(data).Check);
     }
 
     /// <summary>
@@ -116,7 +119,7 @@ public class SqlCreateTableChecks_Tests
         byte[] data = Build(sql);
         SqliteParity.AssertSqliteReportsCorrupt(data, "u");
 
-        Assert.Equal(check, ReadDefinition(data).Check);
+        Assert.Equal(check, Open(data).Check);
 
         List<string> issues = new List<string>();
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
@@ -173,6 +176,6 @@ public class SqlCreateTableChecks_Tests
         }
 
         SqliteParity.AssertSqliteReportsCorrupt(data, "u");
-        Assert.Equal(check, ReadDefinition(data).Check);
+        Assert.Equal(check, Open(data).Check);
     }
 }
