@@ -1,6 +1,6 @@
 # PAGE: b-tree page-level consistency on the read path (btree.c)
 
-Link base: `https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#LN` (B = btree.c, P = pager.c, H = btreeInt.h). Our code: `src/MBW.Utilities.ManagedSqlite.Core/...` (abbreviated `Core/`).
+Link base: `https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#LN` (B = btree.c, P = pager.c, H = btreeInt.h). Our code: `src/MBW.Utilities.ManagedSqlite/Core/...` (abbreviated `Core/`).
 
 ## 1. Overview
 

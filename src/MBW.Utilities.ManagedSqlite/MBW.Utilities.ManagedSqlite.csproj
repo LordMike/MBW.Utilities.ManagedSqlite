@@ -14,8 +14,6 @@
   <ItemGroup>
     <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Core.Tests" />
     <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Sql.Tests" />
-    <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Reader" />
-    <InternalsVisibleTo Include="TestDataGenerator" />
   </ItemGroup>
 
 </Project>

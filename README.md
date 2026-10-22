@@ -10,7 +10,8 @@ Managed C# read-only parser for SQLite3 databases. Provides access to table and 
 
 `MBW.Utilities.ManagedSqlite.Core` and `MBW.Utilities.ManagedSqlite.Sql` are now part of this package. Their packages
 only forward their types to it, so code built against them keeps working; reference `MBW.Utilities.ManagedSqlite`
-instead. The namespaces are unchanged.
+instead. The namespaces are unchanged. Update `Core` and `Sql` to the release that forwards, or remove them, when you add
+`MBW.Utilities.ManagedSqlite`: an older version beside it defines the same types twice.
 
 ## How to use
 
@@ -32,7 +33,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
     Sqlite3Row row = rows.First();
     object data = row.ColumnData[0];
 
-    // Using the SQL package also provides a TryGetValueByName(), this package also tries to detect row-id substitutes
+    // TryGetValueByName() reads a column by name, and also detects row-id substitutes
     row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
     
     // Try casting it to a specific type (you must know the C# type)
@@ -44,7 +45,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
 
 * Reads SQLite3 databases, in all managed code
 * Provides close-to-raw access to the structured data
-* An SQL package exists to help parse the SQLite3 schemas
+* Parses the SQLite3 schemas (the CREATE statements) with a port of SQLite's own parser
 
 ## Notes
 
