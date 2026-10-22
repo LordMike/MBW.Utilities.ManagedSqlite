@@ -119,22 +119,23 @@ public sealed class Sqlite3Database : IDisposable
         if (names.Equals(name, "sqlite_master") || names.Equals(name, "sqlite_schema"))
             return _masterSchemaRow;
 
+        // In Lenient, a row that failed to load made nothing in the schema, as with writable_schema in SQLite, so a
+        // later row may still make a table of its name. The error is thrown only when no table has the name.
+        SqliteCorruptException? error = null;
         foreach (Sqlite3SchemaRow tbl in GetTables())
         {
             // A table is known by what its statement made, as in SQLite. The type column must agree in Strict
-            // (SCHEMA-26), in any case, so "TABLE" is a table too. In Lenient, a row that failed to load cannot be
-            // opened, whatever it is.
+            // (SCHEMA-26), in any case, so "TABLE" is a table too.
             if (!names.Equals(tbl.Name, name))
                 continue;
 
             if (tbl.Error != null)
-                throw tbl.Error;
-
-            if (tbl.IsTable)
+                error ??= tbl.Error;
+            else if (tbl.IsTable)
                 return tbl;
         }
 
-        return null;
+        return error == null ? null : throw error;
     }
 
     private Sqlite3Table OpenTable(Sqlite3SchemaRow tbl)

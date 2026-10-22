@@ -515,6 +515,19 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     [InlineData("sql = 'CREATE  /* x */ VIRTUAL TABLE f USING fts5(c)' WHERE name = 'f'")]
     public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript, $"UPDATE sqlite_schema SET {update}");
 
+    // In Lenient, a row that fails to load makes nothing and leaves its name free, so the table after it reads as in
+    // SQLite with writable_schema
+    [Theory]
+    [InlineData("CREATE INDEX t ON nosuch (a)")]
+    [InlineData("CREATE TABLE t (a")]
+    public void SchemaRow_LenientFailedRowBeforeTable(string sql)
+    {
+        byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET rowid = -1, name = 't', tbl_name = 't', sql = '{sql}' WHERE name = 'u'");
+
+        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
+        SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
+    }
+
     // SCHEMA-58: SQLite tolerates a rootpage on a virtual table, and never reads it as a b-tree
     [Fact]
     public void SchemaRow_VirtualTableWithRootPage()
