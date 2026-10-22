@@ -58,6 +58,15 @@ public sealed class Sqlite3Row
         return exists;
     }
 
+    /// <summary>
+    /// The bytes of field <paramref name="index"/> of the record when it holds a BLOB, without copying them: the memory
+    /// is a slice of the page or payload the row was read from, which it keeps alive. Like
+    /// <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up to that field. False when the
+    /// record has fewer fields, or the field holds another type.
+    /// </summary>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
+    public bool TryGetBlob(ushort index, out ReadOnlyMemory<byte> value) => _record.TryGetBlob(index, out value);
+
     public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
     {
         value = default;

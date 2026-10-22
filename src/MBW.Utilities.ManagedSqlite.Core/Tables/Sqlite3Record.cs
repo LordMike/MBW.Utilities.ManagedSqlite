@@ -93,6 +93,26 @@ internal struct Sqlite3Record
     }
 
     /// <summary>
+    /// The bytes of field <paramref name="index"/> when it is a BLOB, as a slice of the array the record is read from,
+    /// without a copy. False when the record has fewer fields, or the field is not a BLOB.
+    /// </summary>
+    public bool TryGetBlob(int index, out ReadOnlyMemory<byte> blob)
+    {
+        if (ParseField(index))
+        {
+            uint serialType = (uint)_fields![2 * index];
+            if (serialType >= 12 && (serialType & 0x01) == 0x00)
+            {
+                blob = new ReadOnlyMemory<byte>(_data, _start + _fields[2 * index + 1], (int)((serialType - 12) / 2));
+                return true;
+            }
+        }
+
+        blob = default;
+        return false;
+    }
+
+    /// <summary>
     /// Parses the header up to field <paramref name="index"/>, keeping the fields. False when the record has fewer
     /// fields.
     /// </summary>

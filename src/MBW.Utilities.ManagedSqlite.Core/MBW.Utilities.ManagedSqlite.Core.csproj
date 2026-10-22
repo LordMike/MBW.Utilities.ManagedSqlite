@@ -8,6 +8,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="System.Memory" Version="4.6.3" />
+  </ItemGroup>
+
+  <ItemGroup>
     <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Sql" />
     <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Core.Tests" />
     <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Sql.Tests" />
