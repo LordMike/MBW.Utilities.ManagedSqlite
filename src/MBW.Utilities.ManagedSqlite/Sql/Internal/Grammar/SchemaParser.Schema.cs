@@ -146,7 +146,7 @@ internal sealed partial class SchemaParser
     /// SQLite skips this with writable_schema on, and the rows read the same either way, so Lenient reports it and goes
     /// by the statement: a table is found by what its statement made, not by its type column.
     /// </summary>
-    private void CheckObjectName(string type, string name, string tableName)
+    private void CheckObjectName(string type, string name, string tableName, string nameCheck = "DDL-03")
     {
         if (_catalog == null)
             return;
@@ -155,7 +155,7 @@ internal sealed partial class SchemaParser
             FailRelaxable("SCHEMA-26", "");
         else if (!Core.Helpers.AsciiCaseInsensitiveComparer.Instance.Equals(name, _objectName) ||
             _rowTableName == null || !Core.Helpers.AsciiCaseInsensitiveComparer.Instance.Equals(tableName, _rowTableName))
-            FailRelaxable("DDL-03", "");
+            FailRelaxable(nameCheck, "");
     }
 
     /// <summary>
@@ -172,19 +172,30 @@ internal sealed partial class SchemaParser
     ///       sqlite3ErrorMsg(pParse, "there is already an index named %s", zName);
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1282 (sqlite3StartTable)
     /// </summary>
+    /// <summary>
+    /// The row's rootpage is 1, which sqlite3StartTable takes for the schema table being loaded
+    /// </summary>
+    private bool IsSchemaTableRoot => _catalog != null && _rootPage == 1;
+
     private bool CheckNewTableName(Token nameToken, string type, string name, bool ifNotExists)
     {
         // SCHEMA-19: a table, view or virtual table with rootpage 1 is taken for the schema table itself, named
-        // sqlite_master, so its name no longer matches the row and the schema is malformed. (A row that is itself
-        // named sqlite_master would pass the name check and then find that table already exists; it is corrupt too.)
+        // sqlite_master, so its name no longer matches the row's. A row that is itself named sqlite_master passes the
+        // name check, and then finds that table exists: corrupt (DDL-08), or with IF NOT EXISTS nothing.
         //   if( db->init.busy && db->init.newTnum==1 ){
         //     /* Special case:  Parsing the sqlite_schema or sqlite_temp_schema schema */
+        //     iDb = db->init.iDb;
+        //     zName = sqlite3DbStrDup(db, SCHEMA_TABLE(iDb));
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1222 (sqlite3StartTable)
-        if (_catalog != null && _rootPage == 1)
-            Fail("SCHEMA-19", "rootpage 1 is the schema table");
+        string nameCheck = "DDL-03";
+        if (IsSchemaTableRoot)
+        {
+            name = "sqlite_master";
+            nameCheck = "SCHEMA-19";
+        }
 
         //   if( sqlite3CheckObjectName(pParse, zName, isView?"view":"table", zName) ){
-        CheckObjectName(type, name, name);
+        CheckObjectName(type, name, name, nameCheck);
         if (_catalog == null)
             return true;
 

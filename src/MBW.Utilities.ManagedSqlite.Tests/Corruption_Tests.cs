@@ -449,8 +449,6 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     /// on the row, so only that row cannot be opened
     /// </summary>
     [Theory]
-    [InlineData("SCHEMA-19", "u", "rootpage = 1 WHERE name = 'u'")]
-    [InlineData("SCHEMA-19", "f", "rootpage = 1 WHERE name = 'f'")]
     [InlineData("SCHEMA-22", "u", "sql = 'CRxATE TABLE u (b)' WHERE name = 'u'")]
     [InlineData("DDL-58", "v", "rootpage = 2 WHERE name = 'v'")]
     [InlineData("DDL-58", "u", "sql = 'CREATE TABLE u AS SELECT 1' WHERE name = 'u'")]
@@ -514,6 +512,40 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     [InlineData("rootpage = 1 WHERE name = 'tr'")]
     [InlineData("sql = 'CREATE  /* x */ VIRTUAL TABLE f USING fts5(c)' WHERE name = 'f'")]
     public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript, $"UPDATE sqlite_schema SET {update}");
+
+    /// <summary>
+    /// SCHEMA-19: a table, view or virtual table with rootpage 1 is taken for the schema table, named sqlite_master, so
+    /// its name does not match the row's. SQLite skips that check with writable_schema on, and then finds sqlite_master
+    /// exists, so in Lenient the row cannot be opened.
+    /// </summary>
+    [Theory]
+    [InlineData("u", "rootpage = 1 WHERE name = 'u'")]
+    [InlineData("f", "rootpage = 1 WHERE name = 'f'")]
+    public void SchemaRow_RootPageOne(string name, string update)
+    {
+        byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
+        SqliteParity.AssertSqliteReportsCorrupt(data, "t");
+
+        Assert.Equal("SCHEMA-19", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
+
+        List<string> issues = new List<string>();
+        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        Assert.Equal("DDL-08", Assert.Throws<SqliteCorruptException>(() => lenient.GetTable(name)).Check);
+        Assert.Equal(new[] { "SCHEMA-19" }, issues);
+        SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
+    }
+
+    // SCHEMA-19: a row that is itself the schema table's, CREATE TABLE IF NOT EXISTS sqlite_master, makes nothing
+    [Fact]
+    public void SchemaRow_RootPageOneIfNotExists()
+    {
+        byte[] data = SqliteParity.Build(SchemaScript, "UPDATE sqlite_schema SET rootpage = 1, name = 'sqlite_master', tbl_name = 'sqlite_master', " +
+                                                       "sql = 'CREATE TABLE IF NOT EXISTS sqlite_master (b)' WHERE name = 'u'");
+        SqliteParity.AssertSqliteReads(data, "t");
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        SqliteParity.AssertTablesSameAsSqlite(SchemaScript, db, "t");
+    }
 
     // In Lenient, a row that fails to load makes nothing and leaves its name free, so the table after it reads as in
     // SQLite with writable_schema
