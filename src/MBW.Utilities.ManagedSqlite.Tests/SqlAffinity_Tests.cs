@@ -1,9 +1,8 @@
 using System;
+using MBW.Utilities.ManagedSqlite.Core;
+using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
 using Xunit;
-
-using MBW.Utilities.ManagedSqlite.Sql;
-using MBW.Utilities.ManagedSqlite.Core;
 
 namespace MBW.Utilities.ManagedSqlite.Tests;
 
