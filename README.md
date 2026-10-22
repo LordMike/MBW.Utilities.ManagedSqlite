@@ -1,17 +1,14 @@
-## MBW.Utilities.ManagedSqlite [![Generic Build](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite) [![GHPackages](https://img.shields.io/badge/package-alpha-green)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692005)
+## MBW.Utilities.ManagedSqlite [![Generic Build](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite)
 
 Managed C# read-only parser for SQLite3 databases. Provides access to table and row data.
 
-## Packages
+## Install
 
-| Package | Nuget |
-| ------------- |:-------------:|
-| MBW.Utilities.ManagedSqlite | [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite) |
+```
+dotnet add package MBW.Utilities.ManagedSqlite
+```
 
-`MBW.Utilities.ManagedSqlite.Core` and `MBW.Utilities.ManagedSqlite.Sql` are now part of this package. Their packages
-only forward their types to it, so code built against them keeps working; reference `MBW.Utilities.ManagedSqlite`
-instead. The namespaces are unchanged. Update `Core` and `Sql` to the release that forwards, or remove them, when you add
-`MBW.Utilities.ManagedSqlite`: an older version beside it defines the same types twice.
+To migrate from `MBW.Utilities.ManagedSqlite.Core` or `MBW.Utilities.ManagedSqlite.Sql`, reference `MBW.Utilities.ManagedSqlite` only.
 
 ## How to use
 

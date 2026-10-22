@@ -4,8 +4,18 @@
     <IsPackable>true</IsPackable>
     <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
     <Nullable>enable</Nullable>
-    <Description>Obsolete: use MBW.Utilities.ManagedSqlite. This package only forwards its types there.</Description>
+    <Description>Obsolete: use MBW.Utilities.ManagedSqlite. This package is empty: it depends on MBW.Utilities.ManagedSqlite, and warns (MBWSQLITE001) when a project references it.</Description>
+    <PackageTags>obsolete</PackageTags>
+    <!-- No assembly of its own, only the dependency and the warning -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <!-- NU5128: dependency groups without a lib folder, which is the point of an empty package -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="build\*.targets" Pack="true" PackagePath="build\" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MBW.Utilities.ManagedSqlite\MBW.Utilities.ManagedSqlite.csproj" />
