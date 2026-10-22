@@ -37,6 +37,8 @@ public class SqlCreateTableChecks_Tests
     [InlineData("SCHEMA-22", "CREATE TABLE 1 (a)")]
     [InlineData("SCHEMA-22", "CREATE TABLE t (table, b)")]
     [InlineData("SCHEMA-22", "CREATE TABLE t (PRIMARY KEY (a), a)")]
+    [InlineData("SCHEMA-22", "CREATE TABLE t (a) 1")]
+    [InlineData("SCHEMA-22", "CREATE TABLE t (a INT PRIMARY KEY) STRICT WITHOUT ROWID")]
     [InlineData("SCHEMA-22", "CREATE TABLE t (a DEFAULT -(1)")]
     [InlineData("DDL-20", "CREATE TABLE t (a DEFAULT 1abc)")]
     [InlineData("DDL-20", "CREATE TABLE t (a DEFAULT 1__0)")]

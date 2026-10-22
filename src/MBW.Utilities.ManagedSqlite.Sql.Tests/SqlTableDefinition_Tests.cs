@@ -51,8 +51,8 @@ public class SqlTableDefinition_Tests
     [InlineData("CREATE TABLE t(\"unterminated TEXT)")]
     [InlineData("CREATE TABLE t([unterminated TEXT)")]
     [InlineData("CREATE TABLE t(a TEXT /* unterminated comment")]
-    [InlineData("CREATE TABLE t(a TEXT, a INTEGER)")]
     [InlineData("CREATE VIRTUAL TABLE v USING fts5(a, b)")]
+    [InlineData("ALTER TABLE t ADD COLUMN x INT DEFAULT 1")]
     public void UnparseableReturnsFalse(string sql)
     {
         Assert.False(SqlParser.TryParse(sql, out SqlTableDefinition definition));

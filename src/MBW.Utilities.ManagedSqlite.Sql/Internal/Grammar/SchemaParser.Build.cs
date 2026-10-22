@@ -30,7 +30,19 @@ internal sealed partial class SchemaParser
     /// </summary>
     private bool _tableEnded;
 
-    private ParsedTable Table => _newTable!;
+    /// <summary>
+    /// The table being built. A column or constraint outside a CREATE TABLE, as in an ALTER TABLE, has none: SQLite's
+    /// actions then do nothing, and the statement is not a table's.
+    /// </summary>
+    private ParsedTable Table
+    {
+        get
+        {
+            if (_newTable == null)
+                Fail("SCHEMA-22", "the SQL does not create a table");
+            return _newTable!;
+        }
+    }
 
     private ParsedColumn LastColumn => Table.Columns[Table.Columns.Count - 1];
 

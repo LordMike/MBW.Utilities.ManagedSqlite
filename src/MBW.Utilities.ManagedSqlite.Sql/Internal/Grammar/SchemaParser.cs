@@ -253,9 +253,9 @@ internal sealed partial class SchemaParser
                 // An empty rule pushes its left-hand side, so the stack must have room for one more entry
                 if (SqliteGrammar.RuleRhsCount[rule] == 0 && _top >= MaxStackDepth - 1)
                     Fail("SCHEMA-22", "Recursion limit");
+                // The statement's end (cmdx, which sets _done) is reduced on any lookahead, and the lookahead must still
+                // be shifted: only ";" may follow, so "CREATE TABLE t(a) STRICT WITHOUT ROWID" is a syntax error
                 act = ReduceRule(rule);
-                if (_done)
-                    return;
             }
             else if (act <= SqliteGrammar.YY_MAX_SHIFTREDUCE)
             {
