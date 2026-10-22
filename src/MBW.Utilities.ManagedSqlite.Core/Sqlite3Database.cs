@@ -24,6 +24,8 @@ public sealed class Sqlite3Database : IDisposable
 
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
+    internal Sqlite3Settings Settings => _reader.Settings;
+
     public Sqlite3Database(Stream file, Sqlite3Settings? settings = null)
     {
         if (file == null)
@@ -47,12 +49,20 @@ public sealed class Sqlite3Database : IDisposable
         // Parse table on Page 1, the sqlite_master table
         BTreePage rootBtree = BTreePage.Parse(_reader, 1);
 
+        // PAGE-18: the schema table is a rowid table, read with a table cursor, so page 1 must be a table b-tree page.
+        // moveToRoot in btree.c:
+        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
+        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
+        Checks.Strict(rootBtree is not BTreeIndexPage, "PAGE-18", $"page 1 is an index b-tree page, but holds the schema table",
+            1, "b-tree page header");
+
         // Fake the schema for the sqlite_master table
         schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
-            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);");
+            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);", SchemaObjectKind.Table);
 
         Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
-        return new Sqlite3MasterTable(this, table);
+        return new Sqlite3MasterTable(this, _reader, table);
     }
 
     /// <summary>
@@ -103,7 +113,9 @@ public sealed class Sqlite3Database : IDisposable
 
         foreach (Sqlite3SchemaRow tbl in GetTables())
         {
-            if (tbl.Type == "table" && names.Equals(tbl.Name, name))
+            // A table is known by its statement, as in SQLite. The type column must agree in Strict (SCHEMA-26), in
+            // any case, so "TABLE" is a table too.
+            if (tbl.Kind is SchemaObjectKind.Table or SchemaObjectKind.VirtualTable && names.Equals(tbl.Name, name))
                 return tbl;
         }
 

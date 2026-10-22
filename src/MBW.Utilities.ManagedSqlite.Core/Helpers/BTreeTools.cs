@@ -29,6 +29,8 @@ internal static class BTreeTools
         if (node is not BTreeInteriorTablePage)
             throw new ArgumentException("Did not receive a compatible BTreePage", nameof(node));
 
+        CheckInteriorRoot(node);
+
         // Depth-first, keeping the interior pages and the index of the next child to visit
         Stack<KeyValuePair<BTreeInteriorTablePage, int>> stack = new Stack<KeyValuePair<BTreeInteriorTablePage, int>>();
         stack.Push(new KeyValuePair<BTreeInteriorTablePage, int>((BTreeInteriorTablePage)node, 0));
@@ -42,12 +44,12 @@ internal static class BTreeTools
             // The right-most child comes after the cells. Every interior page has one, so 0 is rejected as corrupt by ParseChild.
             uint childPage;
             string structure;
-            if (child < interior.Cells.Length)
+            if (child < interior.CellCount)
             {
-                childPage = interior.Cells[child].LeftPagePointer;
+                childPage = interior.GetChildPointer(child);
                 structure = "interior cell child pointer";
             }
-            else if (child == interior.Cells.Length)
+            else if (child == interior.CellCount)
             {
                 childPage = interior.Header.RightMostPointer;
                 structure = "right-most pointer";
@@ -75,6 +77,9 @@ internal static class BTreeTools
     /// </summary>
     public static IEnumerable<KeyValuePair<BTreeIndexPage, int>> WalkIndexBTreeCells(BTreeIndexPage root)
     {
+        if (!root.IsLeaf)
+            CheckInteriorRoot(root);
+
         // Depth-first, keeping the interior pages and the index of the next child to visit
         Stack<KeyValuePair<BTreeIndexPage, int>> stack = new Stack<KeyValuePair<BTreeIndexPage, int>>();
         stack.Push(new KeyValuePair<BTreeIndexPage, int>(root, 0));
@@ -87,25 +92,25 @@ internal static class BTreeTools
 
             if (page.IsLeaf)
             {
-                for (int i = 0; i < page.Cells.Length; i++)
+                for (int i = 0; i < page.CellCount; i++)
                     yield return new KeyValuePair<BTreeIndexPage, int>(page, i);
 
                 continue;
             }
 
             // The left child of cell child - 1 is done, so that cell is next
-            if (child > 0 && child <= page.Cells.Length)
+            if (child > 0 && child <= page.CellCount)
                 yield return new KeyValuePair<BTreeIndexPage, int>(page, child - 1);
 
             // The right-most child comes after the cells. Every interior page has one, so 0 is rejected as corrupt by ParseChild.
             uint childPage;
             string structure;
-            if (child < page.Cells.Length)
+            if (child < page.CellCount)
             {
-                childPage = page.Cells[child].LeftPagePointer;
+                childPage = page.GetChildPointer(child);
                 structure = "interior cell child pointer";
             }
-            else if (child == page.Cells.Length)
+            else if (child == page.CellCount)
             {
                 childPage = page.Header.RightMostPointer;
                 structure = "right-most pointer";
@@ -122,17 +127,57 @@ internal static class BTreeTools
         }
     }
 
+    /// <summary>
+    /// PAGE-19: an interior root page with no cells is corrupt, except page 1, which SQLite then descends through to its
+    /// right-most child. moveToRoot in btree.c:
+    ///   }else if( !pRoot->leaf ){
+    ///     Pgno subpage;
+    ///     if( pRoot->pgno!=1 ) return SQLITE_CORRUPT_BKPT;
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5620 (moveToRoot)
+    /// Lenient reports it and walks the right-most child as for page 1, so the subtree's rows are still read.
+    /// </summary>
+    private static void CheckInteriorRoot(BTreePage root) =>
+        Checks.Relaxable(root.CellCount > 0 || root.Page == 1, root.Reader.Settings, "PAGE-19",
+            $"interior root page {root.Page} has no cells", root.Page, "b-tree page header");
+
     private static BTreePage ParseChild(BTreePage parent, uint childPage, string structure, int depth, BTreeKind kind)
     {
         uint pageCount = parent.Reader.PageCount;
 
-        if (childPage == 0 || (pageCount > 0 && childPage > pageCount))
-            throw new SqliteCorruptException($"child page {childPage} is outside the database (1..{pageCount})", parent.Page, structure);
+        // PAGE-15: page 0 does not exist. getPageNormal in pager.c:
+        //   if( pgno==0 ) return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5597 (getPageNormal)
+        Checks.Strict(childPage != 0, "PAGE-15", $"child page {childPage} is outside the database (1..{pageCount})", parent.Page, structure);
 
-        // Like SQLite, this is also what stops a cycle (a child pointing back to itself or an ancestor)
-        if (depth + 1 >= MaxDepth)
-            throw new SqliteCorruptException($"the b-tree is deeper than {MaxDepth} levels", parent.Page, structure);
+        // PAGE-14: a child page must be in the database. getAndInitPage in btree.c:
+        //   if( pgno>btreePagecount(pBt) ){
+        //     *ppPage = 0;
+        //     return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2390 (getAndInitPage)
+        Checks.Strict(pageCount == 0 || childPage <= pageCount, "PAGE-14",
+            $"child page {childPage} is outside the database (1..{pageCount})", parent.Page, structure);
 
-        return BTreePage.Parse(parent.Reader, childPage, kind);
+        // PAGE-24: at most 20 levels, which is also what stops a cycle (a child pointing back to itself or an ancestor).
+        // moveToChild in btree.c:
+        //   if( pCur->iPage>=(BTCURSOR_MAX_DEPTH-1) ){
+        //     return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5460 (moveToChild)
+        Checks.Strict(depth + 1 < MaxDepth, "PAGE-24", $"the b-tree is deeper than {MaxDepth} levels", parent.Page, structure);
+
+        BTreePage child = BTreePage.Parse(parent.Reader, childPage, kind);
+
+        // PAGE-21: a page reached through a child pointer must hold at least one cell. moveToChild in btree.c:
+        //   if( rc==SQLITE_OK
+        //    && (pCur->pPage->nCell<1 || pCur->pPage->intKey!=pCur->curIntKey)
+        //   ){
+        //     releasePage(pCur->pPage);
+        //     rc = SQLITE_CORRUPT_PGNO(newPgno);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5471 (moveToChild)
+        // Lenient reports it and walks on as before: an empty leaf has no rows, and an empty interior page still has its
+        // right-most child, so no row moves or appears.
+        Checks.Relaxable(child.CellCount > 0, parent.Reader.Settings, "PAGE-21",
+            $"child page {childPage} has no cells", childPage, "b-tree page header");
+
+        return child;
     }
 }
