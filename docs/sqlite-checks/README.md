@@ -33,7 +33,7 @@ The code for each of these carries its ID in a comment.
 | HDR-30, REC-40, SCHEMA-01 | The text encoding field is read as SQLite reads it (`& 3`, 0 is UTF-8) and never rejected |
 | PAGE-03, INTEG-05 | At most (pageSize-8)/6 cells a page, in either mode |
 | PAGE-11, PAGE-12, PAGE-13, CELL-04, CELL-08, CELL-09 | Cells are parsed when they are reached, and not checked against the content area (SQLite does that only with `cell_size_check`) |
-| PAGE-01, PAGE-14, PAGE-15, PAGE-22, PAGE-24 | An unknown page type, a child page of the other b-tree kind, a child page 0 or past the end, and a tree deeper than 20 levels fail as in SQLite, with their IDs |
+| PAGE-01, PAGE-22, PAGE-24 | An unknown page type, a child page of the other b-tree kind, and a tree deeper than 20 levels fail as in SQLite, with their IDs |
 | PAGE-18 | Page 1 must be a table b-tree page |
 | PAGE-19, PAGE-21 | Empty interior roots and empty child pages are corrupt; Lenient reports and walks on |
 | CELL-01, CELL-02 | Payload sizes keep their low 32 bits |
