@@ -159,6 +159,11 @@ internal sealed partial class SchemaParser
     }
 
     /// <summary>
+    /// The row's rootpage is 1, which sqlite3StartTable takes for the schema table being loaded
+    /// </summary>
+    private bool IsSchemaTableRoot => _catalog != null && _rootPage == 1;
+
+    /// <summary>
     /// sqlite3StartTable in build.c: a new table, view or virtual table may not have the name of a table, view or index
     /// loaded before it. With IF NOT EXISTS a name that exists is no error, and the statement makes nothing. False when
     /// the statement makes nothing.
@@ -172,11 +177,6 @@ internal sealed partial class SchemaParser
     ///       sqlite3ErrorMsg(pParse, "there is already an index named %s", zName);
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1282 (sqlite3StartTable)
     /// </summary>
-    /// <summary>
-    /// The row's rootpage is 1, which sqlite3StartTable takes for the schema table being loaded
-    /// </summary>
-    private bool IsSchemaTableRoot => _catalog != null && _rootPage == 1;
-
     private bool CheckNewTableName(Token nameToken, string type, string name, bool ifNotExists)
     {
         // SCHEMA-19: a table, view or virtual table with rootpage 1 is taken for the schema table itself, named
