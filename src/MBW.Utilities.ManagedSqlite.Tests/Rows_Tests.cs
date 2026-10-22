@@ -1,11 +1,12 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
 /// How the Core API presents rows, which the parity dump does not see: it reads rows by name through the table definition

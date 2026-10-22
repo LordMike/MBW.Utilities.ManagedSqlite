@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+namespace MBW.Utilities.ManagedSqlite.Tests.Helpers;
 
 /// <summary>
 /// Read-only stream presenting a virtual file of any length, made of fixed-size pages.

@@ -2,11 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
 /// Reads a table whose pages lie past the 4 GiB mark.
@@ -20,7 +21,7 @@ public class LargeOffset_Tests
     [Fact]
     public void TestTableBeyond4GiB()
     {
-        using Stream stream = LoadSparse("MBW.Utilities.ManagedSqlite.Core.Tests.Data.LargeOffset.sparse", out int pageSize);
+        using Stream stream = LoadSparse("MBW.Utilities.ManagedSqlite.Tests.Data.LargeOffset.sparse", out int pageSize);
         using Sqlite3Database db = new Sqlite3Database(stream);
 
         // Computed in 32 bits, this offset wraps around to a page that is all zeros

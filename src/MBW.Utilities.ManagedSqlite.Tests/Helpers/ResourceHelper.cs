@@ -1,7 +1,7 @@
 using System.IO;
 using System.Reflection;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+namespace MBW.Utilities.ManagedSqlite.Tests.Helpers;
 
 public static class ResourceHelper
 {

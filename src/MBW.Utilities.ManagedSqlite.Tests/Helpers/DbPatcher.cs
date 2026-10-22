@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+namespace MBW.Utilities.ManagedSqlite.Tests.Helpers;
 
 /// <summary>
 /// Patches the structures of a copy of an in-memory SQLite database file, to build named corruption cases.

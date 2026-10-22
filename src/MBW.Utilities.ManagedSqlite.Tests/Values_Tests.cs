@@ -1,8 +1,8 @@
 using System;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 public class Values_Tests
 {

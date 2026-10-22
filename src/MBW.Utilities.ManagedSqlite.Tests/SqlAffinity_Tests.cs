@@ -2,7 +2,10 @@ using System;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
+using MBW.Utilities.ManagedSqlite.Sql;
+using MBW.Utilities.ManagedSqlite.Core;
+
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 public class SqlAffinity_Tests
 {

@@ -1,12 +1,13 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using MBW.Utilities.ManagedSqlite.Sql;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
 /// The checks SQLite makes when it parses a table's CREATE TABLE while loading the schema (parse.y and build.c at

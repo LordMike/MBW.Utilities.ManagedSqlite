@@ -1,13 +1,14 @@
 using System;
 using System.IO;
 using System.Linq;
+using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
 /// Opening a database and looking up its tables

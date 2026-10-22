@@ -1,9 +1,9 @@
 using System.Linq;
 using System.Text;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
 /// Each case builds a database with real SQLite and compares SQLite's dump of it with the library's.

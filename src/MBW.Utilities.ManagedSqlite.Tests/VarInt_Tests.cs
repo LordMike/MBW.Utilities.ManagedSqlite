@@ -3,7 +3,7 @@ using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 public class VarInt_Tests
 {

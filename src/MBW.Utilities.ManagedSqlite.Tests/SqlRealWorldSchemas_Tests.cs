@@ -1,10 +1,10 @@
 using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 public class SqlRealWorldSchemas_Tests
 {
@@ -17,7 +17,7 @@ public class SqlRealWorldSchemas_Tests
     [InlineData("From_SqliteSyntax")]
     public void SchemaReadsSameAsSqlite(string source)
     {
-        using Stream stream = typeof(SqlRealWorldSchemas_Tests).Assembly.GetManifestResourceStream($"MBW.Utilities.ManagedSqlite.Sql.Tests.Data.{source}.sql");
+        using Stream stream = typeof(SqlRealWorldSchemas_Tests).Assembly.GetManifestResourceStream($"MBW.Utilities.ManagedSqlite.Tests.Data.{source}.sql");
         // Foreign keys are off so the default rows insert
         string script = new StreamReader(stream).ReadToEnd();
 

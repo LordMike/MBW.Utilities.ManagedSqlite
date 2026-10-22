@@ -1,11 +1,12 @@
 using System.IO;
 using System.Linq;
+using MBW.Utilities.ManagedSqlite.Sql;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
 /// The checks SQLite makes on the whole schema while it loads it: each row's CREATE statement against the rows before

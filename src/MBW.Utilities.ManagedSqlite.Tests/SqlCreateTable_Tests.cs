@@ -1,7 +1,7 @@
-using MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Sql.Tests;
+namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
 /// The CREATE TABLE syntax SQLite stores in sqlite_schema (https://www.sqlite.org/lang_createtable.html, parse.y).

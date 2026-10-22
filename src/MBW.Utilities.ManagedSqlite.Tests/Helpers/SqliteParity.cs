@@ -6,13 +6,14 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
+using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
 using Xunit;
 
-namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
+namespace MBW.Utilities.ManagedSqlite.Tests.Helpers;
 
 /// <summary>
 /// Builds an in-memory database with real SQLite from a SQL script, reads it both with SQLite and with this library,
