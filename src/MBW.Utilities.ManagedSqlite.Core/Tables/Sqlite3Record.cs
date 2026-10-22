@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 

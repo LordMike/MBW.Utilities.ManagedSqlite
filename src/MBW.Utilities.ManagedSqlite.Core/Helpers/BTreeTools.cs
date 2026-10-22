@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Objects;

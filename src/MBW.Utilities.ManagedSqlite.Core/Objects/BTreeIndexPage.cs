@@ -1,4 +1,4 @@
-﻿using MBW.Utilities.ManagedSqlite.Core.Internal;
+using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
