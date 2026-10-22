@@ -43,7 +43,7 @@ The code for each of these carries its ID in a comment.
 | REC-21 | A rowid alias column reads the rowid even when the record is short |
 | CELL-38 | The reader's own bound: a payload no larger than the database's pages could hold |
 | SCHEMA-11, SCHEMA-13, SCHEMA-15, SCHEMA-17, SCHEMA-19, SCHEMA-22, SCHEMA-26, SCHEMA-58, DDL-58 | Schema rows are read as sqlite3InitCallback reads them: each value as text, cut at a NUL, and the open fails where SQLite's schema load does |
-| SCHEMA-26, DDL-03 | Relaxable: a row's type and tbl_name must agree with its SQL, and a table's name with its CREATE TABLE |
+| SCHEMA-26, DDL-03 | Relaxable: a row's type must agree with its statement (SCHEMA-26), and its name and tbl_name with the statement's names (DDL-03) |
 | SCHEMA-22 | SQL SQLite cannot parse fails the open with `SqliteCorruptException` and SQLite's message; in Lenient only that row's table cannot be opened |
 | DDL-06, DDL-07, DDL-11, DDL-12, DDL-22, SCHEMA-24, SCHEMA-29, SCHEMA-30 | Table SQL is parsed by a port of SQLite's own parser (its Lemon tables, tokenizer and grammar actions), so TEMP, IF NOT EXISTS, text after the first statement or a NUL, and parameters in a DEFAULT are accepted, as SQLite accepts them |
 | DDL-18, DDL-20, DDL-21, DDL-24, DDL-25, DDL-27, DDL-29, SCHEMA-28 | Strict in both modes: syntax errors, unrecognized tokens, unknown table options and a qualified name fail as in SQLite |

@@ -135,8 +135,8 @@ Rules:
 - **A Relaxable check that can fire repeatedly** (on every read of the same page) should report once; see HDR-17 in
   `ReaderBase.ReadPage`.
 - **Comment and link format:** follow "Citing SQLite source" above, and start the comment with the check ID.
-- **Schema checks may fail late.** A check on a CREATE statement may fail when that table is opened, not at database
-  open, even in Strict.
+- **Schema checks fail at open.** Every sqlite_schema row is parsed when the database is opened, as SQLite loads it, so
+  Strict fails the open; Lenient keeps the error on the row, which then cannot be opened.
 - **Structural damage fails the enumerator; a bad value fails only its cell.** Pages, cells, overflow and record headers
   belong to the first group. Invalid text belongs to the second.
 
