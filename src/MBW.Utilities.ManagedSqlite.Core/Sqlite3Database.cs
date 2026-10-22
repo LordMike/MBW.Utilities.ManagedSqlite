@@ -33,7 +33,8 @@ public sealed class Sqlite3Database : IDisposable
 
         try
         {
-            _reader = ReaderBase.Open(file, settings ?? new Sqlite3Settings());
+            // A copy, so the caller changing the settings later can't change how this database reads
+            _reader = ReaderBase.Open(file, settings?.Clone() ?? new Sqlite3Settings());
             _masterTable = OpenMasterTable(out _masterSchemaRow);
         }
         catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
