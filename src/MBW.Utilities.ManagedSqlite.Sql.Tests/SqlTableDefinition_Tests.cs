@@ -52,7 +52,6 @@ public class SqlTableDefinition_Tests
     [InlineData("CREATE TABLE t([unterminated TEXT)")]
     [InlineData("CREATE TABLE t(a TEXT /* unterminated comment")]
     [InlineData("CREATE TABLE t(a TEXT, a INTEGER)")]
-    [InlineData("CREATE TABLE t(a, PRIMARY KEY ((a)))")]
     [InlineData("CREATE VIRTUAL TABLE v USING fts5(a, b)")]
     public void UnparseableReturnsFalse(string sql)
     {

@@ -113,6 +113,16 @@ internal static class SqliteParity
     }
 
     /// <summary>
+    /// Asserts that real SQLite loads the schema of the database file <paramref name="data"/> and reads the rows of
+    /// <paramref name="table"/>
+    /// </summary>
+    public static void AssertSqliteReads(byte[] data, string table)
+    {
+        using SqliteConnection connection = Open(data);
+        Query(connection, $"SELECT * FROM {Name(table)}");
+    }
+
+    /// <summary>
     /// Asserts that real SQLite fails with an error, any error, when it reads the rows of <paramref name="table"/> from
     /// the database file <paramref name="data"/>
     /// </summary>

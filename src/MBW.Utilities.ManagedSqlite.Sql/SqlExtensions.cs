@@ -25,28 +25,27 @@ public static class SqlExtensions
         if (schema.IsVirtual)
             throw new NotSupportedException($"'{schema.Name}' is a virtual table, whose columns its module declares");
 
-        // A null value caches that the SQL could not be parsed
-        Dictionary<Sqlite3SchemaRow, SqlTableDefinition?> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition?>());
+        // Only a definition that parsed is cached, so SQL that does not parse fails each time it is asked for
+        Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
 
         bool parsed = false;
         if (!definitionCache.TryGetValue(schema, out SqlTableDefinition? definition))
         {
-            parsed = true;
-            if (!SqlParser.TryParse(schema.Sql, out definition))
-                definitionCache[schema] = null;
-            else
-                definitionCache[schema] = definition;
-        }
+            // SCHEMA-22: SQLite parses each CREATE statement in sqlite_schema when it loads the schema, and an error
+            // there makes the database corrupt, "malformed database schema (name) - error". This reader parses a
+            // table's SQL when its definition is first asked for, which only moves the failure later.
+            // sqlite3InitCallback in prepare.c:
+            //   if( SQLITE_OK!=rc ){
+            //     ...
+            //       corruptSchema(pData, argv, sqlite3_errmsg(db));
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L150 (sqlite3InitCallback)
+            Checks.Strict(schema.Sql != null, "SCHEMA-22", $"malformed database schema ({schema.Name}): it has no SQL",
+                structure: "table definition");
 
-        // SCHEMA-22: SQLite parses each CREATE statement in sqlite_schema when it loads the schema, and an error there
-        // makes the database corrupt, "malformed database schema (name) - error". This reader parses a table's SQL when
-        // its definition is first asked for, which only moves the failure later. sqlite3InitCallback in prepare.c:
-        //   if( SQLITE_OK!=rc ){
-        //     ...
-        //       corruptSchema(pData, argv, sqlite3_errmsg(db));
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L150 (sqlite3InitCallback)
-        Checks.Strict(definition != null, "SCHEMA-22", $"malformed database schema ({schema.Name}): its SQL does not parse as CREATE TABLE",
-            structure: "table definition");
+            definition = SqlParser.Parse(schema.Sql!, schema.Name, schema.Database.Settings);
+            definitionCache[schema] = definition;
+            parsed = true;
+        }
 
         // DDL-03: the row's name must be the name in its statement, ignoring ASCII case. SQLite checks it while it
         // loads the schema, and skips it with writable_schema on. sqlite3CheckObjectName in build.c:
@@ -56,10 +55,10 @@ public static class SqlExtensions
         // This is not what SQLite does with writable_schema on, where the table goes by its statement's name; this
         // reader keeps the row's name, so a lookup by that name still finds it.
         if (parsed || schema.Database.Settings.Validation == SqliteValidation.Strict)
-            Checks.Relaxable(AsciiCaseInsensitiveComparer.Instance.Equals(definition!.TableName, schema.Name), schema.Database.Settings, "DDL-03",
+            Checks.Relaxable(AsciiCaseInsensitiveComparer.Instance.Equals(definition.TableName, schema.Name), schema.Database.Settings, "DDL-03",
                 $"malformed database schema ({schema.Name}): its SQL creates table {definition.TableName}", structure: "table definition");
 
-        return definition!;
+        return definition;
     }
 
     /// <exception cref="SqliteCorruptException">The SQL declares the table WITHOUT ROWID and its root page is a table
