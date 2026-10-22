@@ -73,13 +73,14 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     /// UTF-8, and a field of 0 means the default, UTF-8.
     /// </summary>
     [Theory]
-    [InlineData("UTF-8", 0u)]
-    [InlineData("UTF-8", 0x100u)]
-    [InlineData("UTF-16le", 6u)]
-    [InlineData("UTF-16be", 0xFFFFFFFFu)]
-    public void TextEncoding_ReadLikeSqlite(string written, uint field) =>
+    [InlineData("UTF-8", 1, 0u)]
+    [InlineData("UTF-8", 1, 0x100u)]
+    [InlineData("UTF-16le", 2, 6u)]
+    [InlineData("UTF-16be", 3, 0xFFFFFFFFu)]
+    public void TextEncoding_ReadLikeSqlite(string written, byte stored, uint field) =>
         SqliteParity.AssertSameAsSqlite($"PRAGMA encoding = '{written}'; CREATE TABLE t (a TEXT); INSERT INTO t VALUES ('abcd'), ('æøå');", data =>
         {
+            Assert.Equal(new byte[] { 0, 0, 0, stored }, data.AsSpan(56, 4).ToArray());
             data[56] = (byte)(field >> 24);
             data[57] = (byte)(field >> 16);
             data[58] = (byte)(field >> 8);
@@ -92,6 +93,7 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     {
         const string script = "PRAGMA encoding = 'UTF-16le'; CREATE TABLE t (a TEXT); INSERT INTO t VALUES ('abcd'), ('æøå');";
         byte[] data = SqliteParity.Build(script);
+        Assert.Equal(new byte[] { 0, 0, 0, 2 }, data.AsSpan(56, 4).ToArray());
         data[56] = data[57] = data[58] = data[59] = 0;
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { FallbackEncoding = SqliteEncoding.UTF16LE });
