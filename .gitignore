@@ -41,4 +41,5 @@ build/
 *.egg-info/
 
 # The obsolete packages pack their build/*.targets
-!src/*/build/
+!src/MBW.Utilities.ManagedSqlite.Core/build/
+!src/MBW.Utilities.ManagedSqlite.Sql/build/
