@@ -14,6 +14,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Core\MBW.Utilities.ManagedSqlite.Core.csproj" />
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Sql\MBW.Utilities.ManagedSqlite.Sql.csproj" />
   </ItemGroup>
 
 </Project>

@@ -3,6 +3,7 @@ using System.IO;
 using BenchmarkDotNet.Attributes;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
 
@@ -43,7 +44,7 @@ public class EnumerateRowsBenchmarks
         _db = new Sqlite3Database(new MemoryStream(image, false));
         _table = _db.GetTable(TestDatabases.TableName);
 
-        if (Sqlite() != Rows || AdoNet() != Rows || Managed() != Rows)
+        if (Sqlite() != Rows || AdoNet() != Rows || Managed() != Rows || ManagedByName() != Rows)
             throw new InvalidOperationException($"Expected {Rows} rows from all readers");
     }
 
@@ -97,6 +98,25 @@ public class EnumerateRowsBenchmarks
         foreach (Sqlite3Row row in _table.EnumerateRows())
         {
             _ = row.ColumnData;
+            count++;
+        }
+
+        return count;
+    }
+
+    private static readonly string[] Columns = { "id", "i", "r", "t", "b" };
+
+    /// <summary>
+    /// Every column read by name through the Sql package, as the native side's SELECT names them
+    /// </summary>
+    [Benchmark]
+    public int ManagedByName()
+    {
+        int count = 0;
+        foreach (Sqlite3Row row in _table.EnumerateRows())
+        {
+            foreach (string column in Columns)
+                row.TryGetValueByName(column, out _);
             count++;
         }
 
