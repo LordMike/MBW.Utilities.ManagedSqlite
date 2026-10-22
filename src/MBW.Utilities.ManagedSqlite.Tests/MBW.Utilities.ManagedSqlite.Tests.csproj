@@ -2,9 +2,9 @@
 
   <Import Project="..\..\_Imports\Test.targets" />
 
-  <PropertyGroup>    
+  <PropertyGroup>
     <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
-      </PropertyGroup>
+  </PropertyGroup>
 
   <ItemGroup>
     <None Remove="Data\*" />
@@ -20,15 +20,10 @@
     <PackageReference Include="xunit" Version="2.5.0" />
     <!-- Test-only oracle: real SQLite builds the databases and dumps them for SqliteParity -->
     <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
-    <DotNetCliToolReference Include="dotnet-xunit" Version="2.3.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\MBW.Utilities.ManagedSqlite\MBW.Utilities.ManagedSqlite.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Service Include="{82a7f48d-3b50-4b1e-b82e-3ada8210c358}" />
   </ItemGroup>
 
 </Project>
