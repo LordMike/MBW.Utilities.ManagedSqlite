@@ -94,7 +94,8 @@ internal struct Sqlite3Record
 
     /// <summary>
     /// The bytes of field <paramref name="index"/> when it is a BLOB, as a slice of the array the record is read from,
-    /// without a copy. False when the record has fewer fields, or the field is not a BLOB.
+    /// without a copy. False when the record has fewer fields, or the field is not a BLOB. Like
+    /// <see cref="TryGetValue"/>, a record that is malformed up to that field throws <see cref="Exceptions.SqliteCorruptException"/>.
     /// </summary>
     public bool TryGetBlob(int index, out ReadOnlyMemory<byte> blob)
     {

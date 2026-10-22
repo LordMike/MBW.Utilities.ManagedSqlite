@@ -283,7 +283,7 @@ internal static class SqliteParity
             .Select(row =>
             {
                 object[] values = stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray();
-                AssertBlobsSameAsValues(row, stored.Count);
+                AssertBlobsSameAsValues(row, stored, definition.RowIdColumn?.Name);
                 return (table.IsWithoutRowId ? null : (long?)row.RowId, values);
             })
             .ToList();
@@ -293,12 +293,16 @@ internal static class SqliteParity
 
     /// <summary>
     /// <see cref="Sqlite3Row.TryGetBlob"/> returns the bytes <see cref="Sqlite3Row.TryGetOrdinal(ushort, out object)"/>
-    /// returns for each BLOB field among the first <paramref name="fields"/>, and false for every other field
+    /// returns for each BLOB field of the <paramref name="stored"/> columns, and false for every other field. The rowid
+    /// alias is skipped: it reads the rowid, so its field is never decoded, as in SQLite.
     /// </summary>
-    private static void AssertBlobsSameAsValues(Sqlite3Row row, int fields)
+    private static void AssertBlobsSameAsValues(Sqlite3Row row, List<string> stored, string rowIdAlias)
     {
-        for (ushort i = 0; i < fields; i++)
+        for (ushort i = 0; i < stored.Count; i++)
         {
+            if (stored[i] == rowIdAlias)
+                continue;
+
             bool exists = row.TryGetOrdinal(i, out object value);
             bool isBlob = row.TryGetBlob(i, out ReadOnlyMemory<byte> blob);
             Assert.Equal(exists && value is byte[], isBlob);
