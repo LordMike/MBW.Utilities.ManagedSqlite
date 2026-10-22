@@ -11,7 +11,11 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 /// fields a table does not have columns for, do not fail a read (REC-10).
 /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L2975 (OP_Column)
 /// </summary>
-internal sealed class Sqlite3Record
+/// <remarks>
+/// A mutable struct, so a row holds its record without a second object. It is kept in a field of
+/// <see cref="Sqlite3Row"/> and never copied after it is created.
+/// </remarks>
+internal struct Sqlite3Record
 {
     /// <summary>
     /// The largest header SQLite reads: a 3-byte serial type for each of at most 32768 columns, plus 3 bytes for the
@@ -19,7 +23,6 @@ internal sealed class Sqlite3Record
     /// </summary>
     private const long MaxHeaderSize = 98307;
 
-    private readonly ReaderBase _reader;
     private readonly uint _page;
     private readonly long? _rowId;
 
@@ -37,7 +40,7 @@ internal sealed class Sqlite3Record
     /// <summary>
     /// The header size (SQLite's <c>aOffset[0]</c>), read by the first <see cref="Parse"/>
     /// </summary>
-    private long _headerSize;
+    private int _headerSize;
 
     /// <summary>
     /// Where the next serial type starts, as SQLite's <c>iHdrOffset</c>
@@ -45,25 +48,25 @@ internal sealed class Sqlite3Record
     private int _headerPos;
 
     /// <summary>
-    /// Field i's serial type at <c>[2 * i]</c> and the offset of its value at <c>[2 * i + 1]</c> (SQLite's
-    /// <c>aType</c> and <c>aOffset</c>), for the fields parsed so far. Allocated by the first <see cref="Parse"/>, so a
-    /// row whose values are never read costs nothing here.
+    /// Field i's serial type at <c>[2 * i]</c>, as a uint, and the offset of its value at <c>[2 * i + 1]</c> (SQLite's
+    /// <c>aType</c> and <c>aOffset</c>), for the fields parsed so far. Allocated by the first
+    /// <see cref="TryGetValue"/>; <see cref="ReadAll"/> does without, so a row whose values are all read at once, or
+    /// never read, costs nothing here.
     /// </summary>
-    private long[]? _fields;
+    private int[]? _fields;
 
     /// <summary>
     /// Where the value after the last parsed field starts (SQLite's <c>aOffset[nHdrParsed]</c>)
     /// </summary>
-    private long _nextOffset;
+    private int _nextOffset;
 
     /// <summary>
     /// Fields parsed so far (SQLite's <c>nHdrParsed</c>), -1 before the first parse
     /// </summary>
     private int _parsed = -1;
 
-    public Sqlite3Record(ReaderBase reader, uint page, long? rowId, ArraySegment<byte> payload)
+    public Sqlite3Record(uint page, long? rowId, ArraySegment<byte> payload)
     {
-        _reader = reader;
         _page = page;
         _rowId = rowId;
         _data = payload.Array!;
@@ -74,41 +77,76 @@ internal sealed class Sqlite3Record
     private string RowName => _rowId.HasValue ? $"row {_rowId.Value}" : "a WITHOUT ROWID row";
 
     /// <summary>
-    /// The number of fields, which parses the whole header
-    /// </summary>
-    public int FieldCount
-    {
-        get
-        {
-            Parse(int.MaxValue);
-            return _parsed;
-        }
-    }
-
-    /// <summary>
     /// The value of field <paramref name="index"/>, parsing the header up to it. False when the record has fewer
     /// fields, which SQLite reads as the column's default or NULL.
     /// </summary>
-    public bool TryGetValue(int index, out object? value)
+    public bool TryGetValue(int index, ReaderBase reader, out object? value)
     {
-        Parse(index);
-
-        if (index >= _parsed)
+        if (!ParseField(index))
         {
             value = null;
             return false;
         }
 
-        value = Decode(_fields![2 * index], (int)_fields[2 * index + 1]);
+        value = Decode(reader, (uint)_fields![2 * index], _fields[2 * index + 1]);
         return true;
+    }
+
+    /// <summary>
+    /// Parses the header up to field <paramref name="index"/>, keeping the fields. False when the record has fewer
+    /// fields.
+    /// </summary>
+    private bool ParseField(int index)
+    {
+        // ReadAll parsed the whole header without keeping the fields, so parse it again, keeping them
+        if (_fields == null && _parsed > 0)
+            _parsed = -1;
+
+        Parse(index, true);
+        return index < _parsed;
+    }
+
+    /// <summary>
+    /// The values of all fields. Like a read of the last field, this parses the whole header, and its checks fail
+    /// before any value is decoded. The values are then decoded in one more walk over the header, so the fields are
+    /// not kept.
+    /// </summary>
+    public object?[] ReadAll(ReaderBase reader)
+    {
+        Parse(int.MaxValue, false);
+
+        object?[] values = new object?[_parsed];
+        if (_fields != null)
+        {
+            for (int i = 0; i < values.Length; i++)
+                values[i] = Decode(reader, (uint)_fields[2 * i], _fields[2 * i + 1]);
+
+            return values;
+        }
+
+        // The checks in Parse passed, so every serial type and value is inside the payload
+        int end = _start + _length;
+        int pos = _start;
+        TryReadVarInt32(_data, end, ref pos, out _);
+
+        int offset = _headerSize;
+        for (int i = 0; i < values.Length; i++)
+        {
+            TryReadVarInt32(_data, end, ref pos, out long serialType);
+            values[i] = Decode(reader, serialType, offset);
+            offset += (int)SerialTypeSize(serialType);
+        }
+
+        return values;
     }
 
     /// <summary>
     /// Parses the header up to and including field <paramref name="p2"/>, or to its end. This is SQLite's
     /// op_column_read_header loop, with its checks on the part parsed so far. Like SQLite, the state moves on only when
-    /// the checks pass, so a record that failed fails again on every read.
+    /// the checks pass, so a record that failed fails again on every read. <paramref name="keep"/> keeps the fields in
+    /// <see cref="_fields"/>, which is then allocated by the first parse.
     /// </summary>
-    private void Parse(int p2)
+    private void Parse(int p2, bool keep)
     {
         if (_parsed > p2)
             return;
@@ -133,10 +171,11 @@ internal sealed class Sqlite3Record
             Checks.Strict(read && headerSize <= MaxHeaderSize && headerSize <= _length, "REC-03",
                 $"record header size {(read ? headerSize.ToString() : "varint")} of {RowName} runs past the payload of {_length} bytes", _page, "record header");
 
-            _headerSize = headerSize;
+            _headerSize = (int)headerSize;
             _headerPos = pos - _start;
-            _nextOffset = headerSize;
-            _fields = new long[2 * Math.Min(8, headerSize + 1)];
+            _nextOffset = (int)headerSize;
+            if (keep && headerSize > 0)
+                _fields = new int[2 * Math.Min(8, headerSize + 1)];
 
             // REC-04, CELL-22: a header size of 0 is a record of no fields, so every column reads as its default or NULL.
             // SQLite parses one serial type past the (empty) header, finds the record corrupt, and then forgives it:
@@ -165,7 +204,7 @@ internal sealed class Sqlite3Record
         bool overread = false;
         do
         {
-            if (2 * i + 2 > _fields!.Length)
+            if (_fields != null && 2 * i + 2 > _fields.Length)
                 Array.Resize(ref _fields, _fields.Length * 2);
 
             // A serial type that runs past the payload runs past the header too, which the checks below reject
@@ -178,8 +217,13 @@ internal sealed class Sqlite3Record
                 break;
             }
 
-            _fields[2 * i] = serialType;
-            _fields[2 * i + 1] = offset;
+            // The offsets of a header that fails the checks below may not fit; they are never read
+            if (_fields != null)
+            {
+                _fields[2 * i] = unchecked((int)serialType);
+                _fields[2 * i + 1] = unchecked((int)offset);
+            }
+
             offset += SerialTypeSize(serialType);
             i++;
         } while (i <= p2 && headerPos < _headerSize);
@@ -203,7 +247,7 @@ internal sealed class Sqlite3Record
 
         _parsed = i;
         _headerPos = headerPos;
-        _nextOffset = offset;
+        _nextOffset = (int)offset;
     }
 
     /// <summary>
@@ -241,7 +285,7 @@ internal sealed class Sqlite3Record
     /// <summary>
     /// Decodes the value of <paramref name="serialType"/> that starts at <paramref name="offset"/> in the payload
     /// </summary>
-    private object? Decode(long serialType, int offset)
+    private readonly object? Decode(ReaderBase reader, long serialType, int offset)
     {
         byte[] payload = _data;
         int length = _start + _length;
@@ -294,7 +338,7 @@ internal sealed class Sqlite3Record
                 }
 
                 // Odd number
-                return _reader.DecodeString(payload, pos, size);
+                return reader.DecodeString(payload, pos, size);
             }
         }
     }
