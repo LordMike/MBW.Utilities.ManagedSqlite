@@ -6,11 +6,16 @@
 //     dotnet run --project tools/SqliteGrammarGenerator -- <dir with parse.c and mkkeywordhash.c> <version> [output]
 //
 // parse.c comes from a SQLite amalgamation or a built source tree (it is generated, so it is not in the repository at
-// github.com/sqlite/sqlite). mkkeywordhash.c is tool/mkkeywordhash.c in that repository. The output defaults to
-// SqliteGrammar.g.cs in the current directory.
+// github.com/sqlite/sqlite). mkkeywordhash.c is tool/mkkeywordhash.c in that repository. Write the output over
+// src/MBW.Utilities.ManagedSqlite.Sql/Internal/Grammar/SqliteGrammar.g.cs; it defaults to SqliteGrammar.g.cs in the
+// current directory.
 
+using System.Globalization;
 using System.Text;
 using System.Text.RegularExpressions;
+
+// The numbers in the output are C# literals, whatever the machine's culture
+CultureInfo.CurrentCulture = CultureInfo.InvariantCulture;
 
 if (args.Length < 2)
 {
@@ -33,7 +38,7 @@ foreach (Match m in Regex.Matches(parseC, @"#define TK_(\w+)\s+(\d+)"))
 
 // Keywords whose feature mask is enabled in a default build (no SQLITE_OMIT_*, no SQLITE_ENABLE_ORDERED_SET_AGGREGATES)
 HashSet<string> disabled = new() { "ORDERSET" };
-string table = Regex.Match(keywordsC, @"static Keyword aKeywordTable\[\] = \{(.*?)\n\};", RegexOptions.Singleline).Groups[1].Value;
+string table = Required(Regex.Match(keywordsC, @"static Keyword aKeywordTable\[\] = \{(.*?)\n\};", RegexOptions.Singleline), "aKeywordTable in mkkeywordhash.c");
 List<(string Keyword, string Token)> keywords = new();
 foreach (Match m in Regex.Matches(table, @"\{\s*""(\w+)"",\s*""TK_(\w+)"",\s*([\w|]+),"))
     if (!m.Groups[3].Value.Split('|').Any(disabled.Contains))
@@ -99,15 +104,19 @@ return 0;
 
 // The body of a C array in parse.c, without its comments
 string Body(string name) =>
-    Regex.Replace(Regex.Match(parseC, @"\b" + Regex.Escape(name) + @"\[\] = \{(.*?)\n\};", RegexOptions.Singleline).Groups[1].Value,
+    Regex.Replace(Required(Regex.Match(parseC, @"\b" + Regex.Escape(name) + @"\[\] = \{(.*?)\n\};", RegexOptions.Singleline), name + "[] in parse.c"),
         @"/\*.*?\*/", "", RegexOptions.Singleline);
+
+// A missing array or define means the inputs changed shape, which must not quietly give an empty table
+string Required(Match match, string what) =>
+    match.Success ? match.Groups[1].Value : throw new InvalidOperationException($"{what} was not found");
 
 List<int> Array(string name) => Regex.Matches(Body(name), @"-?\d+").Select(m => int.Parse(m.Value)).ToList();
 
 // The string literals of a C array, as written (escapes kept)
 List<string> Strings(string name) => Regex.Matches(Body(name), @"""((?:[^""\\]|\\.)*)""").Select(m => m.Groups[1].Value).ToList();
 
-int Define(string name) => int.Parse(Regex.Match(parseC, "#define " + name + @"\s+\(?(-?\d+)\)?").Groups[1].Value);
+int Define(string name) => int.Parse(Required(Regex.Match(parseC, "#define " + name + @"\s+\(?(-?\d+)\)?"), "#define " + name + " in parse.c"));
 
 string CsArray(string type, string name, List<int> values)
 {
