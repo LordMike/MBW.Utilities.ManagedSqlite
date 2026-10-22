@@ -49,4 +49,4 @@ The code for each of these carries its ID in a comment.
 | DDL-34, DDL-37, DDL-48, DDL-49, DDL-50, DDL-54, DDL-61, DDL-85 | Strict in both modes: the build.c checks that decide the record layout (duplicate columns, keys and their terms, generated keys, WITHOUT ROWID without a key, expression depth) |
 | DDL-36, DDL-42, DDL-43, DDL-47, DDL-51, DDL-53, DDL-55, DDL-59, DDL-60, DDL-62 | Relaxable: build.c and resolve.c checks that do not change how rows read; Lenient reports them and keeps the table as SQLite has it at that point |
 | DDL-46 | CHECK constraints are dropped, as SQLite drops them for a read-only database |
-| REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity; a DEFAULT with a CAST is not evaluated |
+| REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity; a DEFAULT with a CAST is not evaluated. A STORED generated column reads its expression the same way, as SQLite does (sqlite3ColumnDefault on the generation expression) |

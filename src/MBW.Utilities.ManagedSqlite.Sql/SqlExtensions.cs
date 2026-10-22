@@ -20,7 +20,7 @@ public static class SqlExtensions
         // Only a table has a table definition, so asking for one elsewhere is the caller's error, not damage. The row's
         // statement decides, as in SQLite; Strict has made sure the type agrees (SCHEMA-26).
         if (schema.Kind is not (SchemaObjectKind.Table or SchemaObjectKind.VirtualTable))
-            throw new InvalidOperationException($"{schema.Type} '{schema.Name}' is not a table, so it has no table definition");
+            throw new InvalidOperationException($"{schema.Type ?? schema.Kind.ToString()} '{schema.Name}' is not a table, so it has no table definition");
 
         if (schema.IsVirtual)
             throw new NotSupportedException($"'{schema.Name}' is a virtual table, whose columns its module declares");

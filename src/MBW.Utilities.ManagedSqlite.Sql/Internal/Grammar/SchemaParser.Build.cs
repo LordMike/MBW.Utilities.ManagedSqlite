@@ -524,7 +524,7 @@ internal sealed partial class SchemaParser
         //     if( pSelect || (!IsOrdinaryTable(p) && db->init.newTnum) ){
         //       sqlite3ErrorMsg(pParse, "");
         if (asSelect)
-            Fail("DDL-26", "");
+            Fail("DDL-58", "");
 
         // STRICT tables: every column needs one of the standard types, and ANY has BLOB affinity. Lenient reads the
         // column with the affinity of its declared type.
