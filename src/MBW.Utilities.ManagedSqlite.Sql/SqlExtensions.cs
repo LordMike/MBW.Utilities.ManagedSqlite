@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
@@ -37,11 +38,14 @@ public static class SqlExtensions
     {
         SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
 
-        // SQLite reports a root page of the other b-tree kind as corrupt, so a record is never decoded with the other
-        // kind's column order
-        if (definition.IsWithoutRowId != table.IsWithoutRowId)
-            throw new SqliteCorruptException($"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
-                table.SchemaDefinition.RootPage, "b-tree page header");
+        // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
+        // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
+        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
+        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
+        Checks.Strict(definition.IsWithoutRowId == table.IsWithoutRowId, "PAGE-18",
+            $"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
+            table.SchemaDefinition.RootPage, "b-tree page header");
 
         return definition;
     }
