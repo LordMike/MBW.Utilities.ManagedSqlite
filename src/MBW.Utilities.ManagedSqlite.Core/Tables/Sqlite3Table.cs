@@ -14,6 +14,12 @@ public sealed class Sqlite3Table
 
     internal ReaderBase Reader => _reader;
 
+    /// <summary>
+    /// The Sql package's definition of this table, kept once it was read without error, so reading values by name
+    /// does not look it up for each value
+    /// </summary>
+    internal object? SqlDefinition { get; set; }
+
     private BTreePage? _rootPage;
 
     public Sqlite3SchemaRow SchemaDefinition { get; }

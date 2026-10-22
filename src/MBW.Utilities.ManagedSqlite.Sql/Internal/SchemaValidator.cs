@@ -29,7 +29,7 @@ internal static class SchemaValidator
             return;
 
         // The schema is loaded once; its error is the database's, so it is thrown again each time
-        Result result = database.GetProperty(CacheKey, () => Load(database));
+        Result result = database.GetProperty(CacheKey, Load);
         if (result.Error != null)
             throw result.Error;
     }
