@@ -22,15 +22,13 @@ public static class SqlExtensions
         if (schema.Error != null)
             throw schema.Error;
 
+        // A view, index or trigger makes no table, and neither does a CREATE TABLE IF NOT EXISTS of a name a row before
+        // it took, in SQLite too
         if (!schema.IsTable)
-            throw new InvalidOperationException($"{schema.Type ?? "row"} '{schema.Name}' is not a table, so it has no table definition");
+            throw new InvalidOperationException($"{schema.Type ?? "row"} '{schema.Name}' makes no table, so it has no table definition");
 
         if (schema.IsVirtual)
             throw new NotSupportedException($"'{schema.Name}' is a virtual table, whose columns its module declares");
-
-        // A CREATE TABLE IF NOT EXISTS of a name a row before it took makes no table, in SQLite too
-        Checks.Strict(schema.Table != null, "SCHEMA-22", $"malformed database schema ({schema.Name}): its SQL makes no table",
-            structure: "table definition");
 
         // The table was parsed when the schema was loaded
         Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());

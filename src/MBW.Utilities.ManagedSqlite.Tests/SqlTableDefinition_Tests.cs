@@ -71,6 +71,20 @@ public class SqlTableDefinition_Tests
         Assert.Throws<NotSupportedException>(() => db.GetTables().Single(s => s.Name == "f").GetTableDefinition());
     }
 
+    // A CREATE TABLE IF NOT EXISTS of a name a row before it took makes no table, in SQLite too, so the name reads the
+    // first table
+    [Fact]
+    public void GetTableDefinitionOfIfNotExistsDuplicateThrows()
+    {
+        byte[] data = SqliteParity.Build("CREATE TABLE t(a);", "INSERT INTO sqlite_schema VALUES ('table', 't', 't', 0, 'CREATE TABLE IF NOT EXISTS t (b)')", 1);
+        SqliteParity.AssertSqliteReads(data, "t");
+
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+
+        Assert.Throws<InvalidOperationException>(() => db.GetTables().Last().GetTableDefinition());
+        Assert.Equal("a", db.GetTable("t").GetTableDefinition().Columns.Single().Name);
+    }
+
     // SCHEMA-22: SQLite finds the whole schema malformed, so Strict fails the open. Lenient fails only the table whose
     // SQL does not parse.
     [Fact]
