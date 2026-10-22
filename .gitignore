@@ -39,3 +39,6 @@ __pycache__/
 dist/
 build/
 *.egg-info/
+
+# The obsolete packages pack their build/*.targets
+!src/*/build/
