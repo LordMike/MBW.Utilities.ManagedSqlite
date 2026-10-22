@@ -69,6 +69,11 @@ internal static class SqlParser
 
             if (column.IsVirtualGenerated)
                 virtualColumns++;
+            else
+            {
+                column.HasKnownDefault = ColumnDefault.TryEvaluate(parsed.Default, parsed.Affinity, out object? value);
+                column.DefaultValue = value;
+            }
 
             definition.AddColumn(column);
         }

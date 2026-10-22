@@ -100,9 +100,21 @@ public static class SqlExtensions
             return true;
         }
 
-        // Like SQLite, the record is decoded only up to this column
+        // Like SQLite, the record is decoded only up to this column. A record too short to hold it, such as one written
+        // before ALTER TABLE ADD COLUMN, reads the column's default (REC-11). OP_Column in vdbe.c:
+        //       if( pOp->p4type==P4_MEM ){
+        //         sqlite3VdbeMemShallowCopy(pDest, pOp->p4.pMem, MEM_Static);
+        //       }else{
+        //         sqlite3VdbeMemSetNull(pDest);
+        //       }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3165 (OP_Column)
         if (!row.TryGetField(column.RecordIndex, out value))
-            return false;
+        {
+            if (!column.HasKnownDefault)
+                return false;
+
+            value = column.DefaultValue is byte[] blob ? blob.Clone() : column.DefaultValue;
+        }
 
         // SQLite writes REAL values without a fractional part as integers, and turns them back into REAL when read
         // through a column with REAL affinity

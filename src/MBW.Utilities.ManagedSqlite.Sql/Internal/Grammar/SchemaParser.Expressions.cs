@@ -484,7 +484,7 @@ internal sealed partial class SchemaParser
 
     private static bool IsXDigit(char c) => IsDigit(c) || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
 
-    private static int HexToInt(char c) => IsDigit(c) ? c - '0' : (c | 0x20) - 'a' + 10;
+    internal static int HexToInt(char c) => IsDigit(c) ? c - '0' : (c | 0x20) - 'a' + 10;
 
     /// <summary>
     /// term ::= INTEGER in parse.y: an integer that fits in 32 bits is held as its value (sqlite3ExprAlloc,

@@ -37,6 +37,16 @@ public sealed class SqlTableColumn
     /// </summary>
     internal string? Collation { get; set; }
 
+    /// <summary>
+    /// The value a record too short to hold this column reads as: the DEFAULT, with the column's affinity, or null
+    /// </summary>
+    internal object? DefaultValue { get; set; }
+
+    /// <summary>
+    /// False when <see cref="DefaultValue"/> is not known, for a DEFAULT this library does not evaluate
+    /// </summary>
+    internal bool HasKnownDefault { get; set; } = true;
+
     internal SqlTableColumn(int ordinal, string name, string typeName, Type detectedType)
     {
         Ordinal = ordinal;
