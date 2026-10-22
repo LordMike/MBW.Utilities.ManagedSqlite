@@ -98,7 +98,7 @@ internal static class SchemaSql
     /// The kind of object the statement creates, from its leading tokens as SQLite's grammar reads them (cmd in
     /// parse.y): CREATE [TEMP | TEMPORARY] TABLE, CREATE VIRTUAL TABLE, CREATE [TEMP] VIEW, CREATE [UNIQUE] INDEX and
     /// CREATE [TEMP] TRIGGER. The tokens come from the port of SQLite's tokenizer, which skips whitespace and comments as
-    /// sqlite3GetToken does. Anything else is a syntax error to SQLite, which the parser reports when the SQL is parsed.
+    /// sqlite3GetToken does. Anything else is a syntax error to SQLite.
     /// </summary>
     public static SchemaObjectKind GetKind(string? sql)
     {
@@ -143,18 +143,24 @@ internal static class SchemaSql
     /// </summary>
     private static bool IsCreateTableAsSelect(string sql, int pos)
     {
+        // IF after TABLE always starts ifnotexists: Lemon falls back to ID only when IF cannot shift, so a table named if
+        // is a syntax error
         int afterTable = pos;
-        if (!(NextToken(sql, ref pos) == TK.IF && NextToken(sql, ref pos) == TK.NOT && NextToken(sql, ref pos) == TK.EXISTS))
+        if (NextToken(sql, ref pos) == TK.IF)
+        {
+            if (NextToken(sql, ref pos) != TK.NOT || NextToken(sql, ref pos) != TK.EXISTS)
+                return false;
+        }
+        else
             pos = afterTable;
 
-        // nm ::= id | STRING | JOIN_KW, where a keyword with a fallback to ID is an id too
-        if (SqliteTokenizer.PeekNameToken(sql, ref pos) != TK.ID)
+        if (!IsName(sql, ref pos))
             return false;
 
         int afterName = pos;
         if (NextToken(sql, ref pos) == TK.DOT)
         {
-            if (SqliteTokenizer.PeekNameToken(sql, ref pos) != TK.ID)
+            if (!IsName(sql, ref pos))
                 return false;
         }
         else
@@ -162,6 +168,14 @@ internal static class SchemaSql
 
         return NextToken(sql, ref pos) == TK.AS;
     }
+
+    /// <summary>
+    /// Reads an nm (nm ::= idj | STRING, idj ::= ID | INDEXED | JOIN_KW in parse.y), where a keyword with a fallback to
+    /// ID is an ID. PeekNameToken reads INDEXED and FILTER as themselves, as getToken in tokenize.c does; INDEXED is an
+    /// idj, and FILTER is a keyword only after a ")" (analyzeFilterKeyword), so here both are names.
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/parse.y#L334 (nm, idj)
+    /// </summary>
+    private static bool IsName(string sql, ref int pos) => SqliteTokenizer.PeekNameToken(sql, ref pos) is TK.ID or TK.INDEXED or TK.FILTER;
 
     /// <summary>
     /// The type of the next token that is not whitespace or a comment, moving <paramref name="pos"/> past it
