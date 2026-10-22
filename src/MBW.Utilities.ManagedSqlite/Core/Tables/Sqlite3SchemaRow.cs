@@ -1,8 +1,11 @@
+using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
+
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 public sealed class Sqlite3SchemaRow
 {
-    internal Sqlite3SchemaRow(Sqlite3Database database, string? type, string name, string? tableName, uint rootPage, string? sql, SchemaObjectKind kind)
+    internal Sqlite3SchemaRow(Sqlite3Database database, string? type, string name, string? tableName, uint rootPage, string? sql)
     {
         Database = database;
         Type = type;
@@ -10,7 +13,6 @@ public sealed class Sqlite3SchemaRow
         TableName = tableName;
         RootPage = rootPage;
         Sql = sql;
-        Kind = kind;
     }
 
     public Sqlite3Database Database { get; }
@@ -39,10 +41,21 @@ public sealed class Sqlite3SchemaRow
     /// than 0, which SQLite tolerates, is not read either. Any shadow tables the module creates (e.g.
     /// <c>name_content</c> for FTS5) are ordinary tables.
     /// </summary>
-    public bool IsVirtual => Kind == SchemaObjectKind.VirtualTable;
+    public bool IsVirtual { get; internal set; }
 
     /// <summary>
-    /// The kind of object the row's CREATE statement creates
+    /// The row's statement made a table or a virtual table, as the parser found when the schema was loaded
     /// </summary>
-    internal SchemaObjectKind Kind { get; }
+    internal bool IsTable { get; set; }
+
+    /// <summary>
+    /// The table the row's CREATE TABLE made; null for every other row
+    /// </summary>
+    internal ParsedTable? Table { get; set; }
+
+    /// <summary>
+    /// In <see cref="SqliteValidation.Lenient"/>, the error SQLite would have failed the schema with at this row. The
+    /// other rows load on, and this row's table cannot be opened.
+    /// </summary>
+    internal SqliteCorruptException? Error { get; set; }
 }

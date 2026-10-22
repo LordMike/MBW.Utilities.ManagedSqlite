@@ -431,14 +431,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     [InlineData("SCHEMA-17", "rootpage = 999 WHERE name = 'v'")]
     [InlineData("SCHEMA-17", "rootpage = 999 WHERE name = 'i'")]
     [InlineData("SCHEMA-17", "rootpage = 99999 WHERE name = 'tr'")]
-    [InlineData("SCHEMA-19", "rootpage = 1 WHERE name = 'u'")]
-    [InlineData("SCHEMA-19", "rootpage = 1 WHERE name = 'f'")]
-    [InlineData("SCHEMA-22", "sql = 'CRxATE TABLE u (b)' WHERE name = 'u'")]
     [InlineData("SCHEMA-26", "name = NULL WHERE name = 'u'")]
-    [InlineData("DDL-58", "rootpage = 2 WHERE name = 'v'")]
-    [InlineData("DDL-58", "sql = 'CREATE TABLE u AS SELECT 1' WHERE name = 'u'")]
-    [InlineData("DDL-58", "sql = 'CREATE /* c */ TEMPORARY TABLE IF NOT EXISTS \"u\" -- c' || char(10) || 'AS SELECT 1' WHERE name = 'u'")]
-    [InlineData("DDL-58", "sql = 'CREATE TABLE indexed AS SELECT 1', name = 'indexed', tbl_name = 'indexed' WHERE name = 'u'")]
     public void SchemaRow_CorruptLikeSqlite(string check, string update)
     {
         byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
@@ -449,6 +442,30 @@ CREATE VIRTUAL TABLE f USING fts5(c);
             Sqlite3Settings settings = new Sqlite3Settings { Validation = validation };
             Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), settings)).Check);
         }
+    }
+
+    /// <summary>
+    /// The checks SQLite makes on a row's statement as it parses it: Strict fails the open, and Lenient keeps the error
+    /// on the row, so only that row cannot be opened
+    /// </summary>
+    [Theory]
+    [InlineData("SCHEMA-19", "u", "rootpage = 1 WHERE name = 'u'")]
+    [InlineData("SCHEMA-19", "f", "rootpage = 1 WHERE name = 'f'")]
+    [InlineData("SCHEMA-22", "u", "sql = 'CRxATE TABLE u (b)' WHERE name = 'u'")]
+    [InlineData("DDL-58", "v", "rootpage = 2 WHERE name = 'v'")]
+    [InlineData("DDL-58", "u", "sql = 'CREATE TABLE u AS SELECT 1' WHERE name = 'u'")]
+    [InlineData("DDL-58", "u", "sql = 'CREATE /* c */ TEMPORARY TABLE IF NOT EXISTS \"u\" -- c' || char(10) || 'AS SELECT 1' WHERE name = 'u'")]
+    [InlineData("DDL-58", "indexed", "sql = 'CREATE TABLE indexed AS SELECT 1', name = 'indexed', tbl_name = 'indexed' WHERE name = 'u'")]
+    public void SchemaRow_StatementCorruptLikeSqlite(string check, string name, string update)
+    {
+        byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
+        SqliteParity.AssertSqliteReportsCorrupt(data, "t");
+
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
+
+        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => lenient.GetTable(name)).Check);
+        SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
     }
 
     // SCHEMA-08: SQLite reads a rootpage stored as a BLOB of digits as text, so as that page. (Text digits would be
@@ -464,8 +481,8 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     [Theory]
     [InlineData("SCHEMA-26", "type = 'index' WHERE name = 'u'")]
     [InlineData("SCHEMA-26", "type = NULL WHERE name = 'u'")]
-    [InlineData("SCHEMA-26", "tbl_name = 't' WHERE name = 'u'")]
-    [InlineData("SCHEMA-26", "tbl_name = 'u' WHERE name = 'v'")]
+    [InlineData("DDL-03", "tbl_name = 't' WHERE name = 'u'")]
+    [InlineData("DDL-03", "tbl_name = 'u' WHERE name = 'v'")]
     [InlineData("SCHEMA-26", "type = 'table' WHERE name = 'v'")]
     [InlineData("DDL-03", "sql = 'CREATE TABLE w (b)' WHERE name = 'u'")]
     public void SchemaRow_NamesDisagreeWithSql(string check, string update)

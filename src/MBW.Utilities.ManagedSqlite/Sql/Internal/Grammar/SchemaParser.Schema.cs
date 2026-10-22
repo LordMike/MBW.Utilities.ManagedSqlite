@@ -15,8 +15,7 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 internal sealed partial class SchemaParser
 {
     /// <summary>
-    /// The schema loaded so far, when the whole schema is checked; null when one table's SQL is parsed for its
-    /// definition
+    /// The schema loaded so far, when a schema row is loaded; null when a CREATE TABLE is parsed by itself
     /// </summary>
     private SchemaCatalog? _catalog;
 
@@ -24,6 +23,11 @@ internal sealed partial class SchemaParser
     /// db->init.newTnum: the row's rootpage
     /// </summary>
     private uint _rootPage;
+
+    /// <summary>
+    /// db->init.azInit[0]: the row's type
+    /// </summary>
+    private string? _rowType;
 
     /// <summary>
     /// db->init.azInit[2]: the row's tbl_name
@@ -73,7 +77,9 @@ internal sealed partial class SchemaParser
 
     /// <summary>
     /// Parses the CREATE statement of a schema row and adds what it makes to <paramref name="catalog"/>, checking it
-    /// against the rows before it, as sqlite3InitCallback does for each row
+    /// against the rows before it, as sqlite3InitCallback does for each row. The row learns what the statement made:
+    /// a table, with its <see cref="ParsedTable"/>, or a virtual table. A statement that fails still marks the row as
+    /// a table when it got as far as starting one.
     /// </summary>
     /// <exception cref="SqliteCorruptException">SQLite would find the schema malformed</exception>
     public static void ParseSchemaRow(Sqlite3SchemaRow row, Sqlite3Settings settings, SchemaCatalog catalog)
@@ -82,9 +88,20 @@ internal sealed partial class SchemaParser
         {
             _catalog = catalog,
             _rootPage = row.RootPage,
+            _rowType = row.Type,
             _rowTableName = row.TableName
         };
-        parser.Run();
+
+        try
+        {
+            parser.Run();
+        }
+        finally
+        {
+            row.IsVirtual = parser._newVirtualTable != null;
+            row.IsTable = parser._newTable != null || row.IsVirtual;
+            row.Table = parser._tableEnded ? parser._newTable : null;
+        }
     }
 
     /// <summary>
@@ -117,22 +134,26 @@ internal sealed partial class SchemaParser
     }
 
     /// <summary>
-    /// sqlite3CheckObjectName in build.c, at init: the statement's object must be the row's, by name and by the
-    /// table it belongs to, ignoring ASCII case. The error message is empty; corruptSchema adds the name.
+    /// sqlite3CheckObjectName in build.c, at init: the statement's object must be the row's, by type (SCHEMA-26), and
+    /// by name and the table it belongs to (DDL-03), ignoring ASCII case; NULL never matches. The error message is
+    /// empty; corruptSchema adds the name.
     ///   if( sqlite3_stricmp(zType, db->init.azInit[0])
     ///    || sqlite3_stricmp(zName, db->init.azInit[1])
     ///    || sqlite3_stricmp(zTblName, db->init.azInit[2])
     ///   ){
     ///     sqlite3ErrorMsg(pParse, ""); /* corruptSchema() will supply the error */
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1046 (sqlite3CheckObjectName)
-    /// The type was checked against the statement when the database was opened (SCHEMA-26).
+    /// SQLite skips this with writable_schema on, and the rows read the same either way, so Lenient reports it and goes
+    /// by the statement: a table is found by what its statement made, not by its type column.
     /// </summary>
-    private void CheckObjectName(string name, string tableName)
+    private void CheckObjectName(string type, string name, string tableName)
     {
         if (_catalog == null)
             return;
 
-        if (!Core.Helpers.AsciiCaseInsensitiveComparer.Instance.Equals(name, _objectName) ||
+        if (_rowType == null || !Core.Helpers.AsciiCaseInsensitiveComparer.Instance.Equals(type, _rowType))
+            FailRelaxable("SCHEMA-26", "");
+        else if (!Core.Helpers.AsciiCaseInsensitiveComparer.Instance.Equals(name, _objectName) ||
             _rowTableName == null || !Core.Helpers.AsciiCaseInsensitiveComparer.Instance.Equals(tableName, _rowTableName))
             FailRelaxable("DDL-03", "");
     }
@@ -151,9 +172,19 @@ internal sealed partial class SchemaParser
     ///       sqlite3ErrorMsg(pParse, "there is already an index named %s", zName);
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1282 (sqlite3StartTable)
     /// </summary>
-    private bool CheckNewTableName(Token nameToken, string name, bool ifNotExists)
+    private bool CheckNewTableName(Token nameToken, string type, string name, bool ifNotExists)
     {
-        CheckObjectName(name, name);
+        // SCHEMA-19: a table, view or virtual table with rootpage 1 is taken for the schema table itself, named
+        // sqlite_master, so its name no longer matches the row and the schema is malformed. (A row that is itself
+        // named sqlite_master would pass the name check and then find that table already exists; it is corrupt too.)
+        //   if( db->init.busy && db->init.newTnum==1 ){
+        //     /* Special case:  Parsing the sqlite_schema or sqlite_temp_schema schema */
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1222 (sqlite3StartTable)
+        if (_catalog != null && _rootPage == 1)
+            Fail("SCHEMA-19", "rootpage 1 is the schema table");
+
+        //   if( sqlite3CheckObjectName(pParse, zName, isView?"view":"table", zName) ){
+        CheckObjectName(type, name, name);
         if (_catalog == null)
             return true;
 
@@ -186,11 +217,19 @@ internal sealed partial class SchemaParser
             Fail("SCHEMA-28", "corrupt database");
 
         string viewName = SqliteTokenizer.Dequote(Text(name));
-        if (!CheckNewTableName(name, viewName, ifNotExists))
+        if (!CheckNewTableName(name, "view", viewName, ifNotExists))
             return;
 
         //   if( sqlite3FixSelect(&sFix, pSelect) ) goto create_view_fail;
         CheckReferences("DDL-75", "view", Text(name));
+
+        // DDL-58: a view has no b-tree, so a rootpage other than 0 is corrupt. A virtual table may have one, and it is
+        // not read (SCHEMA-58). sqlite3EndTable in build.c, which sqlite3CreateView ends with:
+        //   if( pSelect || (!IsOrdinaryTable(p) && db->init.newTnum) ){
+        //     sqlite3ErrorMsg(pParse, "");
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L2669 (sqlite3EndTable)
+        if (_catalog != null && _rootPage != 0)
+            Fail("DDL-58", "");
         if (_catalog != null)
             _catalog.Tables[viewName] = new SchemaCatalog.CatalogTable(viewName, null, true, false);
     }
@@ -206,7 +245,7 @@ internal sealed partial class SchemaParser
             Fail("SCHEMA-28", "corrupt database");
 
         string tableName = SqliteTokenizer.Dequote(Text(name));
-        if (!CheckNewTableName(name, tableName, ifNotExists))
+        if (!CheckNewTableName(name, "table", tableName, ifNotExists))
             return;
 
         _newVirtualTable = tableName;
@@ -301,7 +340,7 @@ internal sealed partial class SchemaParser
             Fail("DDL-66", "virtual tables may not be indexed");
 
         string indexName = SqliteTokenizer.Dequote(Text(name));
-        CheckObjectName(indexName, target.Name);
+        CheckObjectName("index", indexName, target.Name);
 
         //   if( sqlite3FindIndex(db, zName, pDb->zDbSName)!=0 ){
         //     if( !ifNotExist ){
@@ -361,7 +400,7 @@ internal sealed partial class SchemaParser
             Fail("DDL-80", "cannot create triggers on virtual tables");
 
         string triggerName = SqliteTokenizer.Dequote(Text(name));
-        CheckObjectName(triggerName, target.Name);
+        CheckObjectName("trigger", triggerName, target.Name);
 
         //     if( sqlite3HashFind(&(db->aDb[iDb].pSchema->trigHash),zName) ){
         //       if( !noErr ){

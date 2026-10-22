@@ -21,11 +21,13 @@ public class SqlCreateTableChecks_Tests
         $"CREATE TABLE t (a{(sql.Contains("WITHOUT ROWID") ? " PRIMARY KEY) WITHOUT ROWID" : ")")}; INSERT INTO t VALUES (1); CREATE TABLE u (b);",
         $"UPDATE sqlite_schema SET sql = '{sql.Replace("'", "''")}' WHERE name = 't'");
 
-    private static SqliteCorruptException ReadDefinition(byte[] data, Sqlite3Settings settings = null)
-    {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), settings);
-        return Assert.Throws<SqliteCorruptException>(() => db.GetTable("t").GetTableDefinition());
-    }
+    // Strict fails the open, and Lenient the table
+    private static SqliteCorruptException ReadDefinition(byte[] data, Sqlite3Settings settings = null) =>
+        Assert.Throws<SqliteCorruptException>(() =>
+        {
+            using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), settings);
+            db.GetTable("t").GetTableDefinition();
+        });
 
     /// <summary>
     /// SQL SQLite finds malformed, which makes the whole schema corrupt. These decide how the table's rows read, so

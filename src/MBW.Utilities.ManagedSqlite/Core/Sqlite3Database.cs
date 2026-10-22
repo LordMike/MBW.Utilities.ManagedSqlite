@@ -9,6 +9,7 @@ using MBW.Utilities.ManagedSqlite.Core.Objects;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
@@ -58,8 +59,12 @@ public sealed class Sqlite3Database : IDisposable
             1, "b-tree page header");
 
         // Fake the schema for the sqlite_master table
-        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page,
-            "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);", SchemaObjectKind.Table);
+        const string schemaSql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);";
+        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page, schemaSql)
+        {
+            IsTable = true,
+            Table = SchemaParser.ParseCreateTable(schemaSql, "sqlite_master", _reader.Settings)
+        };
 
         Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
         return new Sqlite3MasterTable(this, _reader, table);
@@ -70,6 +75,7 @@ public sealed class Sqlite3Database : IDisposable
     /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -89,6 +95,7 @@ public sealed class Sqlite3Database : IDisposable
     /// </summary>
     /// <exception cref="KeyNotFoundException">No table with that name exists</exception>
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     public Sqlite3Table GetTable(string name)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -102,6 +109,7 @@ public sealed class Sqlite3Database : IDisposable
         return OpenTable(tbl);
     }
 
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     private Sqlite3SchemaRow? FindTable(string name)
     {
         // Names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c), so tables named
@@ -113,9 +121,16 @@ public sealed class Sqlite3Database : IDisposable
 
         foreach (Sqlite3SchemaRow tbl in GetTables())
         {
-            // A table is known by its statement, as in SQLite. The type column must agree in Strict (SCHEMA-26), in
-            // any case, so "TABLE" is a table too.
-            if (tbl.Kind is SchemaObjectKind.Table or SchemaObjectKind.VirtualTable && names.Equals(tbl.Name, name))
+            // A table is known by what its statement made, as in SQLite. The type column must agree in Strict
+            // (SCHEMA-26), in any case, so "TABLE" is a table too. In Lenient, a row that failed to load cannot be
+            // opened, whatever it is.
+            if (!names.Equals(tbl.Name, name))
+                continue;
+
+            if (tbl.Error != null)
+                throw tbl.Error;
+
+            if (tbl.IsTable)
                 return tbl;
         }
 

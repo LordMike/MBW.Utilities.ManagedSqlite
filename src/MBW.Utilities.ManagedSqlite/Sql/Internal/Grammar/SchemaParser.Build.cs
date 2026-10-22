@@ -52,10 +52,10 @@ internal sealed partial class SchemaParser
         if (database.Length > 0)
             Fail("SCHEMA-28", "corrupt database");
 
-        // The name is checked against the row's name (sqlite3CheckObjectName, DDL-03) where the definition is used,
-        // and against the tables and indexes loaded before it when the whole schema is checked
+        // The name is checked against the row (sqlite3CheckObjectName, DDL-03) and against the tables and indexes
+        // loaded before it, when the schema is loaded
         string tableName = SqliteTokenizer.Dequote(Text(name));
-        if (CheckNewTableName(name, tableName, ifNotExists))
+        if (CheckNewTableName(name, "table", tableName, ifNotExists))
             _newTable = new ParsedTable(tableName);
     }
 
@@ -541,9 +541,11 @@ internal sealed partial class SchemaParser
         if (_newTable == null)
             return;
 
+        // DDL-58: SQLite never stores a CREATE TABLE ... AS SELECT, and finds one corrupt in the schema:
         //   if( db->init.busy ){
         //     if( pSelect || (!IsOrdinaryTable(p) && db->init.newTnum) ){
         //       sqlite3ErrorMsg(pParse, "");
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L2669 (sqlite3EndTable)
         if (asSelect)
             Fail("DDL-58", "");
 

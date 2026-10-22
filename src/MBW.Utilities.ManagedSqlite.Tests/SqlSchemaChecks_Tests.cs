@@ -11,7 +11,7 @@ namespace MBW.Utilities.ManagedSqlite.Tests;
 /// <summary>
 /// The checks SQLite makes on the whole schema while it loads it: each row's CREATE statement against the rows before
 /// it. Each case adds a row to sqlite_schema with writable_schema, which SQLite does not check, after a schema with a
-/// table of each kind. A malformed schema makes every table unreadable, so the case reads table u, which is fine.
+/// table of each kind. A malformed schema fails the open, and in Lenient the case reads table u, which is fine.
 /// </summary>
 public class SqlSchemaChecks_Tests
 {
@@ -38,10 +38,9 @@ public class SqlSchemaChecks_Tests
     {
         SqliteParity.AssertSqliteReportsCorrupt(data, "u");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
-        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => db.GetTable("u").GetTableDefinition()).Check);
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
 
-        // Lenient checks each table by itself
+        // Lenient keeps the error on the row that failed, and loads on
         using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
         Assert.Equal("b", lenient.GetTable("u").GetTableDefinition().Columns.Single().Name);
     }
@@ -169,8 +168,7 @@ public class SqlSchemaChecks_Tests
                             "INSERT INTO sqlite_schema VALUES ('table', 'x', 'x', (SELECT rootpage FROM sqlite_schema WHERE name = 'u'), 'CREATE TABLE x (q UNIQUE)')", 2);
         SqliteParity.AssertSqliteFails(data, "u");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
-        Assert.Equal("DDL-10", Assert.Throws<SqliteCorruptException>(() => db.GetTable("u").GetTableDefinition()).Check);
+        Assert.Equal("DDL-10", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
     }
 
     /// <summary>

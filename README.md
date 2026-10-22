@@ -66,7 +66,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 ### Differences from SQLite
 
 * **Column DEFAULTs are applied by name only.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column, and SQLite reads the column's DEFAULT for it. `TryGetValueByName` does the same; `TryGetOrdinal` and `ColumnData` show the record as stored, without the column. A DEFAULT with a `CAST`, or a negation that is a real in a TEXT column, is not evaluated, and reads as no value. A column without a DEFAULT reads as NULL, as in SQLite.
-* **The whole schema is checked when the first table definition is asked for**, not when the database is opened. In Strict, a malformed table, view, index or trigger then makes every `GetTableDefinition` throw `SqliteCorruptException`, as SQLite reads no table from such a database. Lenient checks each table's own SQL only.
+* **Lenient opens a database whose schema SQLite finds malformed.** As in SQLite, the whole schema is loaded and checked when the database is opened, and in Strict a malformed table, view, index or trigger makes the open throw `SqliteCorruptException`. Lenient keeps the error on the row that failed, so only that row's table cannot be opened, and reads the other tables.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs

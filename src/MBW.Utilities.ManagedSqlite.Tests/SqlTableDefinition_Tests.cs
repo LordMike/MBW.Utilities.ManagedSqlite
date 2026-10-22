@@ -71,20 +71,18 @@ public class SqlTableDefinition_Tests
         Assert.Throws<NotSupportedException>(() => db.GetTables().Single(s => s.Name == "f").GetTableDefinition());
     }
 
-    // SCHEMA-22: SQLite finds the whole schema malformed, so Strict fails every table's definition, every time it is
-    // asked for. Lenient fails only the table whose SQL does not parse.
+    // SCHEMA-22: SQLite finds the whole schema malformed, so Strict fails the open. Lenient fails only the table whose
+    // SQL does not parse.
     [Fact]
     public void GetTableDefinitionOfMalformedSqlIsCorrupt()
     {
         byte[] data = SqliteParity.Build("CREATE TABLE t(a); CREATE TABLE u(b);", "UPDATE sqlite_schema SET sql = 'CREATE TABLE t(a' WHERE name = 't'");
         SqliteParity.AssertSqliteReportsCorrupt(data, "u");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
-        Assert.Equal("SCHEMA-22", Assert.Throws<SqliteCorruptException>(() => db.GetTable("u").GetTableDefinition()).Check);
-        Assert.Equal("SCHEMA-22", Assert.Throws<SqliteCorruptException>(() => db.GetTable("t").GetTableDefinition()).Check);
+        Assert.Equal("SCHEMA-22", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
 
         using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
-        Assert.Equal("SCHEMA-22", Assert.Throws<SqliteCorruptException>(() => lenient.GetTable("t").GetTableDefinition()).Check);
+        Assert.Equal("SCHEMA-22", Assert.Throws<SqliteCorruptException>(() => lenient.GetTable("t")).Check);
         Assert.Equal("b", lenient.GetTable("u").GetTableDefinition().Columns.Single().Name);
     }
 }

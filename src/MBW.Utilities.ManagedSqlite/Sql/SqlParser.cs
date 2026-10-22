@@ -43,7 +43,10 @@ internal static class SqlParser
         }
     }
 
-    private static SqlTableDefinition Build(ParsedTable table)
+    /// <summary>
+    /// Describes a table SQLite built from its CREATE TABLE
+    /// </summary>
+    public static SqlTableDefinition Build(ParsedTable table)
     {
         SqlTableDefinition definition = new SqlTableDefinition(table.Name);
         definition.IsWithoutRowId = table.Has(ParsedTable.TF_WithoutRowid);
