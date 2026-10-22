@@ -1,4 +1,4 @@
-// Polyfills for the nullable analysis attributes, which netstandard1.0 and netstandard2.0 do not have.
+// Polyfills for the nullable analysis attributes, which netstandard2.0 does not have.
 // The compiler matches these by name, so internal copies are enough to annotate the public API.
 // MBW.Utilities.ManagedSqlite.Sql uses these through InternalsVisibleTo, so it has no copy of its own.
 
