@@ -1,6 +1,6 @@
 # HDR: database file header and pager/database-level consistency
 
-SQLite source: 3.53.4 (split amalgamation, line numbers from `/tmp/claude-0/sqlsrc/split`). I checked the behaviour marked "verified" by patching a real database and opening it read-only (`mode=ro`) with SQLite 3.45.1 (Python `sqlite3`). I ran the same files through our library with a scratch harness built from a copy of `src/` (the repo itself is unchanged). Test scripts: `review/sqlite-checks/repro/hdr/t.py`, `.../scratchpad/w.py` (WAL), `.../scratchpad/av.py` (ptrmap). Ours = `src/MBW.Utilities.ManagedSqlite.Core`.
+SQLite source: 3.53.4 (split amalgamation, line numbers from `/tmp/claude-0/sqlsrc/split`). I checked the behaviour marked "verified" by patching a real database and opening it read-only (`mode=ro`) with SQLite 3.45.1 (Python `sqlite3`). I ran the same files through our library with a scratch harness built from a copy of `src/` (the repo itself is unchanged). Test scripts: `review/sqlite-checks/repro/hdr/t.py`, `.../scratchpad/w.py` (WAL), `.../scratchpad/av.py` (ptrmap). Ours = `src/MBW.Utilities.ManagedSqlite/Core`.
 
 ## 1. Overview
 
