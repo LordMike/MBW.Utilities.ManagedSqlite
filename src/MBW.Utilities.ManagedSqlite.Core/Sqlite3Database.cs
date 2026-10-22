@@ -15,7 +15,7 @@ namespace MBW.Utilities.ManagedSqlite.Core;
 public sealed class Sqlite3Database : IDisposable
 {
     private readonly ReaderBase _reader;
-    private readonly Dictionary<string, object> _propertyStore;
+    private Dictionary<string, object>? _propertyStore;
 
     private readonly Sqlite3MasterTable _masterTable;
     private readonly Sqlite3SchemaRow _masterSchemaRow;
@@ -30,8 +30,6 @@ public sealed class Sqlite3Database : IDisposable
     {
         if (file == null)
             throw new ArgumentNullException(nameof(file));
-
-        _propertyStore = new Dictionary<string, object>();
 
         try
         {
@@ -133,6 +131,7 @@ public sealed class Sqlite3Database : IDisposable
 
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
     {
+        _propertyStore ??= new Dictionary<string, object>();
         if (!_propertyStore.TryGetValue(key, out var val))
             _propertyStore[key] = val = creator();
 

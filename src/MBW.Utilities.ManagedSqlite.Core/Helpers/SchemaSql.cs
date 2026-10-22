@@ -50,6 +50,23 @@ internal static class SchemaSql
     }
 
     /// <summary>
+    /// <see cref="TryGetUInt32"/> of the text of <paramref name="value"/>, as <see cref="ToText"/> makes it. An integer,
+    /// which is how SQLite stores a rootpage, is checked without making its text: its decimal digits pass when it is 0
+    /// to 2^32, and a negative one fails at its '-'.
+    /// </summary>
+    public static bool TryGetUInt32(ReaderBase reader, object value, out uint result)
+    {
+        if (value is long integer)
+        {
+            bool ok = integer is >= 0 and <= 4294967296L;
+            result = ok ? unchecked((uint)integer) : 0;
+            return ok;
+        }
+
+        return TryGetUInt32(ToText(reader, value)!, out result);
+    }
+
+    /// <summary>
     /// SQLite's sqlite3GetUInt32 in util.c: decimal digits only, with no sign, space or '.', and at most 2^32, which
     /// wraps to 0.
     ///   for(i=0; sqlite3Isdigit(z[i]); i++){
@@ -213,7 +230,7 @@ internal static class SchemaSql
             i++;
 
         if (i == start || (sql[start] >= '0' && sql[start] <= '9') || sql[start] == '$' ||
-            !AsciiCaseInsensitiveComparer.Instance.Equals(sql.Substring(start, i - start), keyword))
+            !AsciiCaseInsensitiveComparer.Equals(sql, start, i - start, keyword))
             return false;
 
         pos = i;

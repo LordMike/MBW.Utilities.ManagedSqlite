@@ -21,11 +21,13 @@ internal class Sqlite3MasterTable
 
             string? type = Field(0);
             string? name = Field(1);
-            string? tableName = Field(2);
-            string? rootPageText = Field(3);
+            // A table's tbl_name is its own name, so it shares the name's string when the two are stored alike
+            string? tableName = row.FieldsEqual(2, 1) ? name : Field(2);
+            // The rootpage is an integer, which is checked without making its text
+            row.TryGetField(3, out object? rootPageValue);
             string? sql = Field(4);
 
-            uint rootPage = CheckRow(reader, type, name, tableName, rootPageText, sql, out SchemaObjectKind kind);
+            uint rootPage = CheckRow(reader, type, name, tableName, rootPageValue, sql, out SchemaObjectKind kind);
 
             // CheckRow fails a row without a name
             Tables.Add(new Sqlite3SchemaRow(db, type, name!, tableName, rootPage, sql, kind));
@@ -37,13 +39,13 @@ internal class Sqlite3MasterTable
     /// while it loads the schema, so a bad row fails the database open, whatever its type. Returns the root page.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L96 (sqlite3InitCallback)
     /// </summary>
-    private static uint CheckRow(ReaderBase reader, string? type, string? name, string? tableName, string? rootPageText, string? sql, out SchemaObjectKind kind)
+    private static uint CheckRow(ReaderBase reader, string? type, string? name, string? tableName, object? rootPageValue, string? sql, out SchemaObjectKind kind)
     {
         // SCHEMA-11: a NULL rootpage is corrupt, for every kind of row:
         //   if( argv[3]==0 ){
         //     corruptSchema(pData, argv, 0);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L113 (sqlite3InitCallback)
-        Checks.Strict(rootPageText != null, "SCHEMA-11", $"malformed database schema ({name ?? "?"}): its rootpage is NULL", 1, "sqlite_schema");
+        Checks.Strict(rootPageValue != null, "SCHEMA-11", $"malformed database schema ({name ?? "?"}): its rootpage is NULL", 1, "sqlite_schema");
 
         if (!SchemaSql.StartsWithCr(sql))
         {
@@ -66,8 +68,8 @@ internal class Sqlite3MasterTable
             // checks that no sibling index shares its root page. That needs the SQL parsed, so the Sql package checks it
             // when it loads the whole schema, after this range check: an orphan row with a bad rootpage fails here as
             // SCHEMA-15, where SQLite reports it as an orphan index.
-            bool rootOk = SchemaSql.TryGetUInt32(rootPageText!, out uint indexRoot) && indexRoot >= 2 && indexRoot <= reader.PageCount;
-            Checks.Strict(rootOk, "SCHEMA-15", $"malformed database schema ({name ?? "?"}): invalid rootpage {rootPageText}", 1, "sqlite_schema");
+            bool rootOk = SchemaSql.TryGetUInt32(reader, rootPageValue!, out uint indexRoot) && indexRoot >= 2 && indexRoot <= reader.PageCount;
+            Checks.Strict(rootOk, "SCHEMA-15", $"malformed database schema ({name ?? "?"}): invalid rootpage {SchemaSql.ToText(reader, rootPageValue)}", 1, "sqlite_schema");
             return indexRoot;
         }
 
@@ -79,8 +81,8 @@ internal class Sqlite3MasterTable
         //     if( sqlite3Config.bExtraSchemaChecks ){
         //       corruptSchema(pData, argv, "invalid rootpage");
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L135 (sqlite3InitCallback)
-        bool ok = SchemaSql.TryGetUInt32(rootPageText!, out uint rootPage) && (rootPage <= reader.PageCount || reader.PageCount == 0);
-        Checks.Strict(ok, "SCHEMA-17", $"malformed database schema ({name ?? "?"}): invalid rootpage {rootPageText}", 1, "sqlite_schema");
+        bool ok = SchemaSql.TryGetUInt32(reader, rootPageValue!, out uint rootPage) && (rootPage <= reader.PageCount || reader.PageCount == 0);
+        Checks.Strict(ok, "SCHEMA-17", $"malformed database schema ({name ?? "?"}): invalid rootpage {SchemaSql.ToText(reader, rootPageValue)}", 1, "sqlite_schema");
 
         // SCHEMA-26: a CREATE row's name must match the name in its SQL, and SQLite's comparison never matches NULL
         // (sqlite3_stricmp). sqlite3CheckObjectName in build.c:

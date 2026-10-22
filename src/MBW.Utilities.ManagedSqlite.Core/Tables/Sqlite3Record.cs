@@ -114,6 +114,24 @@ internal struct Sqlite3Record
     }
 
     /// <summary>
+    /// True when fields <paramref name="a"/> and <paramref name="b"/> both exist and are stored alike: the same serial
+    /// type and the same bytes, so they decode to equal values
+    /// </summary>
+    public bool FieldsEqual(int a, int b)
+    {
+        if (!ParseField(Math.Max(a, b)))
+            return false;
+
+        int typeA = _fields![2 * a];
+        if (typeA != _fields[2 * b])
+            return false;
+
+        int size = (int)SerialTypeSize((uint)typeA);
+        return new ReadOnlySpan<byte>(_data, _start + _fields[2 * a + 1], size)
+            .SequenceEqual(new ReadOnlySpan<byte>(_data, _start + _fields[2 * b + 1], size));
+    }
+
+    /// <summary>
     /// Parses the header up to field <paramref name="index"/>, keeping the fields. False when the record has fewer
     /// fields.
     /// </summary>
@@ -195,8 +213,9 @@ internal struct Sqlite3Record
             _headerSize = (int)headerSize;
             _headerPos = pos - _start;
             _nextOffset = (int)headerSize;
+            // Each serial type takes at least one byte of the header, after the header size itself
             if (keep && headerSize > 0)
-                _fields = new int[2 * Math.Min(8, headerSize + 1)];
+                _fields = new int[2 * Math.Min(8, Math.Max(1, headerSize - _headerPos))];
 
             // REC-04, CELL-22: a header size of 0 is a record of no fields, so every column reads as its default or NULL.
             // SQLite parses one serial type past the (empty) header, finds the record corrupt, and then forgives it:

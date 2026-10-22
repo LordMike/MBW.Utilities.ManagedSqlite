@@ -48,6 +48,11 @@ public sealed class Sqlite3Row
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetOrdinal(ushort index, out object? value) => TryGetField(index, out value);
 
+    /// <summary>
+    /// True when fields <paramref name="a"/> and <paramref name="b"/> of the record exist and decode to equal values
+    /// </summary>
+    internal bool FieldsEqual(int a, int b) => _record.FieldsEqual(a, b);
+
     internal bool TryGetField(int index, out object? value)
     {
         if (_columnData == null)
