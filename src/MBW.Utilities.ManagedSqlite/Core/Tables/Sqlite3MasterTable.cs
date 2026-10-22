@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Globalization;
-using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
