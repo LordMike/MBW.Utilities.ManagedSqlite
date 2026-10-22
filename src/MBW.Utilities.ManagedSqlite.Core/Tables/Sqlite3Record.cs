@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 
@@ -24,9 +24,13 @@ internal sealed class Sqlite3Record
     private readonly long? _rowId;
 
     /// <summary>
-    /// The payload. For a 0-byte payload it holds one byte, the byte after the cell, see <see cref="Sqlite3Table"/>.
+    /// The array that holds the payload, at <see cref="_start"/>: the page's for a payload that is all on its page,
+    /// otherwise one of its own. A 0-byte payload is followed by one more byte, the byte after the cell, see
+    /// <see cref="Sqlite3Table"/>.
     /// </summary>
-    private readonly byte[] _payload;
+    private readonly byte[] _data;
+
+    private readonly int _start;
 
     private readonly int _length;
 
@@ -57,13 +61,14 @@ internal sealed class Sqlite3Record
     /// </summary>
     private int _parsed = -1;
 
-    public Sqlite3Record(ReaderBase reader, uint page, long? rowId, byte[] payload, int length)
+    public Sqlite3Record(ReaderBase reader, uint page, long? rowId, ArraySegment<byte> payload)
     {
         _reader = reader;
         _page = page;
         _rowId = rowId;
-        _payload = payload;
-        _length = length;
+        _data = payload.Array!;
+        _start = payload.Offset;
+        _length = payload.Count;
     }
 
     private string RowName => _rowId.HasValue ? $"row {_rowId.Value}" : "a WITHOUT ROWID row";
@@ -114,8 +119,8 @@ internal sealed class Sqlite3Record
             // reads it. A 0-byte payload has none, and SQLite reads the byte after the cell instead
             // (aOffset[0] = pC->aRow[0]), which the caller put in the payload's one byte.
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3048 (OP_Column)
-            int pos = 0;
-            bool read = TryReadVarInt32(_payload, Math.Max(_length, 1), ref pos, out long headerSize);
+            int pos = _start;
+            bool read = TryReadVarInt32(_data, _start + Math.Max(_length, 1), ref pos, out long headerSize);
 
             // REC-03, CELL-21: a header larger than the payload, or larger than any record SQLite writes, is corrupt.
             // SQLite tests this only when the header is not in the cell's local bytes, but a header that is local is no
@@ -129,7 +134,7 @@ internal sealed class Sqlite3Record
                 $"record header size {(read ? headerSize.ToString() : "varint")} of {RowName} runs past the payload of {_length} bytes", _page, "record header");
 
             _headerSize = headerSize;
-            _headerPos = pos;
+            _headerPos = pos - _start;
             _nextOffset = headerSize;
             _fields = new long[2 * Math.Min(8, headerSize + 1)];
 
@@ -164,7 +169,10 @@ internal sealed class Sqlite3Record
                 Array.Resize(ref _fields, _fields.Length * 2);
 
             // A serial type that runs past the payload runs past the header too, which the checks below reject
-            if (!TryReadVarInt32(_payload, _length, ref headerPos, out long serialType))
+            int pos = _start + headerPos;
+            bool read = TryReadVarInt32(_data, _start + _length, ref pos, out long serialType);
+            headerPos = pos - _start;
+            if (!read)
             {
                 overread = true;
                 break;
@@ -230,10 +238,14 @@ internal sealed class Sqlite3Record
         return true;
     }
 
-    private object? Decode(long serialType, int pos)
+    /// <summary>
+    /// Decodes the value of <paramref name="serialType"/> that starts at <paramref name="offset"/> in the payload
+    /// </summary>
+    private object? Decode(long serialType, int offset)
     {
-        byte[] payload = _payload;
-        int length = _length;
+        byte[] payload = _data;
+        int length = _start + _length;
+        int pos = _start + offset;
 
         switch (serialType)
         {

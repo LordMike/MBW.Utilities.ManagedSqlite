@@ -1,4 +1,4 @@
-using MBW.Utilities.ManagedSqlite.Core.Internal;
+﻿using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
@@ -12,27 +12,23 @@ internal class BTreeIndexPage : BTreePage
 {
     public bool IsLeaf => Header.Type == BTreeType.LeafIndexBtreePage;
 
-    private readonly uint[]? _childPointers;
-
-    public BTreeIndexPage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets, byte[] data)
-        : base(reader, page, header, cellOffsets)
+    public BTreeIndexPage(ReaderBase reader, uint page, BTreeHeader header, byte[] data, int cellPointers)
+        : base(reader, page, header, data, cellPointers)
     {
-        if (!IsLeaf)
-            _childPointers = ReadChildPointers(data);
     }
 
     /// <summary>
     /// The left child pointer of cell <paramref name="index"/> of an interior page: the child with the keys that sort
     /// before this cell's
     /// </summary>
-    public uint GetChildPointer(int index) => GetChildPointer(_childPointers!, index);
+    public uint GetChildPointer(int index) => ReadChildPointer(index);
 
     /// <summary>
     /// Parses cell <paramref name="index"/> when it is reached, as SQLite does (btreeParseCellPtrIndex in btree.c)
     /// </summary>
     public PayloadCell GetCell(int index)
     {
-        byte[] data = GetData();
+        byte[] data = Data;
 
         // Interior cells begin with the left child pointer, leaf cells with the payload size
         int start = GetCellOffset(index);

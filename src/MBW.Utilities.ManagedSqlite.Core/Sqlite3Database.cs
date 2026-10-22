@@ -124,7 +124,8 @@ public sealed class Sqlite3Database : IDisposable
 
     private Sqlite3Table OpenTable(Sqlite3SchemaRow tbl)
     {
-        BTreePage root = BTreePage.Parse(_reader, tbl.RootPage);
+        // Parsed to check it and learn its kind, in the reader's page buffer: the table reads it again when its rows are read
+        BTreePage root = BTreePage.Parse(_reader, tbl.RootPage, buffer: _reader.PageBuffer);
         return new Sqlite3Table(_reader, root, tbl);
     }
 
