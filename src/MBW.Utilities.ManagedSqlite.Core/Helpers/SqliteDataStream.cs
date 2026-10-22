@@ -42,9 +42,13 @@ internal class SqliteDataStream : ReadonlyStream
         // Check if we're EOF
         if (_dataLengthRemaining == 0)
         {
-            // The overflow chain ended before the payload did
-            if (_fullLengthRemaining > 0 && count > 0)
-                throw new SqliteCorruptException($"the overflow chain ended with {_fullLengthRemaining} bytes of the payload left", _currentPage, "overflow chain");
+            // CELL-13: the overflow chain ended before the payload did. accessPayload in btree.c:
+            //   if( rc==SQLITE_OK && amt>0 ){
+            //     /* Overflow chain ends prematurely */
+            //     return SQLITE_CORRUPT_PAGE(pPage);
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5321 (accessPayload)
+            Checks.Strict(_fullLengthRemaining <= 0 || count <= 0, "CELL-13",
+                $"the overflow chain ended with {_fullLengthRemaining} bytes of the payload left", _currentPage, "overflow chain");
 
             return 0;
         }
@@ -62,8 +66,14 @@ internal class SqliteDataStream : ReadonlyStream
         _position += canRead;
         _fullLengthRemaining -= canRead;
 
-        // Special case, moving to the next page
-        if (_dataLengthRemaining == 0 && _nextPage > 0)
+        // Special case, moving to the next page. CELL-16: only while payload remains, so the last overflow page's next
+        // pointer is never followed, whatever it holds. accessPayload in btree.c stops as soon as the payload is copied:
+        //   nextPage = get4byte(aPayload);
+        //   ...
+        //   amt -= a;
+        //   if( amt==0 ) return rc;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5306 (accessPayload)
+        if (_dataLengthRemaining == 0 && _fullLengthRemaining > 0 && _nextPage > 0)
         {
             _currentPage = _nextPage;
 

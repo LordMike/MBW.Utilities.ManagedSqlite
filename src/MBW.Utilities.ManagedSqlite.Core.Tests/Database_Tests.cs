@@ -69,39 +69,44 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     }
 
     /// <summary>
-    /// A valid database whose header text encoding (big-endian uint at offset 56) is patched to 0, which SQLite never writes.
+    /// HDR-30: SQLite never rejects the encoding field. A non-zero field is read by its low two bits, where 0 means
+    /// UTF-8, and a field of 0 means the default, UTF-8.
     /// </summary>
-    private static Stream InvalidEncodingDb()
-    {
-        byte[] bytes = SqliteParity.Build("CREATE TABLE t (a INTEGER);");
-        bytes[56] = bytes[57] = bytes[58] = bytes[59] = 0;
-        return new MemoryStream(bytes);
-    }
-
-    [Fact]
-    public void TestInvalidEncoding_DefaultFails()
-    {
-        Assert.Throws<SqliteInvalidEncodingException>(() =>
+    [Theory]
+    [InlineData("UTF-8", 1, 0u)]
+    [InlineData("UTF-8", 1, 0x100u)]
+    [InlineData("UTF-16le", 2, 6u)]
+    [InlineData("UTF-16be", 3, 0xFFFFFFFFu)]
+    public void TextEncoding_ReadLikeSqlite(string written, byte stored, uint field) =>
+        SqliteParity.AssertSameAsSqlite($"PRAGMA encoding = '{written}'; CREATE TABLE t (a TEXT); INSERT INTO t VALUES ('abcd'), ('æøå');", data =>
         {
-            using Stream _stream = InvalidEncodingDb();
-            using (Sqlite3Database db = new Sqlite3Database(_stream))
-            {
-            }
+            Assert.Equal(new byte[] { 0, 0, 0, stored }, data.AsSpan(56, 4).ToArray());
+            data[56] = (byte)(field >> 24);
+            data[57] = (byte)(field >> 16);
+            data[58] = (byte)(field >> 8);
+            data[59] = (byte)field;
+            return data;
         });
-    }
 
     [Fact]
-    public void TestInvalidEncoding_SuccessWhenOverridden()
+    public void TextEncoding_ZeroUsesFallbackEncoding()
     {
-        Sqlite3Settings sqlite3Settings = new Sqlite3Settings
-        {
-            FallbackEncoding = SqliteEncoding.UTF8
-        };
+        const string script = "PRAGMA encoding = 'UTF-16le'; CREATE TABLE t (a TEXT); INSERT INTO t VALUES ('abcd'), ('æøå');";
+        byte[] data = SqliteParity.Build(script);
+        Assert.Equal(new byte[] { 0, 0, 0, 2 }, data.AsSpan(56, 4).ToArray());
+        data[56] = data[57] = data[58] = data[59] = 0;
 
-        using Stream _stream = InvalidEncodingDb();
-        using Sqlite3Database db = new Sqlite3Database(_stream, sqlite3Settings);
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { FallbackEncoding = SqliteEncoding.UTF16LE });
 
-        Assert.Equal(SqliteEncoding.UTF8, db.TextEncoding);
-        Assert.Equal((SqliteEncoding)0, db.Header.TextEncoding);
+        Assert.Equal(SqliteEncoding.UTF16LE, db.TextEncoding);
+        SqliteParity.AssertTablesSameAsSqlite(script, db, "t");
+    }
+
+    // An invalid FallbackEncoding is a caller error, so it fails even when the database's own field is valid
+    [Fact]
+    public void TextEncoding_InvalidFallbackFails()
+    {
+        using Stream _stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
+        Assert.Throws<SqliteInvalidEncodingException>(() => new Sqlite3Database(_stream, new Sqlite3Settings { FallbackEncoding = (SqliteEncoding)7 }));
     }
 }

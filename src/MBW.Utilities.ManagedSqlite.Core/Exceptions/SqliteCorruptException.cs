@@ -17,11 +17,18 @@ public sealed class SqliteCorruptException : SqliteException
     /// </summary>
     public string? Structure { get; }
 
-    internal SqliteCorruptException(string message, uint? page = null, string? structure = null, Exception? innerException = null)
+    /// <summary>
+    /// The ID of the consistency check that failed, such as "PAGE-21", from the SQLite check survey of issue #58, when
+    /// known.
+    /// </summary>
+    public string? Check { get; }
+
+    internal SqliteCorruptException(string message, uint? page = null, string? structure = null, Exception? innerException = null, string? check = null)
         : base(FormatMessage(message, page, structure), innerException)
     {
         Page = page;
         Structure = structure;
+        Check = check;
     }
 
     private static string FormatMessage(string message, uint? page, string? structure)

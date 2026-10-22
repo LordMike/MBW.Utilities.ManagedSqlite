@@ -87,6 +87,25 @@ public class SqlCreateTable_Tests
     public void Default(string columns) => AssertSameAsSqlite($"CREATE TABLE t ({columns}); INSERT INTO t DEFAULT VALUES;");
 
     /// <summary>
+    /// <c>CREATE TABLE t (a); INSERT INTO t VALUES (1)</c>, then the table's SQL is made <c>CREATE TABLE t (a, columns)</c>,
+    /// as ALTER TABLE ADD COLUMN does without rewriting the rows. A record too short for a column reads its DEFAULT as
+    /// SQLite evaluates it (sqlite3ValueFromExpr), with the column's affinity. Some of these defaults are not ones ALTER
+    /// TABLE accepts, but SQLite reads every short record this way.
+    /// </summary>
+    [Theory]
+    [InlineData("b INTEGER DEFAULT 500, c TEXT DEFAULT 5, d REAL DEFAULT 5, e DEFAULT -5, f NUMERIC DEFAULT +5, g TEXT DEFAULT (-5)")]
+    [InlineData("b DEFAULT -9223372036854775808, c TEXT DEFAULT 9223372036854775808, d INTEGER DEFAULT 9223372036854775808, e DEFAULT 0x10, f TEXT DEFAULT -0x10, g DEFAULT 0x1ffffffffffffffff, h DEFAULT -0x8000000000000000, i TEXT DEFAULT -0x100000000")]
+    [InlineData("b DEFAULT 1.5, c INTEGER DEFAULT 2.0, d TEXT DEFAULT 1.50, e NUMERIC DEFAULT 1e400, f REAL DEFAULT -0.0, g DEFAULT 2.0")]
+    [InlineData("b INTEGER DEFAULT ' 12 ', c REAL DEFAULT '1.0', d NUMERIC DEFAULT '1e3', e INTEGER DEFAULT '12abc', f DEFAULT '1.5', g NUMERIC DEFAULT '9223372036854775808', h INTEGER DEFAULT '0x10', i TEXT DEFAULT abc")]
+    [InlineData("b DEFAULT X'0102', c DEFAULT NULL, d DEFAULT TRUE, e TEXT DEFAULT false, f REAL DEFAULT true")]
+    [InlineData("b DEFAULT -'5', c TEXT DEFAULT -' 5x', d DEFAULT -'abc', e DEFAULT -'1.5', f REAL DEFAULT -'1e3', g DEFAULT -'9223372036854775808', h DEFAULT -X'01', i DEFAULT (-TRUE), j DEFAULT (-(-5)), k DEFAULT -0x1ffffffffffffffff, l DEFAULT (-NULL)")]
+    [InlineData("b REAL DEFAULT 3500000000000000.2500001, c NUMERIC DEFAULT '3500000000000000.2500001', d DEFAULT 12345678901234567890123, e NUMERIC DEFAULT ' +.5e1 ', f INTEGER DEFAULT '5.', g INTEGER DEFAULT '1e'")]
+    [InlineData("b DEFAULT (1 + 2), c TEXT DEFAULT CURRENT_TIMESTAMP, d DEFAULT (abs(-1)), e INTEGER DEFAULT ('5' COLLATE nocase)")]
+    [InlineData("b AS (5) STORED, c TEXT AS ('x') STORED, d AS (a * 2) STORED, e AS (7)")]
+    public void DefaultOfShortRecord(string columns) => SqliteParity.AssertSameAsSqlite(
+        "CREATE TABLE t (a); INSERT INTO t VALUES (1);", $"UPDATE sqlite_schema SET sql = 'CREATE TABLE t (a, {columns.Replace("'", "''")})' WHERE name = 't'");
+
+    /// <summary>
     /// <c>CREATE TABLE name (a INTEGER, b TEXT); INSERT INTO name VALUES (1, 'x')</c>
     /// </summary>
     [Theory]
@@ -161,7 +180,7 @@ public class SqlCreateTable_Tests
     /// <para>
     /// The table is an index b-tree. Its record starts with the primary key terms in key order, then the other stored
     /// columns in declared order. A term that repeats an earlier one with the same collation is left out (isDupColumn
-    /// in https://sqlite.org/src/file?name=src/build.c).
+    /// in https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L2274).
     /// </para>
     /// </summary>
     [Theory]

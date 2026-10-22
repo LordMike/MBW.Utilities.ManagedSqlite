@@ -35,6 +35,12 @@ internal static class SqliteParity
     public static void AssertSameAsSqlite(string script) => AssertSameAsSqlite(Build(script));
 
     /// <summary>
+    /// <see cref="AssertSameAsSqlite(string)"/> for the database <see cref="Build(string, string, int)"/> makes, with
+    /// <paramref name="schemaEdit"/> changing one sqlite_schema row
+    /// </summary>
+    public static void AssertSameAsSqlite(string script, string schemaEdit) => AssertSameAsSqlite(Build(script, schemaEdit));
+
+    /// <summary>
     /// For a database with <paramref name="reservedBytes"/> unused bytes at the end of every page (the header's
     /// "reserved space", offset 20), which no SQL statement can set.
     /// </summary>
@@ -50,12 +56,19 @@ internal static class SqliteParity
     /// </summary>
     public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch) => AssertSameAsSqlite(patch(Build(script)));
 
-    private static void AssertSameAsSqlite(byte[] data)
+    /// <summary>
+    /// After <paramref name="patch"/>, with the library opening the file with <paramref name="settings"/>
+    /// </summary>
+    public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch, Sqlite3Settings settings) => AssertSameAsSqlite(patch(Build(script)), settings);
+
+    private static void AssertSameAsSqlite(byte[] data, Sqlite3Settings settings = null)
     {
         string expected;
         using (SqliteConnection connection = Open(data))
         {
-            List<object[]> schema = Query(connection, "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY rowid");
+            // The schema as SQLite's schema loader sees it: every value as text, ending at a NUL (SCHEMA-08, SCHEMA-09)
+            List<object[]> schema = Query(connection, "SELECT CAST(type AS TEXT), CAST(name AS TEXT), CAST(tbl_name AS TEXT), CAST(sql AS TEXT) FROM sqlite_master ORDER BY rowid")
+                .Select(r => r.Select(v => v is string text && text.IndexOf('\0') >= 0 ? text.Substring(0, text.IndexOf('\0')) : v).ToArray()).ToList();
             expected = Dump(Query(connection, "PRAGMA encoding")[0][0].ToString().Replace("-", "").ToUpperInvariant(),
                 Query(connection, "PRAGMA page_size")[0][0].ToString(),
                 schema.Select(s => ((string)s[0], (string)s[1], (string)s[2], s[3] as string)),
@@ -63,10 +76,10 @@ internal static class SqliteParity
         }
 
         string actual;
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), settings))
         {
             List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
-            actual = Dump(db.Header.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
+            actual = Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
                 schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
                 schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
         }
@@ -106,13 +119,60 @@ internal static class SqliteParity
     }
 
     /// <summary>
+    /// Asserts that real SQLite loads the schema of the database file <paramref name="data"/> and reads the rows of
+    /// <paramref name="table"/>
+    /// </summary>
+    public static void AssertSqliteReads(byte[] data, string table)
+    {
+        using SqliteConnection connection = Open(data);
+        Query(connection, $"SELECT * FROM {Name(table)}");
+    }
+
+    /// <summary>
+    /// Asserts that real SQLite fails with an error, any error, when it reads the rows of <paramref name="table"/> from
+    /// the database file <paramref name="data"/>
+    /// </summary>
+    public static void AssertSqliteFails(byte[] data, string table)
+    {
+        using SqliteConnection connection = Open(data);
+        Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM {Name(table)}"));
+    }
+
+    /// <summary>
     /// The bytes of the database file real SQLite builds from <paramref name="script"/>, exactly as SQLite would write
     /// them to disk (https://www.sqlite.org/c3ref/serialize.html).
     /// </summary>
     public static byte[] Build(string script, int reservedBytes = 0)
     {
         using SqliteConnection connection = Run(script, reservedBytes);
+        return Serialize(connection);
+    }
 
+    /// <summary>
+    /// <see cref="Build(string, int)"/>, then <paramref name="schemaEdit"/> with writable_schema on, which must change
+    /// exactly <paramref name="rows"/> rows of sqlite_schema, so an edit that matches nothing fails instead of testing
+    /// the undamaged schema
+    /// </summary>
+    public static byte[] Build(string script, string schemaEdit, int rows = 1)
+    {
+        using SqliteConnection connection = Run(script);
+        using (SqliteCommand pragma = connection.CreateCommand())
+        {
+            pragma.CommandText = "PRAGMA writable_schema = ON";
+            pragma.ExecuteNonQuery();
+        }
+
+        using (SqliteCommand command = connection.CreateCommand())
+        {
+            command.CommandText = schemaEdit;
+            Assert.Equal(rows, command.ExecuteNonQuery());
+        }
+
+        return Serialize(connection);
+    }
+
+    private static byte[] Serialize(SqliteConnection connection)
+    {
         IntPtr data = raw.sqlite3_serialize(connection.Handle, "main", out long size, 0);
         if (data == IntPtr.Zero)
             throw new InvalidOperationException("sqlite3_serialize failed");
@@ -159,7 +219,7 @@ internal static class SqliteParity
     /// Opens a database file's bytes with SQLite, read-only and in memory, through sqlite3_deserialize
     /// (https://www.sqlite.org/c3ref/deserialize.html), so SQLite reads exactly the bytes the library is given. SQLite
     /// owns the copy (SQLITE_DESERIALIZE_FREEONCLOSE) and frees it when the connection closes, and also when
-    /// deserialize itself fails (end_deserialize in https://sqlite.org/src/file?name=src/memdb.c).
+    /// deserialize itself fails (end_deserialize in https://github.com/sqlite/sqlite/blob/version-3.53.4/src/memdb.c#L904).
     /// </summary>
     private static SqliteConnection Open(byte[] data)
     {
@@ -168,7 +228,7 @@ internal static class SqliteParity
 
         try
         {
-            IntPtr copy = raw.sqlite3_malloc(data.Length);
+            IntPtr copy = raw.sqlite3_malloc(Math.Max(1, data.Length));
             if (copy == IntPtr.Zero)
                 throw new OutOfMemoryException();
 
@@ -228,7 +288,7 @@ internal static class SqliteParity
 
     private static bool IsReadableTable(string type, string sql)
     {
-        return type == "table" && (sql == null || !sql.TrimStart().StartsWith("CREATE VIRTUAL TABLE", StringComparison.OrdinalIgnoreCase));
+        return string.Equals(type, "table", StringComparison.OrdinalIgnoreCase) && (sql == null || !Regex.IsMatch(sql, @"^\s*CREATE\s+(/\*.*?\*/\s*)*VIRTUAL\s", RegexOptions.IgnoreCase | RegexOptions.Singleline));
     }
 
     /// <summary>

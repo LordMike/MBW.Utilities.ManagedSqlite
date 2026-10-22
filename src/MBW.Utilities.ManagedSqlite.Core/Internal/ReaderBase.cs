@@ -19,6 +19,11 @@ internal sealed class ReaderBase : IDisposable
     public long Position => _stream.Position;
 
     private readonly Stream _stream;
+
+    /// <summary>
+    /// The caller's stream when <see cref="_stream"/> stands in for it (a 0-byte file), so it is still disposed
+    /// </summary>
+    private readonly Stream? _source;
     private readonly Encoding _encoding;
     private readonly byte[] _uint32Buffer = new byte[4];
 
@@ -29,14 +34,30 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     private uint _pageBufferPage;
 
+    /// <summary>
+    /// Set once Lenient has reported the partial last page (HDR-17), so it is reported once, not on every read of it
+    /// </summary>
+    private bool _partialPageReported;
+
     public DatabaseHeader Header { get; }
 
     /// <summary>
-    /// The text encoding in use: the header's, or the fallback from the settings when the header's is invalid
+    /// The settings the database was opened with, which the consistency checks consult
+    /// </summary>
+    public Sqlite3Settings Settings { get; }
+
+    /// <summary>
+    /// The text encoding in use: the header's, read as SQLite reads it, or the fallback from the settings when the
+    /// header's field is 0
     /// </summary>
     public SqliteEncoding TextEncoding { get; }
 
     public uint PageSize { get; }
+
+    /// <summary>
+    /// The page that holds byte offset 0x40000000 (SQLite's PENDING_BYTE), which SQLite never uses
+    /// </summary>
+    private readonly uint _lockBytePage;
 
     /// <summary>
     /// Reserved space at the end of every page
@@ -49,13 +70,16 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     public uint PageCount { get; }
 
-    private ReaderBase(Stream stream, DatabaseHeader header, SqliteEncoding textEncoding, Encoding encoding)
+    private ReaderBase(Stream stream, Stream? source, DatabaseHeader header, Sqlite3Settings settings, SqliteEncoding textEncoding, Encoding encoding)
     {
         _stream = stream;
+        _source = source;
         Length = stream.Length;
 
         Header = header;
+        Settings = settings;
         PageSize = header.PageSize;
+        _lockBytePage = 0x40000000 / PageSize + 1;
         ReservedSpace = header.ReservedSpaceAtEndOfPage;
         TextEncoding = textEncoding;
         _encoding = encoding;
@@ -65,26 +89,49 @@ internal sealed class ReaderBase : IDisposable
         // change counter (offset 24). SQLite then trusts it over the file length (pages after it are not part of the
         // database, as after a rollback that did not truncate the file), and rejects a size larger than the file.
         // Otherwise the file length decides. This is lockBtree in btree.c:
-        //   nPage = get4byte(28+page1);
-        //   sqlite3PagerPagecount(pBt->pPager, &nPageFile);
-        //   if( nPage==0 || memcmp(24+page1, 92+page1, 4)!=0 ) nPage = nPageFile;
-        //   ...
-        //   if( nPage>nPageFile ) rc = SQLITE_CORRUPT_BKPT
-        // https://sqlite.org/src/file?name=src/btree.c (lockBtree)
+        //   nPage = get4byte(28+(u8*)pPage1->aData);
+        //   sqlite3PagerPagecount(pBt->pPager, (int*)&nPageFile);
+        //   if( nPage==0 || memcmp(24+(u8*)pPage1->aData, 92+(u8*)pPage1->aData,4)!=0 ){
+        //     nPage = nPageFile;
+        //   }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3298 (lockBtree)
         //
         // The file's page count rounds a partial last page up, as pagerPagecount in pager.c does
         // ("nPage = (Pgno)((n+pPager->pageSize-1) / pPager->pageSize)"); SQLite then reads the missing bytes of that page
-        // as zeros (SQLITE_IOERR_SHORT_READ handling in os_unix.c unixRead / os_win.c winRead), which this reader does not.
-        // https://sqlite.org/src/file?name=src/pager.c (pagerPagecount)
+        // as zeros (SQLITE_IOERR_SHORT_READ handling in os_unix.c unixRead / os_win.c winRead). ReadPage does the same in
+        // Lenient, and fails that page in Strict.
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3325 (pagerPagecount)
         uint filePages = (uint)Math.Min(uint.MaxValue, (Length + PageSize - 1) / PageSize);
         bool headerSizeValid = header.DatabaseSizeInPages != 0 && header.VersionValidFor == header.ChangeCounter;
 
-        // The pages that do exist are intact in such a file (truncated, or a wrong header), so this is a strict check that a
-        // Lenient validation mode may replace by using the file's count; see issue #58.
-        if (headerSizeValid && header.DatabaseSizeInPages > filePages)
-            throw new SqliteCorruptException($"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}", structure: "file length");
+        // HDR-14: a valid in-header size larger than the file is corrupt, unless writable_schema is on (which this reader
+        // has no equivalent of). lockBtree in btree.c:
+        //   if( nPage>nPageFile ){
+        //     if( sqlite3WritableSchema(pBt->db)==0 ){
+        //       rc = SQLITE_CORRUPT_BKPT;
+        // The pages that do exist are intact in such a file (truncated, or a wrong header), so Lenient uses the file's
+        // count instead, as SQLite does with writable_schema.
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3405 (lockBtree)
+        PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= filePages, settings, "HDR-14",
+                $"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}",
+                structure: "file length")
+            ? header.DatabaseSizeInPages
+            : filePages;
 
-        PageCount = headerSizeValid ? header.DatabaseSizeInPages : filePages;
+        // HDR-24, SCHEMA-02, checked after the page count as SQLite checks it in sqlite3InitOne, after lockBtree: the
+        // schema format number's low byte, where 0 means 1, must be at most 4. SQLite fails the
+        // schema load with "unsupported file format" (SQLITE_ERROR, not SQLITE_CORRUPT). sqlite3InitOne in prepare.c:
+        //   pDb->pSchema->file_format = (u8)meta[BTREE_FILE_FORMAT-1];
+        //   if( pDb->pSchema->file_format==0 ){
+        //     pDb->pSchema->file_format = 1;
+        //   }
+        //   if( pDb->pSchema->file_format>SQLITE_MAX_FILE_FORMAT ){
+        //     sqlite3SetString(pzErrMsg, db, "unsupported file format");
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L340 (sqlite3InitOne)
+        // Formats 1 to 4 only add features to what 1 can store, and this reader reads them all the same, so Lenient
+        // reads a higher number on.
+        Checks.Relaxable((byte)header.SchemaFormat <= 4, settings, "HDR-24",
+            $"unsupported schema format {(byte)header.SchemaFormat} (1 to 4)", structure: "database header");
     }
 
     /// <summary>
@@ -96,30 +143,98 @@ internal sealed class ReaderBase : IDisposable
         if (stream == null)
             throw new ArgumentNullException(nameof(stream));
 
+        // A caller error, so it fails for every file, not only for those whose encoding field is 0
+        if (settings.FallbackEncoding is { } fallback && fallback is not (SqliteEncoding.UTF8 or SqliteEncoding.UTF16LE or SqliteEncoding.UTF16BE))
+            throw new SqliteInvalidEncodingException(fallback);
+
         byte[] headerData = new byte[DatabaseHeader.HeaderSize];
 
         int read = stream.ReadFully(headerData, 0, headerData.Length);
 
-        DatabaseHeader header = new DatabaseHeader(headerData, read);
+        // HDR-01, PAGE-17: a 0-byte file is a valid empty database. SQLite skips every header check when the file has no
+        // pages, and a cursor on the schema's root page 1 is then empty. lockBtree and btreeCursor in btree.c:
+        //   if( nPage>0 ){
+        //     ...
+        //   if( iTable<=1 ){
+        //     if( iTable<1 ){
+        //       return SQLITE_CORRUPT_BKPT;
+        //     }else if( btreePagecount(pBt)==0 ){
+        //       assert( wrFlag==0 );
+        //       iTable = 0;
+        //     }
+        //   }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3306 (lockBtree)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L4719 (btreeCursor)
+        // This reader stands in the database SQLite would create in that file: one empty schema page with the default
+        // page size, and an encoding field of 0, so the encoding is the default (or FallbackEncoding) as in SQLite.
+        Stream? source = null;
+        // The file's length decides, as SQLite's page count does, so a stream handed over at its end is not mistaken for
+        // an empty file
+        if (read == 0 && stream.Length == 0)
+        {
+            source = stream;
+            stream = new MemoryStream(EmptyDatabase(), false);
+            read = stream.ReadFully(headerData, 0, headerData.Length);
+        }
 
-        SqliteEncoding textEncoding = header.TextEncoding;
-        if (!Enum.IsDefined(typeof(SqliteEncoding), textEncoding) && settings.FallbackEncoding.HasValue)
-            textEncoding = settings.FallbackEncoding.Value;
+        DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
+
+        // HDR-30, REC-40, SCHEMA-01: SQLite never rejects the text encoding field. A non-zero value is masked to its low
+        // two bits, where 0 means UTF-8; a field of 0 leaves the connection's default encoding, which is UTF-8 unless
+        // configured (here: FallbackEncoding). sqlite3InitOne in prepare.c:
+        //   if( meta[BTREE_TEXT_ENCODING-1] ){
+        //     ...
+        //     encoding = (u8)meta[BTREE_TEXT_ENCODING-1] & 3;
+        //     if( encoding==0 ) encoding = SQLITE_UTF8;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L300
+        uint rawEncoding = (uint)header.TextEncoding;
+        SqliteEncoding textEncoding;
+        if (rawEncoding == 0)
+            textEncoding = settings.FallbackEncoding ?? SqliteEncoding.UTF8;
+        else if ((rawEncoding & 3) == 0)
+            textEncoding = SqliteEncoding.UTF8;
+        else
+            textEncoding = (SqliteEncoding)(rawEncoding & 3);
 
         Encoding encoding = textEncoding switch
         {
             SqliteEncoding.UTF8 => Encoding.UTF8,
             SqliteEncoding.UTF16LE => Encoding.Unicode,
             SqliteEncoding.UTF16BE => Encoding.BigEndianUnicode,
-            _ => throw new SqliteInvalidEncodingException(textEncoding)
+            _ => throw new InvalidOperationException($"unexpected encoding {textEncoding}")
         };
 
-        return new ReaderBase(stream, header, textEncoding, encoding);
+        return new ReaderBase(stream, source, header, settings, textEncoding, encoding);
+    }
+
+    /// <summary>
+    /// A database of one page, 4096 bytes (SQLite's default page size), whose schema table is an empty leaf page
+    /// </summary>
+    private static byte[] EmptyDatabase()
+    {
+        const int pageSize = 4096;
+        byte[] data = new byte[pageSize];
+
+        Encoding.UTF8.GetBytes("SQLite format 3\0", 0, 16, data, 0);
+        data[16] = pageSize >> 8;
+        data[18] = 1; // write version: legacy
+        data[19] = 1; // read version: legacy
+        data[21] = 64; // payload fractions
+        data[22] = 32;
+        data[23] = 32;
+        data[31] = 1; // database size in pages, valid since the version-valid-for number (0) equals the change counter (0)
+        data[47] = 4; // schema format
+
+        data[100] = 0x0D; // leaf table b-tree page, no freeblocks, no cells
+        data[105] = pageSize >> 8; // cell content area starts at the end of the page
+
+        return data;
     }
 
     public void Dispose()
     {
         _stream.Dispose();
+        _source?.Dispose();
     }
 
     internal void CheckSize(uint sizeWanted, bool throwException = true)
@@ -127,19 +242,11 @@ internal sealed class ReaderBase : IDisposable
         if (!throwException)
             return;
 
+        // HDR-17: the file ends inside a structure that the file refers to. ReadPage handles the partial last page.
         long dataLeft = Length - _stream.Position;
-        if (dataLeft < sizeWanted)
-        {
-            throw new SqliteCorruptException("the file is shorter than the structures in it say", structure: "file length")
-            {
-                Data =
-                {
-                    { nameof(Stream.Position), _stream.Position },
-                    { nameof(sizeWanted), sizeWanted },
-                    { "SourceLength", Length }
-                }
-            };
-        }
+        Checks.Strict(dataLeft >= sizeWanted, "HDR-17",
+            $"the file is shorter than the structures in it say ({sizeWanted} bytes wanted at offset {_stream.Position}, the file is {Length} bytes)",
+            structure: "file length");
     }
 
     internal void SetPositionAndCheckSize(ulong position, uint sizeWanted, bool throwException = true)
@@ -153,24 +260,37 @@ internal sealed class ReaderBase : IDisposable
     {
         ulong newPosition = (ulong)_stream.Seek((long)position, SeekOrigin.Begin);
 
-        if (newPosition != position)
-            throw new SqliteCorruptException("unable to seek to a position the file refers to", structure: "file length")
-            {
-                Data = { { nameof(position), position } }
-            };
+        Checks.Strict(newPosition == position, "HDR-17", $"unable to seek to offset {position}, which the file refers to",
+            structure: "file length");
     }
 
-    internal void SeekPage(uint page, uint offset = 0)
+    internal void SeekPage(uint page, uint offset = 0, bool checkSize = true)
     {
-        if (page == 0 || (PageCount > 0 && page > PageCount))
-            throw new SqliteCorruptException($"page number {page} is outside the database (1..{PageCount})", page, "page number");
+        // PAGE-15: page 0 does not exist, and PAGE-14: pages above the page count are not part of the database.
+        // getPageNormal in pager.c, and getAndInitPage in btree.c:
+        //   if( pgno==0 ) return SQLITE_CORRUPT_BKPT;
+        //   if( pgno>btreePagecount(pBt) ){
+        //     *ppPage = 0;
+        //     return SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5597 (getPageNormal)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2390 (getAndInitPage)
+        Checks.Strict(page != 0, "PAGE-15", $"page number 0 is outside the database (1..{PageCount})", page, "page number");
+        Checks.Strict(PageCount == 0 || page <= PageCount, "PAGE-14", $"page number {page} is outside the database (1..{PageCount})", page, "page number");
+
+        // HDR-20, INTEG-03: the lock-byte page, which holds byte offset 0x40000000 (PENDING_BYTE) in a file over 1 GiB,
+        // is never part of the database, so a reference to it is corrupt in every mode. getPageNormal in pager.c:
+        //   if( pgno==PAGER_SJ_PGNO(pPager) ){
+        //     rc = SQLITE_CORRUPT_BKPT;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5628 (getPageNormal)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3858 (lckPgno = PENDING_BYTE/pageSize + 1)
+        Checks.Strict(page != _lockBytePage, "HDR-20", $"page {page} is the lock-byte page, which holds no data", page, "page number");
 
         // Note: Pages are 1-indexed
         // Widen before multiplying: uint * ushort is computed in 32 bits and wraps for offsets past 4 GiB
         ulong position = (ulong)(page - 1) * PageSize;
         position += offset;
 
-        SetPositionAndCheckSize(position, (uint)(PageSize - offset));
+        SetPositionAndCheckSize(position, (uint)(PageSize - offset), checkSize);
     }
 
     /// <summary>
@@ -179,18 +299,43 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     internal byte[] ReadPage(uint page)
     {
-        SeekPage(page);
+        SeekPage(page, checkSize: false);
 
         if (_pageBuffer == null || _pageBuffer.Length != PageSize)
             _pageBuffer = new byte[PageSize];
 
         _pageBufferPage = 0;
-        if (Read(_pageBuffer, 0, (int)PageSize) != PageSize)
-            throw new EndOfStreamException();
+        int read = Read(_pageBuffer, 0, (int)PageSize);
+        if (read != PageSize)
+        {
+            // HDR-17: the file ends inside its last page. SQLite counts that page (pagerPagecount rounds up) and reads the
+            // missing bytes as zeros, since a short read is not an error. readDbPage in pager.c:
+            //   rc = sqlite3OsRead(pPager->fd, pPg->pData, pPager->pageSize, iOffset);
+            //   if( rc==SQLITE_IOERR_SHORT_READ ){
+            //     rc = SQLITE_OK;
+            //   }
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3088 (readDbPage)
+            // Those zeros are not the file's data, so SQLite then returns damaged values without an error. Strict is
+            // stricter than SQLite here and fails; Lenient reads the zeros as SQLite does.
+            if (!_partialPageReported)
+            {
+                Checks.Relaxable(false, Settings, "HDR-17",
+                    $"page {page} is cut short by the end of the file ({read} of {PageSize} bytes)", page, "file length");
+                _partialPageReported = true;
+            }
+
+            Array.Clear(_pageBuffer, read, (int)PageSize - read);
+        }
 
         _pageBufferPage = page;
         return _pageBuffer;
     }
+
+    /// <summary>
+    /// The bytes of <paramref name="page"/>, from the page buffer when it holds that page. Like <see cref="ReadPage"/>,
+    /// the buffer is overwritten when another page is read.
+    /// </summary>
+    internal byte[] GetPage(uint page) => page == _pageBufferPage && _pageBuffer != null ? _pageBuffer : ReadPage(page);
 
     /// <summary>
     /// Copies <paramref name="count"/> bytes from <paramref name="offset"/> on <paramref name="page"/> into
@@ -202,7 +347,7 @@ internal sealed class ReaderBase : IDisposable
     /// it gets the whole page from the page cache (btreeGetPage / sqlite3PagerGet in btree.c and pager.c) and
     /// accessPayload copies the local part of a payload out of that page before walking the overflow chain, each
     /// overflow page again fetched whole through the cache.
-    /// https://sqlite.org/src/file?name=src/btree.c (accessPayload), https://sqlite.org/src/file?name=src/pager.c
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5125 (accessPayload), https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5772
     /// </remarks>
     internal void ReadFromPage(uint page, uint offset, byte[] buffer, int bufferOffset, int count)
     {
@@ -214,8 +359,7 @@ internal sealed class ReaderBase : IDisposable
             return;
         }
 
-        byte[] data = page == _pageBufferPage && _pageBuffer != null ? _pageBuffer : ReadPage(page);
-        Buffer.BlockCopy(data, (int)offset, buffer, bufferOffset, count);
+        Buffer.BlockCopy(GetPage(page), (int)offset, buffer, bufferOffset, count);
     }
 
     /// <summary>
