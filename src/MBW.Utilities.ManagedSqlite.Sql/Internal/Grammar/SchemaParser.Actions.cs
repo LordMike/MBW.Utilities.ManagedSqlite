@@ -9,7 +9,8 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 /// action, or with "A ::= B(A)", do. An empty rule starts from a cleared entry: no token, a null value and 0.
 ///
 /// Only what reading a table needs is built: the CREATE TABLE, its expressions, and enough of a SELECT (in a
-/// subquery) for the checks the parser makes. Statements other than CREATE TABLE are parsed and ignored.
+/// subquery) for the checks the parser makes. The other CREATE statements are checked against the schema when the whole
+/// schema is loaded (SchemaParser.Schema.cs); any other statement is parsed and ignored.
 /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/parse.y
 /// </summary>
 internal sealed partial class SchemaParser
@@ -54,7 +55,87 @@ internal sealed partial class SchemaParser
                 break;
 
             case "create_table ::= createkw temp TABLE ifnotexists nm dbnm":
-                StartTable(T(4), T(5));
+                StartTable(T(4), T(5), I(3) != 0);
+                break;
+
+            // ///////////////////// The other CREATE statements of the schema
+
+            case "cmd ::= createkw uniqueflag INDEX ifnotexists nm dbnm ON nm LP sortlist RP where_opt":
+                CreateIndexStatement(T(4), T(5), T(7), L(9)!, OE(11), I(3) != 0);
+                break;
+            case "cmd ::= createkw temp VIEW ifnotexists nm dbnm eidlist_opt AS select":
+                CreateView(T(4), T(5), I(3) != 0);
+                break;
+
+            case "trigger_decl ::= temp TRIGGER ifnotexists nm dbnm trigger_time trigger_event ON fullname foreach_clause when_clause":
+                BeginTrigger(T(3), T(4), I(5), T(8), I(2) != 0);
+                break;
+            case "cmd ::= createkw trigger_decl BEGIN trigger_cmd_list END":
+                FinishTrigger();
+                break;
+            case "trigger_time ::= BEFORE|AFTER":
+                a.Int = M(0);
+                break;
+            case "trigger_time ::= INSTEAD OF":
+                a.Int = TK.INSTEAD;
+                break;
+            case "trigger_time ::=":
+                a.Int = TK.BEFORE;
+                break;
+
+            // The table of a FROM, DROP, ALTER or trigger: the token is its name, and the int says it names a database
+            case "fullname ::= nm":
+            case "xfullname ::= nm":
+            case "xfullname ::= nm AS nm":
+                a.Int = 0;
+                break;
+            case "fullname ::= nm DOT nm":
+            case "xfullname ::= nm DOT nm":
+            case "xfullname ::= nm DOT nm AS nm":
+                a.Token = T(2);
+                a.Int = 1;
+                break;
+
+            case "tridxby ::= INDEXED BY nm":
+                Fail("DDL-82", "the INDEXED BY clause is not allowed on UPDATE or DELETE statements within triggers");
+                break;
+            case "tridxby ::= NOT INDEXED":
+                Fail("DDL-82", "the NOT INDEXED clause is not allowed on UPDATE or DELETE statements within triggers");
+                break;
+            case "trigger_cmd ::= UPDATE orconf xfullname tridxby SET setlist from where_opt scanpt":
+            case "trigger_cmd ::= DELETE FROM xfullname tridxby where_opt scanpt":
+                TriggerStep(I(2) != 0);
+                break;
+            case "trigger_cmd ::= scanpt insert_cmd INTO xfullname idlist_opt select upsert scanpt":
+                TriggerStep(I(3) != 0);
+                break;
+
+            // sqlite3AddReturning in build.c
+            //   if( pParse->pNewTrigger ){
+            //     sqlite3ErrorMsg(pParse, "cannot use RETURNING in a trigger");
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1439 (sqlite3AddReturning)
+            case "returning ::= RETURNING selcollist":
+            case "upsert ::= RETURNING selcollist":
+            case "where_opt_ret ::= RETURNING selcollist":
+            case "where_opt_ret ::= WHERE expr RETURNING selcollist":
+                if (_newTrigger != null)
+                    Fail("DDL-82", "cannot use RETURNING in a trigger");
+                break;
+
+            case "create_vtab ::= createkw VIRTUAL TABLE ifnotexists nm dbnm USING nm":
+                BeginVirtualTable(T(4), T(5), I(3) != 0);
+                break;
+            case "cmd ::= create_vtab":
+            case "cmd ::= create_vtab LP vtabarglist RP":
+                FinishVirtualTable();
+                break;
+            case "vtabarg ::=":
+                VirtualTableArgument(false);
+                break;
+            case "vtabargtoken ::= ANY":
+            case "vtabargtoken ::= lp anylist RP":
+            case "lp ::= LP":
+                VirtualTableArgument(true);
                 break;
             case "ifnotexists ::= IF NOT EXISTS":
                 a.Int = 1;
@@ -270,12 +351,15 @@ internal sealed partial class SchemaParser
                 a.Value = _stack[lhs + 1].Value;
                 break;
             case "seltablist ::= stl_prefix nm dbnm as on_using":
+                FromDatabase(T(1), T(2));
                 a.Value = AppendFromTerm((SrcList?)a.Value, I(4));
                 break;
             case "seltablist ::= stl_prefix nm dbnm as indexed_by on_using":
+                FromDatabase(T(1), T(2));
                 a.Value = AppendFromTerm((SrcList?)a.Value, I(5));
                 break;
             case "seltablist ::= stl_prefix nm dbnm LP exprlist RP as on_using":
+                FromDatabase(T(1), T(2));
                 a.Value = AppendFromTerm((SrcList?)a.Value, I(7));
                 break;
             case "seltablist ::= stl_prefix LP select RP as on_using":
@@ -782,6 +866,21 @@ internal sealed partial class SchemaParser
         TK.EXCEPT => "EXCEPT",
         _ => "UNION"
     };
+
+    /// <summary>
+    /// sqlite3SrcListAppend in build.c: with a second name, a FROM term's first name is its database. The first
+    /// database that is not the main one is kept for the view or trigger that holds it (sqlite3FixSelect).
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L4879 (sqlite3SrcListAppend)
+    /// </summary>
+    private void FromDatabase(Token name, Token database)
+    {
+        if (database.Length == 0 || _foreignDatabase != null)
+            return;
+
+        string db = SqliteTokenizer.Dequote(Text(name));
+        if (!AsciiCaseInsensitiveComparer.Instance.Equals(db, "main"))
+            _foreignDatabase = db;
+    }
 
     /// <summary>
     /// sqlite3SrcListAppendFromTerm in build.c: ON and USING need a join before them

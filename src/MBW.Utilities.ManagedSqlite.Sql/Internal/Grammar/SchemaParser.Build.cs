@@ -31,18 +31,11 @@ internal sealed partial class SchemaParser
     private bool _tableEnded;
 
     /// <summary>
-    /// The table being built. A column or constraint outside a CREATE TABLE, as in an ALTER TABLE, has none: SQLite's
-    /// actions then do nothing, and the statement is not a table's.
+    /// pParse->pNewTable, once a CREATE TABLE has started one. Every step below does nothing without one, as in
+    /// SQLite: a statement that is not a CREATE TABLE, such as an ALTER TABLE, or a CREATE TABLE IF NOT EXISTS of a
+    /// name that exists.
     /// </summary>
-    private ParsedTable Table
-    {
-        get
-        {
-            if (_newTable == null)
-                Fail("SCHEMA-22", "the SQL does not create a table");
-            return _newTable!;
-        }
-    }
+    private ParsedTable Table => _newTable!;
 
     private ParsedColumn LastColumn => Table.Columns[Table.Columns.Count - 1];
 
@@ -51,7 +44,7 @@ internal sealed partial class SchemaParser
     /// "corrupt database"
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L976 (sqlite3TwoPartName)
     /// </summary>
-    private void StartTable(Token name, Token database)
+    private void StartTable(Token name, Token database, bool ifNotExists)
     {
         //   if( pName2->n>0 ){
         //     if( db->init.busy ) {
@@ -59,10 +52,11 @@ internal sealed partial class SchemaParser
         if (database.Length > 0)
             Fail("SCHEMA-28", "corrupt database");
 
-        // The name is checked against the row's name (sqlite3CheckObjectName, DDL-03) where the definition is used.
-        // At init the name cannot collide with a table or index made before it, as the schema rows are loaded into an
-        // empty schema one at a time and a collision is checked when the next row is (SCHEMA-32/33).
-        _newTable = new ParsedTable(SqliteTokenizer.Dequote(Text(name)));
+        // The name is checked against the row's name (sqlite3CheckObjectName, DDL-03) where the definition is used,
+        // and against the tables and indexes loaded before it when the whole schema is checked
+        string tableName = SqliteTokenizer.Dequote(Text(name));
+        if (CheckNewTableName(name, tableName, ifNotExists))
+            _newTable = new ParsedTable(tableName);
     }
 
     /// <summary>
@@ -71,6 +65,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void AddColumn(Token name, Token type)
     {
+        if (_newTable == null)
+            return;
+
         //   if( p->nCol+1>db->aLimit[SQLITE_LIMIT_COLUMN] ){
         //     sqlite3ErrorMsg(pParse, "too many columns on %s", p->zName);
         // Lenient adds the column anyway: the limit is the reader's, not the file's
@@ -210,6 +207,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void AddNotNull(int onError)
     {
+        if (_newTable == null)
+            return;
+
         LastColumn.NotNull = onError;
     }
 
@@ -220,6 +220,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void AddDefaultValue(Expr expr, int start, int end)
     {
+        if (_newTable == null)
+            return;
+
         ParsedColumn column = LastColumn;
 
         //     if( !sqlite3ExprIsConstantOrFunction(pExpr, isInit) ){
@@ -275,6 +278,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void AddPrimaryKey(ExprList? list, int onError, int autoIncrement, int sortOrder)
     {
+        if (_newTable == null)
+            return;
+
         //   if( pTab->tabFlags & TF_HasPrimaryKey ){
         //     sqlite3ErrorMsg(pParse,
         //       "table \"%s\" has more than one primary key", pTab->zName);
@@ -343,6 +349,9 @@ internal sealed partial class SchemaParser
     {
         // Lenient reads on with the index: NULLS only orders NULLs
         HasExplicitNulls(list);
+
+        if (_newTable == null)
+            return;
 
         if (list == null)
         {
@@ -426,6 +435,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void AddCollateType(Token name)
     {
+        if (_newTable == null)
+            return;
+
         int columnIndex = Table.Columns.Count - 1;
         string collation = SqliteTokenizer.Dequote(Text(name));
         Table.Columns[columnIndex].Collation = collation;
@@ -443,6 +455,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void AddGenerated(Expr expr, Token? type)
     {
+        if (_newTable == null)
+            return;
+
         ParsedColumn column = LastColumn;
 
         //   if( pCol->iDflt>0 ) goto generated_error;
@@ -490,6 +505,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void CreateForeignKey(ExprList? fromColumns, Token to, ExprList? toColumns)
     {
+        if (_newTable == null)
+            return;
+
         // Lenient reads on: a foreign key only constrains writes
         if (fromColumns == null)
         {
@@ -520,6 +538,9 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void EndTable(bool asSelect, int options)
     {
+        if (_newTable == null)
+            return;
+
         //   if( db->init.busy ){
         //     if( pSelect || (!IsOrdinaryTable(p) && db->init.newTnum) ){
         //       sqlite3ErrorMsg(pParse, "");
@@ -584,6 +605,7 @@ internal sealed partial class SchemaParser
         }
 
         _tableEnded = true;
+        _catalog?.AddTable(Table, _rootPage);
     }
 
     /// <summary>

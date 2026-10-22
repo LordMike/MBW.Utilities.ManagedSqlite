@@ -1,3 +1,4 @@
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using System;
 using System.Globalization;
 
@@ -5,12 +6,13 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 /// <summary>
 /// The constant checks of expr.c and the name resolution of resolve.c, for the expressions a CREATE TABLE resolves
-/// against its own table: generated columns (NC_GenCol) and the terms of PRIMARY KEY and UNIQUE (NC_IdxExpr)
+/// against its own table: generated columns (NC_GenCol) and the terms of PRIMARY KEY and UNIQUE (NC_IdxExpr), and
+/// those of a CREATE INDEX against its table: its terms (NC_IdxExpr) and its WHERE (NC_PartIdx)
 /// </summary>
 internal sealed partial class SchemaParser
 {
     // NC_* in sqliteInt.h, for the name contexts used here
-    private const int NC_IdxExpr = 0x000020, NC_GenCol = 0x000008;
+    private const int NC_IdxExpr = 0x000020, NC_GenCol = 0x000008, NC_PartIdx = 0x000002;
 
     /// <summary>
     /// Ends the resolution of one expression after Lenient reported an error in it, as SQLite stops using it
@@ -137,16 +139,32 @@ internal sealed partial class SchemaParser
             throw new ResolveAbort();
         }
 
+        // The terms and WHERE of a CREATE INDEX statement have their own IDs: they decide what the index holds, not
+        // how a table's rows read
+        if (_resolveTable != null)
+            check = context == NC_PartIdx ? "DDL-69" : "DDL-68";
+
         Fail(check, message);
     }
 
     /// <summary>
-    /// notValidImpl in resolve.c: "... prohibited in generated columns" or "... prohibited in index expressions"
+    /// notValidImpl in resolve.c: "... prohibited in generated columns", "... prohibited in index expressions" or
+    /// "... prohibited in partial index WHERE clauses"
+    ///     const char *zIn = "partial index WHERE clauses";
+    ///     if( pNC->ncFlags &amp; NC_IdxExpr )      zIn = "index expressions";
+    ///     else if( pNC->ncFlags &amp; NC_IsCheck ) zIn = "CHECK constraints";
+    ///     else if( pNC->ncFlags &amp; NC_GenCol ) zIn = "generated columns";
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/resolve.c#L908 (notValidImpl)
     /// </summary>
     private void NotValid(int context, string what)
     {
-        ResolveError(context, "DDL-50", $"{what} prohibited in {(context == NC_IdxExpr ? "index expressions" : "generated columns")}");
+        string where = context switch
+        {
+            NC_IdxExpr => "index expressions",
+            NC_GenCol => "generated columns",
+            _ => "partial index WHERE clauses"
+        };
+        ResolveError(context, "DDL-50", $"{what} prohibited in {where}");
     }
 
     /// <summary>
@@ -191,7 +209,11 @@ internal sealed partial class SchemaParser
             case TK.DOT:
                 //         sqlite3ResolveNotValid(pParse, pNC, "the \".\" operator",
                 //                                NC_IdxExpr|NC_GenCol, 0, pExpr);
-                NotValid(context, "the \".\" operator");
+                // A partial index WHERE may name its table, and the main database
+                if (context == NC_PartIdx)
+                    LookupQualifiedName(p, context);
+                else
+                    NotValid(context, "the \".\" operator");
                 return false;
 
             case TK.ID:
@@ -282,13 +304,8 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void LookupName(Expr p, int context)
     {
-        int column = Table.ColumnIndex(p.Text!);
-        if (column >= 0)
-        {
-            p.Op = TK.COLUMN;
-            p.Column = column;
+        if (LookupColumn(p, p.Text!, context))
             return;
-        }
 
         // At init double-quoted strings are always enabled (areDoubleQuotedStringsEnabled)
         if (p.Has(Expr.EP_DblQuoted))
@@ -301,6 +318,77 @@ internal sealed partial class SchemaParser
             return;
 
         ResolveError(context, "DDL-49", $"no such column: {p.Text}");
+    }
+
+    /// <summary>
+    /// A column of the table the expression belongs to. A partial index WHERE may also name the rowid, unless the
+    /// table is WITHOUT ROWID (TF_NoVisibleRowid):
+    ///   if( cnt==0
+    ///    &amp;&amp; cntTab>=1
+    ///    &amp;&amp; pMatch
+    ///    &amp;&amp; (pNC->ncFlags &amp; (NC_IdxExpr|NC_GenCol))==0
+    ///    &amp;&amp; sqlite3IsRowid(zCol)
+    ///    &amp;&amp; ALWAYS(VisibleRowid(pMatch->pSTab))
+    ///   ){
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/resolve.c#L623 (lookupName)
+    /// </summary>
+    private bool LookupColumn(Expr p, string name, int context)
+    {
+        ParsedTable table = _resolveTable ?? Table;
+        int column = table.ColumnIndex(name);
+        if (column >= 0)
+        {
+            p.Op = TK.COLUMN;
+            p.Column = column;
+            return true;
+        }
+
+        if (context == NC_PartIdx && !table.Has(ParsedTable.TF_WithoutRowid) && IsRowid(name))
+        {
+            p.Op = TK.COLUMN;
+            p.Column = -1;
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// sqlite3IsRowid in expr.c: rowid, _rowid_ or oid, ignoring ASCII case
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/expr.c#L3042 (sqlite3IsRowid)
+    /// </summary>
+    private static bool IsRowid(string name) =>
+        AsciiCaseInsensitiveComparer.Instance.Equals(name, "rowid") ||
+        AsciiCaseInsensitiveComparer.Instance.Equals(name, "_rowid_") ||
+        AsciiCaseInsensitiveComparer.Instance.Equals(name, "oid");
+
+    /// <summary>
+    /// lookupName in resolve.c, for "table.column" or "database.table.column" in a partial index WHERE: the table must
+    /// be the indexed one, ignoring ASCII case, and the database is ignored
+    ///   if( zDb ){
+    ///     if( (pNC->ncFlags &amp; (NC_PartIdx|NC_IsCheck))!=0 ){
+    ///       /* Silently ignore database qualifiers inside CHECK constraints and
+    ///       ** partial indices. ...
+    ///       zDb = 0;
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/resolve.c#L316 (lookupName)
+    ///         }else if( sqlite3StrICmp(zTab, pTab->zName)!=0 ){
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/resolve.c#L428 (lookupName)
+    /// </summary>
+    private void LookupQualifiedName(Expr p, int context)
+    {
+        string tableName = p.Left!.Text!;
+        Expr columnExpr = p.Right!;
+        if (columnExpr.Op == TK.DOT)
+        {
+            tableName = columnExpr.Left!.Text!;
+            columnExpr = columnExpr.Right!;
+        }
+
+        string column = columnExpr.Text!;
+        if (AsciiCaseInsensitiveComparer.Instance.Equals(tableName, (_resolveTable ?? Table).Name) && LookupColumn(p, column, context))
+            return;
+
+        ResolveError(context, "DDL-49", $"no such column: {tableName}.{column}");
     }
 
     /// <summary>
