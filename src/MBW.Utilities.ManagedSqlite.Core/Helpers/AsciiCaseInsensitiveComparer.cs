@@ -5,7 +5,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 /// <summary>
 /// Compares names the way SQLite does: case-insensitive for the ASCII letters A-Z only, so "é" and "É" are different
-/// names. This is sqlite3StrICmp in util.c (https://sqlite.org/src/file?name=src/util.c), which folds case through
+/// names. This is sqlite3StrICmp in util.c (https://github.com/sqlite/sqlite/blob/version-3.53.4/src/util.c#L416), which folds case through
 /// sqlite3UpperToLower, a table that maps only ASCII letters.
 /// </summary>
 internal sealed class AsciiCaseInsensitiveComparer : IEqualityComparer<string>
