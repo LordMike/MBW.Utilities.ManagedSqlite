@@ -42,7 +42,7 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
 - **Construction:** prefer static factories (e.g. `ReaderBase.Open`) over public constructors. The WAL work replaces
   `Sqlite3Database`'s public constructor with factories. Keep parsed state `readonly`.
 - **Nullable annotations:** the libraries are annotated. Where the compiler cannot see that a value is non-null, use
-  `!` together with `Debug.Assert(x != null)`. Don't add custom guard helpers.
+  `!` alone. Don't add a `Debug.Assert` next to it or custom guard helpers.
 - **Enum widths:** make enums as small as possible (`BTreeKind : byte`). An enum that mirrors an on-disk field keeps that
   field's width (`SqliteEncoding : uint` mirrors the 4-byte header field).
 - **Targets:** the libraries target netstandard1.0 and netstandard2.0 with `LangVersion latest`. Newer compiler features
@@ -125,7 +125,7 @@ PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= fi
 Rules:
 - **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. The
   exceptions are the entry-point wrappers that turn an unexpected exception into a `SqliteCorruptException` with an
-  inner exception. A few older direct throws remain; move them to `Checks` when you touch them.
+  inner exception.
 - **Pass the message as an interpolated string straight into the call.** The `CheckMessage` handler builds it only when
   the check fails, so a passing check allocates nothing. Don't build the message first.
 - **The check ID is the survey ID.** A check with no ID gets a new row in the right area table, with the next free
@@ -169,6 +169,11 @@ Each check gets parity tests in the corruption suite (`Core.Tests/Corruption_Tes
   (`Core.Tests/Helpers/SqliteParity.cs`). The script creates and fills its tables in real SQLite, in memory, and the
   assertion compares SQLite's view (schema, then rows) with ours. Corruption tests build a database the same way, patch
   bytes, and assert that SQLite and we fail, or read on, alike.
+- **A patch asserts what it overwrites.** Before a test changes bytes or schema rows, it asserts that the target holds
+  the value it expects, so a patch that drifts onto other bytes fails instead of testing something else.
+  `DbPatcher.WriteByte(offset, expected, value)` takes the old byte, and its structure setters assert that they are on
+  a b-tree page or header field holding a value SQLite writes. A raw edit asserts the old bytes first, and a
+  `writable_schema` edit must change exactly one row.
 - **Tests in one file look alike.** Each theory fixes the statement shape (e.g.
   `CREATE TABLE t ({columns}) WITHOUT ROWID; INSERT INTO t VALUES {values}`), and its `[InlineData]` rows give only what
   varies. All CREATE syntax lives in `Sql.Tests/SqlCreateTable_Tests.cs`.

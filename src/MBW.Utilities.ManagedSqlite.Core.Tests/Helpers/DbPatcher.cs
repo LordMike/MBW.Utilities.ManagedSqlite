@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
+using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tests.Helpers;
 
 /// <summary>
 /// Patches the structures of a copy of an in-memory SQLite database file, to build named corruption cases.
-/// See https://www.sqlite.org/fileformat.html for the layout.
+/// See https://www.sqlite.org/fileformat.html for the layout. Every write first asserts that it lands where it means
+/// to: a raw byte holds the value the caller expects, a header field holds a value SQLite writes, and a b-tree field is
+/// on a b-tree page and holds a valid value, so a patch cannot drift onto other bytes unnoticed.
 /// </summary>
 internal sealed class DbPatcher
 {
@@ -35,33 +38,67 @@ internal sealed class DbPatcher
 
     // Database header
 
-    public DbPatcher SetPageSizeField(ushort value) => WriteUInt16(16, value);
+    public DbPatcher SetPageSizeField(ushort value)
+    {
+        Assert.Equal(PageSize, ReadUInt16(16));
+        return WriteUInt16(16, value);
+    }
 
-    public DbPatcher SetReadVersion(byte value) => WriteByte(19, value);
+    public DbPatcher SetReadVersion(byte value)
+    {
+        Assert.InRange(Data[19], 1, 2);
+        return Write(19, value);
+    }
 
-    public DbPatcher SetReservedSpace(byte value) => WriteByte(20, value);
+    public DbPatcher SetReservedSpace(byte value)
+    {
+        Assert.True(PageSize - Data[20] >= 480);
+        return Write(20, value);
+    }
 
-    public DbPatcher SetMaxEmbeddedPayloadFraction(byte value) => WriteByte(21, value);
+    public DbPatcher SetMaxEmbeddedPayloadFraction(byte value) => WriteByte(21, 64, value);
 
     /// <summary>
     /// The in-header database size at offset 28. The base database's version-valid-for number equals its change
     /// counter, so the reader trusts this field.
     /// </summary>
-    public DbPatcher SetDatabaseSizeInPages(uint value) => WriteUInt32(28, value);
+    public DbPatcher SetDatabaseSizeInPages(uint value)
+    {
+        Assert.Equal((uint)PageCount, ReadUInt32(28));
+        return WriteUInt32(28, value);
+    }
 
     /// <summary>
     /// The version-valid-for number at offset 92. When it differs from the change counter, the in-header database size
     /// is ignored.
     /// </summary>
-    public DbPatcher SetVersionValidFor(uint value) => WriteUInt32(92, value);
+    public DbPatcher SetVersionValidFor(uint value)
+    {
+        Assert.Equal(ReadUInt32(24), ReadUInt32(92));
+        return WriteUInt32(92, value);
+    }
 
     // B-tree page header
 
-    public DbPatcher SetPageType(uint page, byte type) => WriteByte(BTreeHeaderOffset(page), type);
+    public DbPatcher SetPageType(uint page, byte type)
+    {
+        RequireBTreePage(page);
+        return Write(BTreeHeaderOffset(page), type);
+    }
 
-    public DbPatcher SetCellCount(uint page, ushort count) => WriteUInt16(BTreeHeaderOffset(page) + 3, count);
+    public DbPatcher SetCellCount(uint page, ushort count)
+    {
+        RequireBTreePage(page);
+        Assert.InRange(ReadUInt16(BTreeHeaderOffset(page) + 3), 0, (PageSize - 8) / 6);
+        return WriteUInt16(BTreeHeaderOffset(page) + 3, count);
+    }
 
-    public DbPatcher SetRightMostPointer(uint page, uint value) => WriteUInt32(BTreeHeaderOffset(page) + 8, value);
+    public DbPatcher SetRightMostPointer(uint page, uint value)
+    {
+        RequireInterior(page);
+        RequirePageNumber(ReadUInt32(BTreeHeaderOffset(page) + 8));
+        return WriteUInt32(BTreeHeaderOffset(page) + 8, value);
+    }
 
     /// <summary>
     /// The page-relative offset of a cell, from the cell pointer array
@@ -74,6 +111,8 @@ internal sealed class DbPatcher
 
     public DbPatcher SetCellOffset(uint page, int cell, ushort offset)
     {
+        RequireBTreePage(page);
+        Assert.InRange(GetCellOffset(page, cell), 8, PageSize - 1);
         int headerSize = IsInterior(page) ? 12 : 8;
         return WriteUInt16(BTreeHeaderOffset(page) + headerSize + 2 * cell, offset);
     }
@@ -87,6 +126,7 @@ internal sealed class DbPatcher
     public DbPatcher SetChildPointer(uint page, int cell, uint value)
     {
         RequireInterior(page);
+        RequirePageNumber(GetChildPointer(page, cell));
         return WriteUInt32(PageOffset(page) + GetCellOffset(page, cell), value);
     }
 
@@ -131,7 +171,11 @@ internal sealed class DbPatcher
 
     public uint GetOverflowPointer(uint page, int cell) => ReadUInt32(GetOverflowPointerOffset(page, cell));
 
-    public DbPatcher SetOverflowPointer(uint page, int cell, uint value) => WriteUInt32(GetOverflowPointerOffset(page, cell), value);
+    public DbPatcher SetOverflowPointer(uint page, int cell, uint value)
+    {
+        RequirePageNumber(GetOverflowPointer(page, cell));
+        return WriteUInt32(GetOverflowPointerOffset(page, cell), value);
+    }
 
     /// <summary>
     /// The pages of a cell's overflow chain, in order
@@ -148,7 +192,13 @@ internal sealed class DbPatcher
     /// <summary>
     /// Sets the next pointer at the start of an overflow page
     /// </summary>
-    public DbPatcher SetOverflowNextPointer(uint overflowPage, uint value) => WriteUInt32(PageOffset(overflowPage), value);
+    public DbPatcher SetOverflowNextPointer(uint overflowPage, uint value)
+    {
+        uint next = ReadUInt32(PageOffset(overflowPage));
+        if (next != 0)
+            RequirePageNumber(next);
+        return WriteUInt32(PageOffset(overflowPage), value);
+    }
 
     // File
 
@@ -169,7 +219,16 @@ internal sealed class DbPatcher
 
     // Primitives
 
-    public DbPatcher WriteByte(int offset, byte value)
+    /// <summary>
+    /// Overwrites the byte at <paramref name="offset"/>, which must hold <paramref name="expected"/>
+    /// </summary>
+    public DbPatcher WriteByte(int offset, byte expected, byte value)
+    {
+        Assert.Equal(expected, Data[offset]);
+        return Write(offset, value);
+    }
+
+    private DbPatcher Write(int offset, byte value)
     {
         Data[offset] = value;
         return this;
@@ -182,7 +241,7 @@ internal sealed class DbPatcher
         return this;
     }
 
-    public DbPatcher WriteUInt32(int offset, uint value)
+    private DbPatcher WriteUInt32(int offset, uint value)
     {
         Data[offset] = (byte)(value >> 24);
         Data[offset + 1] = (byte)(value >> 16);
@@ -216,4 +275,8 @@ internal sealed class DbPatcher
         if (!IsInterior(page))
             throw new InvalidOperationException($"Page {page} is not an interior page");
     }
+
+    private void RequireBTreePage(uint page) => Assert.Contains(Data[BTreeHeaderOffset(page)], new byte[] { 0x02, 0x05, 0x0A, 0x0D });
+
+    private void RequirePageNumber(uint page) => Assert.InRange(page, 2u, (uint)PageCount);
 }

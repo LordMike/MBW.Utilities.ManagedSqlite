@@ -92,9 +92,7 @@ public class Values_Tests
         {
             DbPatcher patcher = new DbPatcher(data);
             int record = patcher.GetRecordOffset(2, 0, out _);
-            Assert.Equal(0, patcher.Data[record + 1]);
-
-            return patcher.WriteByte(record + 1, serialType).Data;
+            return patcher.WriteByte(record + 1, 0, serialType).Data;
         });
     }
 

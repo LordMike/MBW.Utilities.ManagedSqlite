@@ -62,20 +62,33 @@ internal abstract class BTreePage
             cellOffsets[i] = ByteArrayReader.ReadUInt16(data, length, ref pos);
         }
 
+        // PAGE-01: the page type must be one of the four b-tree page types. decodeFlags in btree.c:
+        //     }else{
+        //       ...
+        //       return SQLITE_CORRUPT_PAGE(pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2081 (decodeFlags)
+        // PAGE-22: a child page must be of its parent's kind, table or index. moveToChild in btree.c:
+        //   if( rc==SQLITE_OK
+        //    && (pCur->pPage->nCell<1 || pCur->pPage->intKey!=pCur->curIntKey)
+        //   ){
+        //     releasePage(pCur->pPage);
+        //     rc = SQLITE_CORRUPT_PGNO(newPgno);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5472 (moveToChild)
         switch (header.Type)
         {
             case BTreeType.InteriorIndexBtreePage:
             case BTreeType.LeafIndexBtreePage:
-                if (parent == BTreeKind.Table)
-                    throw new SqliteCorruptException($"index b-tree page (type {(byte)header.Type}) inside a table b-tree", page, "b-tree page header");
+                Checks.Strict(parent != BTreeKind.Table, "PAGE-22",
+                    $"index b-tree page (type {(byte)header.Type}) inside a table b-tree", page, "b-tree page header");
                 break;
             case BTreeType.InteriorTableBtreePage:
             case BTreeType.LeafTableBtreePage:
-                if (parent == BTreeKind.Index)
-                    throw new SqliteCorruptException($"table b-tree page (type {(byte)header.Type}) inside an index b-tree", page, "b-tree page header");
+                Checks.Strict(parent != BTreeKind.Index, "PAGE-22",
+                    $"table b-tree page (type {(byte)header.Type}) inside an index b-tree", page, "b-tree page header");
                 break;
             default:
-                throw new SqliteCorruptException($"unknown b-tree page type {(byte)header.Type}", page, "b-tree page header");
+                Checks.Fail("PAGE-01", $"unknown b-tree page type {(byte)header.Type}", page, "b-tree page header");
+                break;
         }
 
         // PAGE-11, PAGE-12, CELL-08, CELL-09: the cells are not validated when the page loads. SQLite checks that every
