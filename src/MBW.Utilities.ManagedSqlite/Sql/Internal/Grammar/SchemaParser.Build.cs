@@ -49,7 +49,9 @@ internal sealed partial class SchemaParser
         //   if( pName2->n>0 ){
         //     if( db->init.busy ) {
         //       sqlite3ErrorMsg(pParse, "corrupt database");
-        if (database.Length > 0)
+        // sqlite3StartTable takes a rootpage-1 table for the schema table before it reads the name's parts
+        // (SCHEMA-19), and so does every caller below
+        if (database.Length > 0 && !IsSchemaTableRoot)
             Fail("SCHEMA-28", "corrupt database");
 
         // The name is checked against the row (sqlite3CheckObjectName, DDL-03) and against the tables and indexes

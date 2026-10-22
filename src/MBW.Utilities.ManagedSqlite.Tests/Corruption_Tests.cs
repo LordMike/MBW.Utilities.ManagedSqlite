@@ -521,6 +521,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     [Theory]
     [InlineData("u", "rootpage = 1 WHERE name = 'u'")]
     [InlineData("f", "rootpage = 1 WHERE name = 'f'")]
+    [InlineData("u", "rootpage = 1, sql = 'CREATE TABLE main.u (b)' WHERE name = 'u'")]
     public void SchemaRow_RootPageOne(string name, string update)
     {
         byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");

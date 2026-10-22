@@ -224,7 +224,7 @@ internal sealed partial class SchemaParser
         if (_variableCount > 0)
             Fail("DDL-74", "parameters are not allowed in views");
 
-        if (database.Length > 0)
+        if (database.Length > 0 && !IsSchemaTableRoot)
             Fail("SCHEMA-28", "corrupt database");
 
         string viewName = SqliteTokenizer.Dequote(Text(name));
@@ -252,7 +252,7 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void BeginVirtualTable(Token name, Token database, bool ifNotExists)
     {
-        if (database.Length > 0)
+        if (database.Length > 0 && !IsSchemaTableRoot)
             Fail("SCHEMA-28", "corrupt database");
 
         string tableName = SqliteTokenizer.Dequote(Text(name));
