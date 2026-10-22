@@ -1,13 +1,16 @@
-## MBW.Utilities.ManagedSqlite [![Generic Build](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/dotnet.yml/badge.svg)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/dotnet.yml) [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.Core.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite.Core) [![GHPackages](https://img.shields.io/badge/package-alpha-green)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692005)
+## MBW.Utilities.ManagedSqlite [![Generic Build](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/dotnet.yml/badge.svg)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/dotnet.yml) [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite) [![GHPackages](https://img.shields.io/badge/package-alpha-green)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692005)
 
 Managed C# read-only parser for SQLite3 databases. Provides access to table and row data.
 
 ## Packages
 
-| Package | Nuget | Alpha |
-| ------------- |:-------------:|:-------------:|
-| MBW.Utilities.ManagedSqlite.Core | [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.Core.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite.Core) | [Alpha](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692005) |
-| MBW.Utilities.ManagedSqlite.Sql | [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.Sql.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite.Sql) | [Alpha](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692006) |
+| Package | Nuget |
+| ------------- |:-------------:|
+| MBW.Utilities.ManagedSqlite | [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite) |
+
+`MBW.Utilities.ManagedSqlite.Core` and `MBW.Utilities.ManagedSqlite.Sql` are now part of this package. Their packages
+only forward their types to it, so code built against them keeps working; reference `MBW.Utilities.ManagedSqlite`
+instead. The namespaces are unchanged.
 
 ## How to use
 
@@ -18,7 +21,7 @@ using (Sqlite3Database db = new Sqlite3Database(fs))
     // Access all tables using db.GetTables(), or a single using db.GetTable("name")
     Sqlite3Table tbl = db.GetTable("MyTable");
     
-    // Read out the SQL schema of the table (to get column names) using the MBW.Utilities.ManagedSqlite.Sql package
+    // Read out the SQL schema of the table (to get column names)
     SqlTableDefinition schema = tbl.GetTableDefinition();
 
     // Iterate all rows on the table using EnumerateRows()
@@ -65,7 +68,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 ### Differences from SQLite
 
 * **Column DEFAULTs are applied by name only.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column, and SQLite reads the column's DEFAULT for it. `TryGetValueByName` does the same; `TryGetOrdinal` and `ColumnData` show the record as stored, without the column. A DEFAULT with a `CAST`, or a negation that is a real in a TEXT column, is not evaluated, and reads as no value. A column without a DEFAULT reads as NULL, as in SQLite.
-* **The whole schema is checked when the first table definition is asked for**, not when the database is opened, as the Sql package parses it. In Strict, a malformed table, view, index or trigger then makes every `GetTableDefinition` throw `SqliteCorruptException`, as SQLite reads no table from such a database. Lenient checks each table's own SQL only.
+* **The whole schema is checked when the first table definition is asked for**, not when the database is opened. In Strict, a malformed table, view, index or trigger then makes every `GetTableDefinition` throw `SqliteCorruptException`, as SQLite reads no table from such a database. Lenient checks each table's own SQL only.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs

@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Sql\MBW.Utilities.ManagedSqlite.Sql.csproj" />
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite\MBW.Utilities.ManagedSqlite.csproj" />
   </ItemGroup>
 
 </Project>
