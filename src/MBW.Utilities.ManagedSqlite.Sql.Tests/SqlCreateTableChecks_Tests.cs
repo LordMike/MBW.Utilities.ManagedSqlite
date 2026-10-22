@@ -17,7 +17,8 @@ public class SqlCreateTableChecks_Tests
 {
     // A WITHOUT ROWID table's SQL is stored over an index b-tree, so its rows read as SQLite's would
     private static byte[] Build(string sql) => SqliteParity.Build(
-        $"CREATE TABLE t (a{(sql.Contains("WITHOUT ROWID") ? " PRIMARY KEY) WITHOUT ROWID" : ")")}; INSERT INTO t VALUES (1); CREATE TABLE u (b); PRAGMA writable_schema = ON; UPDATE sqlite_schema SET sql = '{sql.Replace("'", "''")}' WHERE name = 't';");
+        $"CREATE TABLE t (a{(sql.Contains("WITHOUT ROWID") ? " PRIMARY KEY) WITHOUT ROWID" : ")")}; INSERT INTO t VALUES (1); CREATE TABLE u (b);",
+        $"UPDATE sqlite_schema SET sql = '{sql.Replace("'", "''")}' WHERE name = 't'");
 
     private static SqliteCorruptException ReadDefinition(byte[] data, Sqlite3Settings settings = null)
     {
@@ -140,7 +141,7 @@ public class SqlCreateTableChecks_Tests
     // A key term in parentheses is still a column
     [InlineData("CREATE TABLE t (a, PRIMARY KEY ((a)))")]
     public void AcceptedLikeSqlite(string sql) => SqliteParity.AssertSameAsSqlite(
-        $"CREATE TABLE t (a); INSERT INTO t VALUES (1); PRAGMA writable_schema = ON; UPDATE sqlite_schema SET sql = '{sql.Replace("'", "''")}' WHERE name = 't';");
+        "CREATE TABLE t (a); INSERT INTO t VALUES (1);", $"UPDATE sqlite_schema SET sql = '{sql.Replace("'", "''")}' WHERE name = 't'");
 
     /// <summary>
     /// SQLite's limits: the parser stack (SQLITE_MAX_PARSER_DEPTH, 2500), the expression depth (SQLITE_MAX_EXPR_DEPTH,

@@ -395,7 +395,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void SchemaRootPage_Zero() => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, 0));
 
-    // Schema rows. Each script edits sqlite_schema with writable_schema, after a schema of tables, a view, an index, a
+    // Schema rows. Each case edits one sqlite_schema row with writable_schema, after a schema of tables, a view, an index, a
     // trigger, a table with an automatic index and a virtual table.
     private const string SchemaScript = @"
 CREATE TABLE t (a); INSERT INTO t VALUES (1);
@@ -405,7 +405,6 @@ CREATE INDEX i ON t (a);
 CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END;
 CREATE TABLE k (x PRIMARY KEY);
 CREATE VIRTUAL TABLE f USING fts5(c);
-PRAGMA writable_schema = ON;
 ";
 
     /// <summary>
@@ -436,7 +435,7 @@ PRAGMA writable_schema = ON;
     [InlineData("DDL-58", "sql = 'CREATE TABLE u AS SELECT 1' WHERE name = 'u'")]
     public void SchemaRow_CorruptLikeSqlite(string check, string update)
     {
-        byte[] data = SqliteParity.Build(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+        byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
         SqliteParity.AssertSqliteReportsCorrupt(data, "t");
 
         foreach (SqliteValidation validation in new[] { SqliteValidation.Strict, SqliteValidation.Lenient })
@@ -450,7 +449,7 @@ PRAGMA writable_schema = ON;
     // stored as an integer, the column's affinity.)
     [Fact]
     public void SchemaRow_RootPageBlob() =>
-        SqliteParity.AssertSameAsSqlite(SchemaScript + "UPDATE sqlite_schema SET rootpage = CAST(CAST(rootpage AS TEXT) AS BLOB) WHERE name = 'u';");
+        SqliteParity.AssertSameAsSqlite(SchemaScript, "UPDATE sqlite_schema SET rootpage = CAST(CAST(rootpage AS TEXT) AS BLOB) WHERE name = 'u'");
 
     /// <summary>
     /// SCHEMA-26, DDL-03: a CREATE row's type, name and tbl_name must agree with its SQL. SQLite skips this with
@@ -465,7 +464,7 @@ PRAGMA writable_schema = ON;
     [InlineData("DDL-03", "sql = 'CREATE TABLE w (b)' WHERE name = 'u'")]
     public void SchemaRow_NamesDisagreeWithSql(string check, string update)
     {
-        byte[] data = SqliteParity.Build(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+        byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
         SqliteParity.AssertSqliteReportsCorrupt(data, "t");
 
         SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() =>
@@ -491,13 +490,13 @@ PRAGMA writable_schema = ON;
     [InlineData("sql = sql || char(0) || 'garbage ((' WHERE name = 'u'")]
     [InlineData("rootpage = 1 WHERE name = 'tr'")]
     [InlineData("sql = 'CREATE  /* x */ VIRTUAL TABLE f USING fts5(c)' WHERE name = 'f'")]
-    public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript + $"UPDATE sqlite_schema SET {update};");
+    public void SchemaRow_ValuesReadLikeSqlite(string update) => SqliteParity.AssertSameAsSqlite(SchemaScript, $"UPDATE sqlite_schema SET {update}");
 
     // SCHEMA-58: SQLite tolerates a rootpage on a virtual table, and never reads it as a b-tree
     [Fact]
     public void SchemaRow_VirtualTableWithRootPage()
     {
-        byte[] data = SqliteParity.Build(SchemaScript + "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 't') WHERE name = 'f';");
+        byte[] data = SqliteParity.Build(SchemaScript, "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 't') WHERE name = 'f'");
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
         Assert.Throws<NotSupportedException>(() => db.GetTable("f"));
