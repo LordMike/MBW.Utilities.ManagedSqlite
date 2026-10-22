@@ -37,7 +37,17 @@ internal sealed partial class SchemaParser
     private readonly string _objectName;
     private readonly Sqlite3Settings _settings;
 
-    private StackEntry[] _stack = new StackEntry[50];
+    /// <summary>
+    /// The parser stack, taken from <see cref="_spareStack"/> for the length of <see cref="Run"/>
+    /// </summary>
+    private StackEntry[] _stack = null!;
+
+    /// <summary>
+    /// The stack of the last parse on this thread, cleared, so parsing a schema's statements one after the other does
+    /// not allocate a stack for each. A parse inside a parse finds none and makes its own.
+    /// </summary>
+    [ThreadStatic]
+    private static StackEntry[]? _spareStack;
     private int _top;
 
     /// <summary>
@@ -121,6 +131,22 @@ internal sealed partial class SchemaParser
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/tokenize.c#L600 (sqlite3RunParser)
     /// </summary>
     private void Run()
+    {
+        _stack = _spareStack ?? new StackEntry[50];
+        _spareStack = null;
+        try
+        {
+            RunParser();
+        }
+        finally
+        {
+            // Drop the values the stack refers to, so the spare keeps nothing alive
+            Array.Clear(_stack, 0, _stack.Length);
+            _spareStack = _stack;
+        }
+    }
+
+    private void RunParser()
     {
         string z = _sql;
         int pos = 0;
