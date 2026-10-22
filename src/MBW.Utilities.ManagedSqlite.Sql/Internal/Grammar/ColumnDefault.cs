@@ -1,6 +1,5 @@
 using System;
 using System.Globalization;
-using System.Text.RegularExpressions;
 
 namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
@@ -12,15 +11,16 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 ///                        sqlite3ColumnExpr(pTab,pCol), enc,
 ///                        pCol->affinity, &amp;pValue);
 /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/update.c#L61 (sqlite3ColumnDefault)
-/// sqlite3ValueFromExpr evaluates only a literal, a negated number, a CAST of those, TRUE or FALSE; for anything else it
+/// sqlite3ValueFromExpr evaluates only a literal, TRUE, FALSE, and a negation or CAST of those; for anything else it
 /// makes no value, and the column reads as NULL. ALTER TABLE ADD COLUMN refuses a DEFAULT it cannot evaluate ("Cannot
 /// add a column with non-constant default").
 /// </summary>
 internal static class ColumnDefault
 {
     /// <summary>
-    /// The value of <paramref name="expr"/>, the column's default, or null when there is none. False for a CAST and for
-    /// a negated negation, which this library does not evaluate.
+    /// The value of <paramref name="expr"/>, the column's default, or null when there is none. False for a CAST, which
+    /// this library does not evaluate, and for a negation that is a real in a TEXT column, as SQLite's real formatting
+    /// is not ported.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L1795 (valueFromExpr)
     /// </summary>
     public static bool TryEvaluate(Expr? expr, char affinity, out object? value)
@@ -80,7 +80,10 @@ internal static class ColumnDefault
             if (affinity == ParsedColumn.AFF_BLOB)
             {
                 if (op == TK.FLOAT)
-                    value = ParseReal((string)value);
+                {
+                    AtoF((string)value, out double real);
+                    value = real;
+                }
                 else if (op == TK.INTEGER)
                     value = ApplyAffinity(value, ParsedColumn.AFF_NUMERIC);
             }
@@ -92,24 +95,43 @@ internal static class ColumnDefault
 
         if (op == TK.UMINUS)
         {
-            // -(-5), or a negated hexadecimal literal: the operand's value, made numeric and negated
+            // Any other negation, such as -'5' or -(-5): the operand's value, made numeric and negated
             //   if( SQLITE_OK==valueFromExpr(db,pExpr->pLeft,enc,affinity,&pVal,pCtx)
             //    && pVal!=0
             //   ){
             //     sqlite3VdbeMemNumerify(pVal);
-            // Only a negated hexadecimal literal is evaluated here, as its value is an integer; the rest would need
-            // sqlite3VdbeMemNumerify's text conversions.
-            Expr left = expr.Left!;
-            if (left.Op != TK.INTEGER || (left.Flags & Expr.EP_IntValue) != 0 || !TryDecOrHexToI64(left.Text!, out long hex))
-                return false;
-
+            //     if( pVal->flags & MEM_Real ){
+            //       pVal->u.r = -pVal->u.r;
             //     }else if( pVal->u.i==SMALLEST_INT64 ){
             //       pVal->u.r = -(double)SMALLEST_INT64;
-            // That real would be made text for a TEXT column, with SQLite's real formatting, which is not ported
-            if (hex == long.MinValue && affinity == ParsedColumn.AFF_TEXT)
+            //       MemSetTypeFlag(pVal, MEM_Real);
+            //     }else{
+            //       pVal->u.i = -pVal->u.i;
+            //     }
+            //     sqlite3ValueApplyAffinity(pVal, affinity, enc);
+            if (!TryEvaluate(expr.Left, affinity, out object? operand))
                 return false;
 
-            value = ApplyAffinity(hex == long.MinValue ? -(double)long.MinValue : (object)(-hex), affinity);
+            // NULL, or no value, stays so
+            if (operand == null)
+                return true;
+
+            object number = Numerify(operand);
+            if (number is double real)
+            {
+                // A real is made text for a TEXT column with SQLite's real formatting, which is not ported
+                if (affinity == ParsedColumn.AFF_TEXT)
+                    return false;
+                value = ApplyAffinity(-real, affinity);
+            }
+            else
+            {
+                long integer = (long)number;
+                if (integer == long.MinValue && affinity == ParsedColumn.AFF_TEXT)
+                    return false;
+                value = ApplyAffinity(integer == long.MinValue ? -(double)long.MinValue : (object)(-integer), affinity);
+            }
+
             return true;
         }
 
@@ -198,10 +220,6 @@ internal static class ColumnDefault
         return value;
     }
 
-    // sqlite3AtoF in util.c, for text that is a number from start to end: optional white space, a sign, digits with
-    // an optional '.', an optional exponent, and optional white space
-    private static readonly Regex Number = new Regex(@"^[ \t\n\v\f\r]*[+-]?([0-9]+\.?[0-9]*|\.[0-9]+)([eE][+-]?[0-9]+)?[ \t\n\v\f\r]*$");
-
     /// <summary>
     /// applyNumericAffinity in vdbe.c, with bTryForInt: text that is a number becomes an integer when it is written as
     /// one and fits, otherwise a real, which is then an integer if it is a whole number that fits. Other text is kept.
@@ -213,19 +231,60 @@ internal static class ColumnDefault
     ///     pRec->u.r = rValue;
     ///     pRec->flags |= MEM_Real;
     ///     if( bTryForInt ) sqlite3VdbeIntegerAffinity(pRec);
-    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L357 (applyNumericAffinity)
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L354 (applyNumericAffinity)
     /// </summary>
     private static object ApplyNumericAffinity(string text)
     {
-        Match match = Number.Match(text);
-        if (!match.Success)
+        int rc = AtoF(text, out double real);
+        if (rc <= 0)
             return text;
 
-        if (!text.Contains(".") && !match.Groups[2].Success &&
-            long.TryParse(text.Trim(' ', '\t', '\n', '\v', '\f', '\r'), NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out long integer))
-            return integer;
+        // alsoAnInt in vdbe.c: the real is an integer below 2^51, or the text is an integer that fits
+        if ((rc & 2) == 0)
+        {
+            long ix = RealToI64(real);
+            if (RealSameAsInt(real, ix))
+                return ix;
+            if (Atoi64(text, out ix) == 0)
+                return ix;
+        }
 
-        return IntegerAffinity(ParseReal(text));
+        return IntegerAffinity(real);
+    }
+
+    /// <summary>
+    /// sqlite3VdbeMemNumerify in vdbemem.c: text, or a blob's bytes, becomes the number it starts with (0 when none),
+    /// an integer when it is written as one that fits, or a whole real below 2^51
+    ///   rc = sqlite3MemRealValueRC(pMem, &amp;pMem->u.r);
+    ///   if( ((rc&amp;2)==0 &amp;&amp; sqlite3Atoi64(pMem->z, &amp;ix, pMem->n, pMem->enc)&lt;2)
+    ///    || sqlite3RealSameAsInt(pMem->u.r, (ix = sqlite3RealToI64(pMem->u.r)))
+    ///   ){
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L893 (sqlite3VdbeMemNumerify)
+    /// </summary>
+    private static object Numerify(object value)
+    {
+        if (value is long || value is double)
+            return value;
+
+        string text;
+        if (value is byte[] blob)
+        {
+            // The bytes as the C string SQLite reads, which only matters up to the first byte that is not part of a
+            // number
+            char[] chars = new char[blob.Length];
+            for (int i = 0; i < blob.Length; i++)
+                chars[i] = (char)blob[i];
+            text = new string(chars);
+        }
+        else
+            text = (string)value;
+
+        int rc = AtoF(text, out double real);
+        if ((rc & 2) == 0 && Atoi64(text, out long ix) < 2)
+            return ix;
+
+        ix = RealToI64(real);
+        return RealSameAsInt(real, ix) ? ix : real;
     }
 
     /// <summary>
@@ -237,21 +296,196 @@ internal static class ColumnDefault
     /// </summary>
     private static object IntegerAffinity(double real)
     {
-        long ix = real < -9223372036854774784.0 ? long.MinValue : real > 9223372036854774784.0 ? long.MaxValue : (long)real;
+        long ix = RealToI64(real);
         return real == ix && ix > long.MinValue && ix < long.MaxValue ? (object)ix : real;
     }
 
     /// <summary>
-    /// The real of numeric text, rounded to nearest; a number too large for a double is infinite, as from sqlite3AtoF
+    /// sqlite3RealToI64 in vdbemem.c
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L879 (sqlite3RealToI64)
     /// </summary>
-    private static double ParseReal(string text)
-    {
-        text = text.Trim(' ', '\t', '\n', '\v', '\f', '\r');
-        if (double.TryParse(text, NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent,
-                CultureInfo.InvariantCulture, out double real))
-            return real;
+    private static long RealToI64(double r) =>
+        r < -9223372036854774784.0 ? long.MinValue : r > 9223372036854774784.0 ? long.MaxValue : (long)r;
 
-        // Older frameworks fail on overflow instead of returning infinity
-        return text[0] == '-' ? double.NegativeInfinity : double.PositiveInfinity;
+    /// <summary>
+    /// sqlite3RealSameAsInt in vdbemem.c: zero, or the same bits as the integer, which is below 2^51
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L868 (sqlite3RealSameAsInt)
+    /// </summary>
+    private static bool RealSameAsInt(double r, long i) =>
+        r == 0.0 || (BitConverter.DoubleToInt64Bits(r) == BitConverter.DoubleToInt64Bits(i) && i >= -2251799813685248L && i < 2251799813685248L);
+
+    private static bool IsSpace(char c) => c == ' ' || (c >= '\t' && c <= '\r');
+
+    private static char At(string z, int i) => i < z.Length ? z[i] : '\0';
+
+    /// <summary>
+    /// sqlite3AtoF in util.c. The value is s * 10^d for a 64-bit mantissa s, so only about the first 19 significant
+    /// digits count, as in SQLite. The result is the mState bits (1: a digit, 2: a '.' or an exponent) when the whole
+    /// text is a number, negative when only a prefix is, and 0 when none is.
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/util.c#L871 (sqlite3AtoF)
+    /// </summary>
+    private static int AtoF(string z, out double result)
+    {
+        const ulong limit = (ulong.MaxValue - 9) / 10;
+        int p = 0;
+        bool neg = false;
+        ulong s = 0;
+        int d = 0;
+        int mState = 0;
+
+        while (IsSpace(At(z, p)))
+            p++;
+        if (At(z, p) == '-' || At(z, p) == '+')
+        {
+            neg = At(z, p) == '-';
+            p++;
+        }
+
+        if (IsDigit(At(z, p)))
+        {
+            mState = 1;
+            s = (ulong)(At(z, p++) - '0');
+            while (IsDigit(At(z, p)))
+            {
+                s = s * 10 + (ulong)(At(z, p++) - '0');
+                if (s >= limit)
+                {
+                    mState = 9;
+                    while (IsDigit(At(z, p)))
+                    {
+                        p++;
+                        d++;
+                    }
+
+                    break;
+                }
+            }
+        }
+
+        if (At(z, p) == '.')
+        {
+            p++;
+            if (IsDigit(At(z, p)))
+            {
+                mState |= 1;
+                do
+                {
+                    if (s < limit)
+                    {
+                        s = s * 10 + (ulong)(At(z, p) - '0');
+                        d--;
+                    }
+                    else
+                        mState = 11;
+                } while (IsDigit(At(z, ++p)));
+            }
+            else if (mState == 0)
+            {
+                result = 0.0;
+                return 0;
+            }
+
+            mState |= 2;
+        }
+        else if (mState == 0)
+        {
+            result = 0.0;
+            return 0;
+        }
+
+        if (At(z, p) == 'e' || At(z, p) == 'E')
+        {
+            int q = p + 1;
+            int esign = 1;
+            if (At(z, q) == '-')
+            {
+                esign = -1;
+                q++;
+            }
+            else if (At(z, q) == '+')
+                q++;
+
+            if (IsDigit(At(z, q)))
+            {
+                int exp = 0;
+                while (IsDigit(At(z, q)))
+                {
+                    exp = exp < 10000 ? exp * 10 + (At(z, q) - '0') : 10000;
+                    q++;
+                }
+
+                mState |= 2;
+                d += esign * exp;
+                p = q;
+            }
+        }
+
+        // sqlite3Fp10Convert2 rounds s * 10^d to the nearest double, as parsing that text does
+        if (s == 0)
+            result = 0.0;
+        else if (!double.TryParse(s.ToString(CultureInfo.InvariantCulture) + "E" + d.ToString(CultureInfo.InvariantCulture),
+                     NumberStyles.AllowExponent | NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out result))
+            // Older frameworks fail on overflow instead of returning infinity
+            result = double.PositiveInfinity;
+        if (neg)
+            result = -result;
+
+        while (IsSpace(At(z, p)))
+            p++;
+        return At(z, p) == '\0' ? mState : unchecked((int)0xfffffff0) | mState;
     }
+
+    /// <summary>
+    /// sqlite3Atoi64 in util.c: white space, a sign, and the digits that follow, as a 64-bit integer. 0 when that is all
+    /// the text and it fits, 1 when other text follows, 2 or 3 when it does not fit, -1 for no digits.
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/util.c#L1166 (sqlite3Atoi64)
+    /// </summary>
+    private static int Atoi64(string z, out long value)
+    {
+        int p = 0;
+        bool neg = false;
+        while (IsSpace(At(z, p)))
+            p++;
+        if (At(z, p) == '-' || At(z, p) == '+')
+            neg = z[p++] == '-';
+
+        int start = p;
+        while (At(z, p) == '0')
+            p++;
+        int first = p;
+        ulong u = 0;
+        while (IsDigit(At(z, p)))
+            u = unchecked(u * 10 + (ulong)(z[p++] - '0'));
+        int digits = p - first;
+
+        value = u > long.MaxValue ? (neg ? long.MinValue : long.MaxValue) : neg ? -(long)u : (long)u;
+
+        int rc = 0;
+        if (digits == 0 && first == start)
+            rc = -1;
+        else
+        {
+            for (int k = p; At(z, k) != '\0'; k++)
+            {
+                if (!IsSpace(z[k]))
+                {
+                    rc = 1;
+                    break;
+                }
+            }
+        }
+
+        if (digits < 19)
+            return rc;
+
+        // A 19-digit number against 9223372036854775808; more digits never fit
+        int c = digits > 19 ? 1 : string.CompareOrdinal(z.Substring(first, 19), "9223372036854775808");
+        if (c < 0)
+            return rc;
+        if (c > 0)
+            return 2;
+        return neg ? rc : 3;
+    }
+
+    private static bool IsDigit(char c) => c >= '0' && c <= '9';
 }
