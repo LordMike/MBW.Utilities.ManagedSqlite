@@ -173,7 +173,7 @@ Each check gets parity tests in the corruption suite (`Core.Tests/Corruption_Tes
   the value it expects, so a patch that drifts onto other bytes fails instead of testing something else.
   `DbPatcher.WriteByte(offset, expected, value)` takes the old byte, and its structure setters assert that they are on
   a b-tree page or header field holding a value SQLite writes. A raw edit asserts the old bytes first, and a
-  `writable_schema` edit must change exactly one row.
+  `writable_schema` edit asserts how many rows it changed (`SqliteParity.Build(script, edit, rows)`).
 - **Tests in one file look alike.** Each theory fixes the statement shape (e.g.
   `CREATE TABLE t ({columns}) WITHOUT ROWID; INSERT INTO t VALUES {values}`), and its `[InlineData]` rows give only what
   varies. All CREATE syntax lives in `Sql.Tests/SqlCreateTable_Tests.cs`.
