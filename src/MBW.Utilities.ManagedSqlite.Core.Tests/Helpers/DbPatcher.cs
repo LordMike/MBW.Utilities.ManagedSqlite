@@ -40,7 +40,9 @@ internal sealed class DbPatcher
 
     public DbPatcher SetPageSizeField(ushort value)
     {
-        Assert.Equal(PageSize, ReadUInt16(16));
+        // A page size SQLite writes: a power of two in 512..32768, or 1 for 65536
+        ushort old = ReadUInt16(16);
+        Assert.True(old == 1 || (old >= 512 && old <= 32768 && (old & (old - 1)) == 0), $"page size field {old}");
         return WriteUInt16(16, value);
     }
 
