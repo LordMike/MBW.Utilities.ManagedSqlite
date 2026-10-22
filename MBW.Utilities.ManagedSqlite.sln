@@ -33,6 +33,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite", "src\MBW.Utilities.ManagedSqlite\MBW.Utilities.ManagedSqlite.csproj", "{2F879601-61DE-43F0-9644-6F6329566D02}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SqliteGrammarGenerator", "tools\SqliteGrammarGenerator\SqliteGrammarGenerator.csproj", "{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -71,6 +73,10 @@ Global
 		{2F879601-61DE-43F0-9644-6F6329566D02}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2F879601-61DE-43F0-9644-6F6329566D02}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2F879601-61DE-43F0-9644-6F6329566D02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
