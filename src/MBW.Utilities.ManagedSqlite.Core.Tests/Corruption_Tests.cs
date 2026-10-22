@@ -342,7 +342,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     /// <summary>
     /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
-    /// an interior table page. The root page alone can't tell, so the check is in the Sql package, which knows the SQL.
+    /// an interior table page. The root page alone can't tell, so GetTableDefinition, which knows the SQL, checks it.
     /// </summary>
     [Theory]
     [InlineData("Small", 0x0A)]
@@ -436,6 +436,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     [InlineData("SCHEMA-26", "name = NULL WHERE name = 'u'")]
     [InlineData("DDL-58", "rootpage = 2 WHERE name = 'v'")]
     [InlineData("DDL-58", "sql = 'CREATE TABLE u AS SELECT 1' WHERE name = 'u'")]
+    [InlineData("DDL-58", "sql = 'CREATE /* c */ TEMPORARY TABLE IF NOT EXISTS main.\"u\" -- c' || char(10) || 'AS SELECT 1' WHERE name = 'u'")]
     public void SchemaRow_CorruptLikeSqlite(string check, string update)
     {
         byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");

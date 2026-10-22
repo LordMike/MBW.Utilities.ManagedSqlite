@@ -17,8 +17,8 @@ public sealed class Sqlite3Table
 
     /// <summary>
     /// True when the table's root page is an index b-tree page, which is how SQLite stores a WITHOUT ROWID table. A
-    /// rowid table's root page is a table b-tree page. This comes from the root page alone: the core does not parse
-    /// the schema SQL, so it can't tell when the two disagree, which SQLite reports as corrupt. The Sql package checks
+    /// rowid table's root page is a table b-tree page. This comes from the root page alone, without parsing the
+    /// schema SQL, so it can't tell when the two disagree, which SQLite reports as corrupt. GetTableDefinition checks
     /// that when it pairs a table with its definition.
     /// </summary>
     public bool IsWithoutRowId => RootPage is BTreeIndexPage;

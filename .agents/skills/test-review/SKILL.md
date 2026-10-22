@@ -7,7 +7,7 @@ description: "Review this repo's tests or the tests in a diff; propose which to 
 
 The goal is fewer tests, fewer lines in the tests that remain, and the right tests. A test earns its place by guarding a behaviour a caller of the library relies on that no other test already guards. The review also names the behaviours no test guards. The reviewer finds and proposes; the author deletes after verifying.
 
-The library is a read-only, 1:1 reader of SQLite files: open a database, list and open tables, enumerate rows and their values, and (Sql package) parse the schema and resolve columns by name, including the rowid alias. Writes and SQL execution are out of scope, so tests for them are out of scope too. Corrupt files must fail gracefully.
+The library is a read-only, 1:1 reader of SQLite files: open a database, list and open tables, enumerate rows and their values, and parse the schema and resolve columns by name, including the rowid alias. Writes and SQL execution are out of scope, so tests for them are out of scope too. Corrupt files must fail gracefully.
 
 Code coverage is not the measure. Never keep or add a test only to cover a line, and do not ask for tests of guard clauses such as argument null checks.
 
@@ -25,7 +25,7 @@ A test in between, such as one that re-walks the varint cases through a whole da
 
 ## Principles
 
-1. **Test the public surface.** `Sqlite3Database`, `GetTables`/`GetTable`, `Sqlite3Table.EnumerateRows`, `Sqlite3Row` values, and the Sql package's table definition and by-name lookup. A test that reaches into `BTreePage` or other internals to pin a step breaks on refactors that change nothing a caller sees, unless it is a unit test of that helper's contract.
+1. **Test the public surface.** `Sqlite3Database`, `GetTables`/`GetTable`, `Sqlite3Table.EnumerateRows`, `Sqlite3Row` values, and the table definition and by-name lookup. A test that reaches into `BTreePage` or other internals to pin a step breaks on refactors that change nothing a caller sees, unless it is a unit test of that helper's contract.
 2. **One API path per assertion.** Use `GetTable()` and assert on its result. Use `TryGetTable` (or another `Try*`) only where its false result is the behaviour under test. Testing both `TryGetX` and `GetX` for the same lookup is one test too many.
 3. **One behaviour, one test.** Two tests that fail for the same defect are one test. Separate test classes per data type that each build a database, open it and enumerate rows are rows of one parity theory.
 4. **Chosen cases, not matrices.** For values, the cases that matter are the storage-class boundaries SQLite itself distinguishes: each integer serial type width and its sign edge, the constants 0 and 1 (serial types 8 and 9), REAL, empty and non-empty TEXT in each encoding, BLOB, NULL, and values that spill to overflow pages. A grid that repeats a case within the same serial type guards nothing new.

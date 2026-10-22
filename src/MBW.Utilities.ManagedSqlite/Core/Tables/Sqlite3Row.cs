@@ -18,7 +18,7 @@ public sealed class Sqlite3Row
     /// <summary>
     /// The values of the row's record, in the order they are stored. For a rowid table that is the declared column
     /// order. For a WITHOUT ROWID table it is the primary key columns first, in primary key order, then the other
-    /// columns in declared order; the Sql package's <c>TryGetValueByName</c> resolves names in both cases.
+    /// columns in declared order; <c>TryGetValueByName</c> resolves names in both cases.
     ///
     /// This decodes the whole record, so damage anywhere in it throws. <see cref="TryGetOrdinal(ushort, out object?)"/>
     /// decodes only up to the field asked for, as SQLite does.

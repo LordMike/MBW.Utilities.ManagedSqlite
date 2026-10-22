@@ -2,6 +2,7 @@ using System;
 using System.Globalization;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
 
@@ -94,10 +95,10 @@ internal static class SchemaSql
         sql != null && sql.Length >= 2 && (sql[0] | 0x20) == 'c' && (sql[1] | 0x20) == 'r';
 
     /// <summary>
-    /// The kind of object the statement creates, from its leading keywords as SQLite's grammar reads them (cmd in
+    /// The kind of object the statement creates, from its leading tokens as SQLite's grammar reads them (cmd in
     /// parse.y): CREATE [TEMP | TEMPORARY] TABLE, CREATE VIRTUAL TABLE, CREATE [TEMP] VIEW, CREATE [UNIQUE] INDEX and
-    /// CREATE [TEMP] TRIGGER. Whitespace and comments between the keywords are skipped, as sqlite3GetToken in tokenize.c
-    /// skips them. Anything else is a syntax error to SQLite.
+    /// CREATE [TEMP] TRIGGER. The tokens come from the port of SQLite's tokenizer, which skips whitespace and comments as
+    /// sqlite3GetToken does. Anything else is a syntax error to SQLite, which the parser reports when the SQL is parsed.
     /// </summary>
     public static SchemaObjectKind GetKind(string? sql)
     {
@@ -105,36 +106,35 @@ internal static class SchemaSql
             return SchemaObjectKind.None;
 
         int pos = 0;
-        if (!IsWord(sql!, ref pos, "CREATE"))
+        if (NextToken(sql!, ref pos) != TK.CREATE)
             return SchemaObjectKind.Unknown;
 
-        int afterCreate = pos;
-        if (IsWord(sql!, ref pos, "VIRTUAL"))
-            return IsWord(sql!, ref pos, "TABLE") ? SchemaObjectKind.VirtualTable : SchemaObjectKind.Unknown;
+        int token = NextToken(sql!, ref pos);
+        switch (token)
+        {
+            case TK.VIRTUAL:
+                return NextToken(sql!, ref pos) == TK.TABLE ? SchemaObjectKind.VirtualTable : SchemaObjectKind.Unknown;
+            case TK.UNIQUE:
+                return NextToken(sql!, ref pos) == TK.INDEX ? SchemaObjectKind.Index : SchemaObjectKind.Unknown;
+            case TK.INDEX:
+                return SchemaObjectKind.Index;
+            case TK.TEMP:
+                // TEMP and TEMPORARY are both TK_TEMP
+                token = NextToken(sql!, ref pos);
+                break;
+        }
 
-        pos = afterCreate;
-        if (IsWord(sql!, ref pos, "UNIQUE"))
-            return IsWord(sql!, ref pos, "INDEX") ? SchemaObjectKind.Index : SchemaObjectKind.Unknown;
-
-        pos = afterCreate;
-        if (IsWord(sql!, ref pos, "INDEX"))
-            return SchemaObjectKind.Index;
-
-        pos = afterCreate;
-        if (!IsWord(sql!, ref pos, "TEMP") && !IsWord(sql!, ref pos, "TEMPORARY"))
-            pos = afterCreate;
-
-        int afterTemp = pos;
-        if (IsWord(sql!, ref pos, "TABLE"))
-            return IsCreateTableAsSelect(sql!, pos) ? SchemaObjectKind.TableAsSelect : SchemaObjectKind.Table;
-        pos = afterTemp;
-        if (IsWord(sql!, ref pos, "VIEW"))
-            return SchemaObjectKind.View;
-        pos = afterTemp;
-        if (IsWord(sql!, ref pos, "TRIGGER"))
-            return SchemaObjectKind.Trigger;
-
-        return SchemaObjectKind.Unknown;
+        switch (token)
+        {
+            case TK.TABLE:
+                return IsCreateTableAsSelect(sql!, pos) ? SchemaObjectKind.TableAsSelect : SchemaObjectKind.Table;
+            case TK.VIEW:
+                return SchemaObjectKind.View;
+            case TK.TRIGGER:
+                return SchemaObjectKind.Trigger;
+            default:
+                return SchemaObjectKind.Unknown;
+        }
     }
 
     /// <summary>
@@ -144,119 +144,36 @@ internal static class SchemaSql
     private static bool IsCreateTableAsSelect(string sql, int pos)
     {
         int afterTable = pos;
-        if (!(IsWord(sql, ref pos, "IF") && IsWord(sql, ref pos, "NOT") && IsWord(sql, ref pos, "EXISTS")))
+        if (!(NextToken(sql, ref pos) == TK.IF && NextToken(sql, ref pos) == TK.NOT && NextToken(sql, ref pos) == TK.EXISTS))
             pos = afterTable;
 
-        if (!SkipName(sql, ref pos))
+        // nm ::= id | STRING | JOIN_KW, where a keyword with a fallback to ID is an id too
+        if (SqliteTokenizer.PeekNameToken(sql, ref pos) != TK.ID)
             return false;
 
-        int dot = SkipSpaceAndComments(sql, pos);
-        if (dot < sql.Length && sql[dot] == '.')
+        int afterName = pos;
+        if (NextToken(sql, ref pos) == TK.DOT)
         {
-            pos = dot + 1;
-            if (!SkipName(sql, ref pos))
+            if (SqliteTokenizer.PeekNameToken(sql, ref pos) != TK.ID)
                 return false;
         }
+        else
+            pos = afterName;
 
-        return IsWord(sql, ref pos, "AS");
+        return NextToken(sql, ref pos) == TK.AS;
     }
 
     /// <summary>
-    /// Skips one name: an unquoted word, or one quoted with "", '', `` or [] (doubled quotes inside are escapes)
+    /// The type of the next token that is not whitespace or a comment, moving <paramref name="pos"/> past it
     /// </summary>
-    private static bool SkipName(string sql, ref int pos)
+    private static int NextToken(string sql, ref int pos)
     {
-        int i = SkipSpaceAndComments(sql, pos);
-        if (i >= sql.Length)
-            return false;
-
-        char c = sql[i];
-        if (c == '"' || c == '\'' || c == '`' || c == '[')
+        int token;
+        do
         {
-            char close = c == '[' ? ']' : c;
-            for (i++; i < sql.Length; i++)
-            {
-                if (sql[i] != close)
-                    continue;
-                if (close != ']' && i + 1 < sql.Length && sql[i + 1] == close)
-                {
-                    i++;
-                    continue;
-                }
+            pos += SqliteTokenizer.GetToken(sql, pos, out token);
+        } while (token is TK.SPACE or TK.COMMENT);
 
-                pos = i + 1;
-                return true;
-            }
-
-            return false;
-        }
-
-        int start = i;
-        while (i < sql.Length && IsIdChar(sql[i]))
-            i++;
-        if (i == start)
-            return false;
-
-        pos = i;
-        return true;
-    }
-
-    /// <summary>
-    /// Skips whitespace and comments, then reads one unquoted word and compares it with <paramref name="keyword"/>,
-    /// ignoring ASCII case. Moves <paramref name="pos"/> past the word only when it matches.
-    /// </summary>
-    private static bool IsWord(string sql, ref int pos, string keyword)
-    {
-        int i = SkipSpaceAndComments(sql, pos);
-        int start = i;
-        while (i < sql.Length && IsIdChar(sql[i]))
-            i++;
-
-        if (i == start || (sql[start] >= '0' && sql[start] <= '9') || sql[start] == '$' ||
-            !AsciiCaseInsensitiveComparer.Instance.Equals(sql.Substring(start, i - start), keyword))
-            return false;
-
-        pos = i;
-        return true;
-    }
-
-    /// <summary>
-    /// An identifier character (IdChar in tokenize.c): an ASCII letter or digit, '_', '$', or any character outside ASCII
-    /// </summary>
-    private static bool IsIdChar(char c) =>
-        c > 0x7F || c == '_' || c == '$' || (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9');
-
-    /// <summary>
-    /// Whitespace starts with a space, tab, line feed, form feed or carriage return and may go on with a vertical tab
-    /// (CC_SPACE, then sqlite3Isspace); "--" runs to the end of the line and "/*" to "*/" or the end of the text.
-    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/tokenize.c#L279 (sqlite3GetToken)
-    /// </summary>
-    private static int SkipSpaceAndComments(string sql, int i)
-    {
-        while (i < sql.Length)
-        {
-            char c = sql[i];
-            // A byte order mark is whitespace too (CC_BOM, tokenize.c:575)
-            if (c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r' || c == '\uFEFF')
-            {
-                i++;
-                while (i < sql.Length && (sql[i] == ' ' || (sql[i] >= '\t' && sql[i] <= '\r')))
-                    i++;
-            }
-            else if (c == '-' && i + 1 < sql.Length && sql[i + 1] == '-')
-            {
-                int end = sql.IndexOf('\n', i);
-                i = end < 0 ? sql.Length : end + 1;
-            }
-            else if (c == '/' && i + 1 < sql.Length && sql[i + 1] == '*')
-            {
-                int end = sql.IndexOf("*/", i + 2, StringComparison.Ordinal);
-                i = end < 0 ? sql.Length : end + 2;
-            }
-            else
-                break;
-        }
-
-        return i;
+        return token;
     }
 }

@@ -8,7 +8,7 @@ using Xunit;
 namespace MBW.Utilities.ManagedSqlite.Core.Tests;
 
 /// <summary>
-/// How the Core API presents rows, which the parity dump does not see: it reads rows by name through the Sql package
+/// How the Core API presents rows, which the parity dump does not see: it reads rows by name through the table definition
 /// </summary>
 public class Rows_Tests
 {

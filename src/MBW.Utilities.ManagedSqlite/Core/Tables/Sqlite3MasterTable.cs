@@ -63,9 +63,9 @@ internal class Sqlite3MasterTable
             //    || pIndex->tnum>pData->mxPage
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L178 (sqlite3InitCallback)
             // SQLite first looks the index up among those the tables' CREATE statements made ("orphan index"), and
-            // checks that no sibling index shares its root page. That needs the SQL parsed, so the Sql package checks it
-            // when it loads the whole schema, after this range check: an orphan row with a bad rootpage fails here as
-            // SCHEMA-15, where SQLite reports it as an orphan index.
+            // checks that no sibling index shares its root page. That needs the SQL parsed, so the whole-schema
+            // validation checks it, after this range check: an orphan row with a bad rootpage fails here as SCHEMA-15,
+            // where SQLite reports it as an orphan index.
             bool rootOk = SchemaSql.TryGetUInt32(rootPageText!, out uint indexRoot) && indexRoot >= 2 && indexRoot <= reader.PageCount;
             Checks.Strict(rootOk, "SCHEMA-15", $"malformed database schema ({name ?? "?"}): invalid rootpage {rootPageText}", 1, "sqlite_schema");
             return indexRoot;
