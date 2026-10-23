@@ -52,10 +52,13 @@ internal sealed partial class SchemaParser
     private string? _newVirtualTable;
 
     /// <summary>
-    /// The statement made a view, or an index: the name was new, and it went into the schema
+    /// The statement made a view: the name was new, and it went into the schema
     /// </summary>
     private bool _newView;
 
+    /// <summary>
+    /// The statement made an index: the name was new, and it went into the schema
+    /// </summary>
     private bool _newIndex;
 
     private int _virtualTableArguments;

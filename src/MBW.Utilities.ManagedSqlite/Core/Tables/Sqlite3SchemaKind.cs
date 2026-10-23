@@ -7,7 +7,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 public enum Sqlite3SchemaKind : byte
 {
     /// <summary>
-    /// The row made nothing: a CREATE ... IF NOT EXISTS of a name a row before it took, or, in
+    /// The row made nothing: a CREATE ... IF NOT EXISTS of a name that is taken (by a row before it, or by the schema
+    /// table itself), or, in
     /// <see cref="SqliteValidation.Lenient"/>, a row that failed to load (see <see cref="Sqlite3SchemaRow.Error"/>)
     /// </summary>
     None = 0,

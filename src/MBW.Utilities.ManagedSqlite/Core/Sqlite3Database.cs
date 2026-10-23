@@ -361,8 +361,9 @@ public sealed class Sqlite3Database : IDisposable
     }
 
     /// <summary>
-    /// Every row of the schema table (<c>sqlite_schema</c>), in the order SQLite loads them: tables, virtual tables,
-    /// indexes, views and triggers, and in <see cref="SqliteValidation.Lenient"/> rows that failed to load. Each row's
+    /// Every row of the schema table (<c>sqlite_schema</c>), in its row order, which is the order SQLite loads them,
+    /// whatever their kind: tables, virtual tables, indexes, views and triggers, and in
+    /// <see cref="SqliteValidation.Lenient"/> rows that failed to load. Each row's
     /// <see cref="Sqlite3SchemaRow.Kind"/> says what its statement made. The schema table itself is not a row.
     /// </summary>
     public IEnumerable<Sqlite3SchemaRow> GetSchema() => _masterTable.Tables;
