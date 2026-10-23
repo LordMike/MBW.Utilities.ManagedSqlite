@@ -23,6 +23,9 @@ internal struct Sqlite3Record
     /// </summary>
     private const long MaxHeaderSize = 98307;
 
+    private static readonly object BoxedZero = 0L;
+    private static readonly object BoxedOne = 1L;
+
     private readonly uint _page;
 
     /// <summary>
@@ -363,10 +366,11 @@ internal struct Sqlite3Record
                 return double.IsNaN(real) ? null : real;
             }
             case 8:
-                // Serial types 8 and 9: integer constants 0 and 1, no payload bytes
-                return 0L;
+                // Serial types 8 and 9: integer constants 0 and 1, no payload bytes. SQLite stores every 0 and 1 this
+                // way, so they come from shared boxes instead of a new box for each value
+                return BoxedZero;
             case 9:
-                return 1L;
+                return BoxedOne;
             default:
             {
                 // The checks in Parse keep the value inside the payload
