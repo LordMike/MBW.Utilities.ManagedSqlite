@@ -22,7 +22,7 @@ public class Rows_Tests
     [Fact]
     public void RowWrittenBeforeAddColumnHasNoValueThere()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
 CREATE TABLE tbl (Id INTEGER PRIMARY KEY, MyInt INTEGER);
 INSERT INTO tbl VALUES (1, 500);
 ALTER TABLE tbl ADD COLUMN NewColumn INTEGER DEFAULT 2000;")));
@@ -41,7 +41,7 @@ ALTER TABLE tbl ADD COLUMN NewColumn INTEGER DEFAULT 2000;")));
     [Fact]
     public void WithoutRowIdRowsHaveNoRowIdAndRecordOrderColumns()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
 CREATE TABLE tbl (v TEXT, k TEXT PRIMARY KEY) WITHOUT ROWID;
 INSERT INTO tbl VALUES ('second', 'b'), ('first', 'a');")));
 
@@ -58,7 +58,7 @@ INSERT INTO tbl VALUES ('second', 'b'), ('first', 'a');")));
     [Fact]
     public void FieldsReadTheSameAfterColumnData()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
 CREATE TABLE tbl (i INTEGER, t TEXT, b BLOB);
 INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
 
@@ -82,7 +82,7 @@ INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
     [Fact]
     public void InterleavedEnumerationsReadTheSameRows()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
 PRAGMA page_size = 512;
 CREATE TABLE a (Id INTEGER PRIMARY KEY, Value TEXT);
 CREATE TABLE b (Id INTEGER PRIMARY KEY, Value TEXT);

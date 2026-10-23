@@ -23,13 +23,13 @@ public class SqlCreateTableChecks_Tests
 
     // Strict fails the open
     private static SqliteCorruptException Open(byte[] data) =>
-        Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data)));
+        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)));
 
     // Lenient opens, reports the error, and fails the table
     private static SqliteCorruptException OpenLenient(byte[] data)
     {
         List<string> issues = new List<string>();
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         SqliteCorruptException e = Assert.Throws<SqliteCorruptException>(() => db.GetTable("t"));
         Assert.Equal(new[] { e.Check }, issues);
         return e;
@@ -125,7 +125,7 @@ public class SqlCreateTableChecks_Tests
         Assert.Equal(check, Open(data).Check);
 
         List<string> issues = new List<string>();
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("a", db.GetTable("t").GetTableDefinition().Columns.First().Name);
         Assert.Equal(new[] { check }, issues);
     }
@@ -173,7 +173,7 @@ public class SqlCreateTableChecks_Tests
         if (check == null)
         {
             SqliteParity.AssertSqliteReads(data, "u");
-            using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
             Assert.Equal(sql.Count(c => c == ',') + 1, db.GetTable("t").GetTableDefinition().Columns.Count());
             return;
         }
