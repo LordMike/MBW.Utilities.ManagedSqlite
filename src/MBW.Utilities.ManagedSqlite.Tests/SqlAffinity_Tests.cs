@@ -19,6 +19,7 @@ public class SqlAffinity_Tests
     [InlineData("VARCHAR(255)")]
     [InlineData("CLOB")]
     [InlineData("DOUBLE TEXT")]
+    [InlineData("BLOB")]
     [InlineData("FLOAT BLOB")]
     [InlineData("")]
     [InlineData("REAL")]
