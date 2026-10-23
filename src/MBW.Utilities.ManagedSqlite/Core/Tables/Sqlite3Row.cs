@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Diagnostics.CodeAnalysis;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
@@ -100,18 +100,31 @@ public sealed class Sqlite3Row
         return isBlob;
     }
 
-    public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
+    /// <summary>
+    /// The value of field <paramref name="index"/> of the record, as <typeparamref name="T"/>. False when the record
+    /// has fewer fields (as <see cref="TryGetOrdinal(ushort, out object?)"/>), or the value does not convert:
+    /// <list type="bullet">
+    /// <item>NULL converts to <c>default</c>: null for a reference type or <see cref="Nullable{T}"/>, 0 for a number,
+    /// as <c>sqlite3_column_int</c> reads NULL.</item>
+    /// <item>A value that already is <typeparamref name="T"/>, or the type a <see cref="Nullable{T}"/> wraps, is
+    /// returned as it is.</item>
+    /// <item>An INTEGER converts to <see cref="double"/>, <see cref="float"/> or <see cref="decimal"/>, to
+    /// <see cref="bool"/> (true when not 0), and to a narrower integer type when it fits.</item>
+    /// <item>A REAL converts to an integer type or <see cref="bool"/> as SQLite does, truncated toward zero
+    /// (3.5 is 3, -3.5 is -3), when the result fits; to <see cref="float"/> and <see cref="decimal"/> when it fits.</item>
+    /// <item>TEXT and BLOB convert to nothing else, and nothing converts to them: text is not parsed as a number, in
+    /// any culture, and numbers are not formatted.</item>
+    /// </list>
+    /// </summary>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
+    public bool TryGetOrdinal<T>(ushort index, out T? value)
     {
-        value = default;
-
-        if (!TryGetOrdinal(index, out object? tmp))
+        if (!TryGetOrdinal(index, out object? stored))
+        {
+            value = default;
             return false;
+        }
 
-        // TODO: Is null a success case?
-        if (tmp == null)
-            return false;
-
-        value = (T)Convert.ChangeType(tmp, typeof(T));
-        return true;
+        return ValueConverter.TryConvert(stored, out value);
     }
 }

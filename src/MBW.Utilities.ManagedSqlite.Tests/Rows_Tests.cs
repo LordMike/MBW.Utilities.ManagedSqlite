@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
@@ -72,6 +74,38 @@ INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
         Assert.Equal(new byte[] { 1, 2, 255 }, blob.ToArray());
         Assert.False(row.TryGetBlob(1, out _));
         Assert.False(row.TryGetBlob(3, out _));
+    }
+
+    /// <summary>
+    /// The generic accessors convert as SQLite's typed reads do: NULL is the type's default (null for int?), a REAL read
+    /// as an integer is truncated toward zero, and an INTEGER reads as int? or double. Where SQLite would wrap or
+    /// saturate a number, or parse text, they return false.
+    /// </summary>
+    [Theory]
+    [InlineData("NULL", typeof(int?), true)]
+    [InlineData("NULL", typeof(int), true)]
+    [InlineData("7", typeof(int?), true)]
+    [InlineData("7", typeof(double), true)]
+    [InlineData("3.5", typeof(long), true)]
+    [InlineData("-3.5", typeof(long), true)]
+    [InlineData("5000000000", typeof(int), false)]
+    [InlineData("1e999", typeof(long), false)]
+    [InlineData("'12'", typeof(long), false)]
+    [InlineData("x'3132'", typeof(string), false)]
+    public void TypedValuesConvertAsSqlite(string literal, Type type, bool converts)
+    {
+        typeof(Rows_Tests).GetMethod(nameof(AssertTypedValue), BindingFlags.NonPublic | BindingFlags.Static)!
+            .MakeGenericMethod(type).Invoke(null, new object[] { literal, converts });
+    }
+
+    private static void AssertTypedValue<T>(string literal, bool converts)
+    {
+        byte[] data = SqliteParity.Build($"CREATE TABLE tbl (v); INSERT INTO tbl VALUES ({literal});");
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+        Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
+
+        Assert.Equal(converts, row.TryGetValueByName("v", out T value));
+        Assert.Equal(converts ? SqliteParity.ReadWithSqlite<T>(data, "tbl") : default, value);
     }
 
     /// <summary>

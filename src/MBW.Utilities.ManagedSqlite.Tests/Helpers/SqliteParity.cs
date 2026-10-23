@@ -243,6 +243,22 @@ internal static class SqliteParity
     }
 
     /// <summary>
+    /// The first value of the first row of <paramref name="table"/> in the database file <paramref name="data"/>, as
+    /// real SQLite reads it as <typeparamref name="T"/> (Microsoft.Data.Sqlite's GetFieldValue, over
+    /// sqlite3_column_int64 and sqlite3_column_double), and NULL as <c>default</c>
+    /// </summary>
+    public static T ReadWithSqlite<T>(byte[] data, string table)
+    {
+        using SqliteConnection connection = Open(data);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = $"SELECT * FROM {Name(table)}";
+
+        using SqliteDataReader reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        return reader.IsDBNull(0) ? default : reader.GetFieldValue<T>(0);
+    }
+
+    /// <summary>
     /// Asserts that real SQLite loads the schema of the database file <paramref name="data"/> and reads the rows of
     /// <paramref name="table"/>
     /// </summary>

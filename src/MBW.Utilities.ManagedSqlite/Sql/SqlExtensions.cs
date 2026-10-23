@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -106,18 +105,23 @@ public static class SqlExtensions
         return true;
     }
 
-    public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, [MaybeNullWhen(false)] out T value)
+    /// <summary>
+    /// The value of the column named <paramref name="columnName"/>, read as <see cref="TryGetValueByName(Sqlite3Row, string, out object?)"/>
+    /// reads it, as <typeparamref name="T"/>. False when the table has no such column, it has no value (a VIRTUAL
+    /// generated column, or a DEFAULT this library does not evaluate), or the value does not convert. The conversions
+    /// are those of <see cref="Sqlite3Row.TryGetOrdinal{T}(ushort, out T)"/>: NULL is <c>default</c>, INTEGER and REAL
+    /// convert into each other as in SQLite (a REAL truncated toward zero) when the result fits, and TEXT and BLOB
+    /// convert to nothing else.
+    /// </summary>
+    /// <exception cref="SqliteCorruptException">The record is malformed up to that column</exception>
+    public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, out T? value)
     {
-        value = default;
-
-        if (!row.TryGetValueByName(columnName, out object? tmp))
+        if (!row.TryGetValueByName(columnName, out object? stored))
+        {
+            value = default;
             return false;
+        }
 
-        // TODO: Is null a success case?
-        if (tmp == null)
-            return false;
-
-        value = (T)Convert.ChangeType(tmp, typeof(T));
-        return true;
+        return ValueConverter.TryConvert(stored, out value);
     }
 }

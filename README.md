@@ -33,7 +33,7 @@ using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
     // TryGetValueByName() reads a column by name, and also detects row-id substitutes
     row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
     
-    // Try casting it to a specific type (you must know the C# type)
+    // Read it as a C# type: NULL reads as default, and INTEGER and REAL convert into each other as in SQLite
     row.TryGetOrdinal<int>(0, out int myInteger);
 }
 ```
