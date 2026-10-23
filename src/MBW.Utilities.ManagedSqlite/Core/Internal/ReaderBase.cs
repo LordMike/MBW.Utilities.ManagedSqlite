@@ -37,6 +37,16 @@ internal sealed class ReaderBase : IDisposable
     private byte[]? _pageBuffer;
 
     /// <summary>
+    /// The buffer <see cref="ReadPages"/> reads runs of pages into, grown as runs need, up to <see cref="MaxRunBytes"/>
+    /// </summary>
+    private byte[]? _runBuffer;
+
+    /// <summary>
+    /// The most <see cref="ReadPages"/> reads at once
+    /// </summary>
+    private const int MaxRunBytes = 1 << 16;
+
+    /// <summary>
     /// Set once Lenient has reported the partial last page (HDR-17), so it is reported once, not on every read of it
     /// </summary>
     private bool _partialPageReported;
@@ -411,6 +421,41 @@ internal sealed class ReaderBase : IDisposable
     {
         ReadPage(page, PageBuffer);
         return PageBuffer;
+    }
+
+    /// <summary>
+    /// Reads <paramref name="page"/>, and up to <paramref name="maxPages"/> - 1 pages after it in the same read, into a
+    /// buffer owned by this reader: page i of the run at <c>i * PageSize</c>. <paramref name="count"/> is how many it
+    /// read. A page joins the run only when reading it alone would give the same bytes and pass every check: it is in
+    /// the database and wholly in the file, it is not the lock-byte page, and the WAL holds no copy of it. The buffer is
+    /// overwritten by the next call, or by <see cref="ReadPage(uint)"/> when the run is a single page.
+    /// </summary>
+    internal byte[] ReadPages(uint page, int maxPages, out int count)
+    {
+        long pagesInFile = _file.Length / PageSize;
+        bool Joins(long p) => p <= PageCount && p <= pagesInFile && p != _lockBytePage && (_wal == null || !_wal.Contains((uint)p));
+
+        int limit = Math.Min(maxPages, (int)(MaxRunBytes / PageSize));
+        count = 1;
+        if (limit > 1 && page >= 1 && Joins(page))
+        {
+            while (count < limit && Joins((long)page + count))
+                count++;
+        }
+
+        if (count == 1)
+            return ReadPage(page);
+
+        // The first page is checked as any page is; the others pass the same checks by the conditions above
+        CheckPage(page);
+
+        int length = count * (int)PageSize;
+        if (_runBuffer == null || _runBuffer.Length < length)
+            _runBuffer = new byte[Math.Min(MaxRunBytes, Math.Max(length, 2 * (_runBuffer?.Length ?? 0)))];
+
+        // Inside the file, so the read is never short
+        _file.Read((long)(page - 1) * PageSize, _runBuffer, 0, length);
+        return _runBuffer;
     }
 
     /// <summary>

@@ -40,6 +40,9 @@ public class Journal_Tests
         { "uncommitted frames after the last commit", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); BEGIN; " + ManyRows, true },
         { "a restarted WAL with stale frames after it", Wal + ManyRows + "PRAGMA wal_checkpoint(RESTART); INSERT INTO t (b) VALUES ('three');", true },
         { "64 KiB pages", "PRAGMA page_size = 65536;" + Wal + Checkpoint + ManyRows, true },
+        // An update of the same size rewrites only the overflow page it changes, so that page is in the WAL and the
+        // pages around it, read with it in one run from the main file, are not
+        { "one overflow page in the WAL", Wal + "INSERT INTO t (b) VALUES (printf('%.20000c', 'x'));" + Checkpoint + "UPDATE t SET b = substr(b, 1, 10000) || 'y' || substr(b, 10002) WHERE a = 3;", true },
         { "an empty WAL after a checkpoint", Wal + ManyRows + Checkpoint, false },
     };
 

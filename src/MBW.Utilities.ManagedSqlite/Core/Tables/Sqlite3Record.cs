@@ -526,9 +526,10 @@ internal struct Sqlite3Record
         int skip = (offset - overflow.Local) % pageData;
         while (destination.Length > 0)
         {
-            byte[] data = overflow.ReadPage(index, row, this);
+            int pages = (skip + destination.Length + pageData - 1) / pageData;
+            byte[] data = overflow.ReadPage(index, pages, row, this, out int at);
             int count = Math.Min(destination.Length, pageData - skip);
-            new ReadOnlySpan<byte>(data, sizeof(uint) + skip, count).CopyTo(destination);
+            new ReadOnlySpan<byte>(data, at + sizeof(uint) + skip, count).CopyTo(destination);
             destination = destination.Slice(count);
             index++;
             skip = 0;
@@ -557,12 +558,16 @@ internal struct Sqlite3Record
         private int _known;
 
         /// <summary>
-        /// The last page read, and its index in the chain. It is in the reader's page buffer, so it is valid only until
-        /// the next page read, and is forgotten by <see cref="BeginRead"/>.
+        /// The pages last read: chain pages <see cref="_runIndex"/> on, <see cref="_runCount"/> of them, which are
+        /// consecutive pages of the file, each <see cref="ReaderBase.PageSize"/> bytes in <see cref="_runData"/>. It is a
+        /// buffer of the reader, so it is valid only until the next page read, and is forgotten by
+        /// <see cref="BeginRead"/>.
         /// </summary>
-        private int _readIndex = -1;
+        private int _runIndex = -1;
 
-        private byte[]? _readData;
+        private int _runCount;
+
+        private byte[]? _runData;
 
         /// <summary>
         /// The header, with up to 8 bytes after it, when it runs past the local bytes
@@ -581,15 +586,16 @@ internal struct Sqlite3Record
         }
 
         /// <summary>
-        /// Called as a value is read: pages may have been read into the reader's page buffer since the last one
+        /// Called as a value is read: pages may have been read into the reader's buffers since the last one
         /// </summary>
-        public void BeginRead() => _readIndex = -1;
+        public void BeginRead() => _runIndex = -1;
 
         /// <summary>
-        /// Page <paramref name="index"/> of the chain, read into the reader's page buffer, following the next pointers
-        /// of the pages before it that are not yet known
+        /// The array that holds page <paramref name="index"/> of the chain, at <paramref name="offset"/>, following the
+        /// next pointers of the pages before it that are not yet known. <paramref name="pages"/> is how many pages from
+        /// <paramref name="index"/> on the read needs, which may be read with it.
         /// </summary>
-        public byte[] ReadPage(int index, Sqlite3Row row, in Sqlite3Record record)
+        public byte[] ReadPage(int index, int pages, Sqlite3Row row, in Sqlite3Record record, out int offset)
         {
             ReaderBase reader = row.Table.Reader;
             int pageData = (int)(reader.PageSize - reader.ReservedSpace) - sizeof(uint);
@@ -601,15 +607,22 @@ internal struct Sqlite3Record
             }
 
             while (_known <= index)
-                Read(_known - 1, row, record, pageData);
+                Read(_known - 1, index - _known + 1 + pages, row, record, pageData);
 
-            return Read(index, row, record, pageData);
+            return Read(index, pages, row, record, pageData, out offset);
         }
 
-        private byte[] Read(int index, Sqlite3Row row, in Sqlite3Record record, int pageData)
+        private void Read(int index, int pages, Sqlite3Row row, in Sqlite3Record record, int pageData) =>
+            Read(index, pages, row, record, pageData, out _);
+
+        private byte[] Read(int index, int pages, Sqlite3Row row, in Sqlite3Record record, int pageData, out int offset)
         {
-            if (index == _readIndex)
-                return _readData!;
+            ReaderBase reader = row.Table.Reader;
+            if (_runIndex >= 0 && index >= _runIndex && index < _runIndex + _runCount)
+            {
+                offset = (index - _runIndex) * (int)reader.PageSize;
+                return _runData!;
+            }
 
             uint page = _pages![index];
 
@@ -624,10 +637,13 @@ internal struct Sqlite3Record
                 $"the overflow chain of {RowName(row)} ended with {record._length - Local - index * pageData} bytes of the payload left",
                 index == 0 ? record._page : _pages[index - 1], "overflow chain");
 
-            // Each page is read through the reader, so a page the WAL or a journal holds is read from there
-            byte[] data = row.Table.Reader.ReadPage(page);
-            _readIndex = index;
-            _readData = data;
+            // SQLite writes a chain to consecutive pages when it can, so the pages after this one are read with it, in
+            // one read, as far as the read needs them. Each is part of the chain only if the page before it points at it,
+            // checked below; the rest are not used. The reader reads them alike one by one, see ReadPages.
+            byte[] data = reader.ReadPages(page, Math.Min(pages, _pages.Length - index), out int read);
+            _runIndex = index;
+            _runData = data;
+            _runCount = 1;
 
             // CELL-16: the next pointer is followed only while payload remains, so the last overflow page's pointer is
             // never read, whatever it holds. accessPayload in btree.c stops as soon as the payload is copied:
@@ -636,9 +652,19 @@ internal struct Sqlite3Record
             //   amt -= a;
             //   if( amt==0 ) return rc;
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5306 (accessPayload)
-            if (index + 1 == _known && _known < _pages.Length)
-                _pages[_known++] = (uint)(data[0] << 24 | data[1] << 16 | data[2] << 8 | data[3]);
+            for (int i = index; i < _pages.Length - 1; i++)
+            {
+                int at = (i - index) * (int)reader.PageSize;
+                if (i + 1 == _known)
+                    _pages[_known++] = (uint)(data[at] << 24 | data[at + 1] << 16 | data[at + 2] << 8 | data[at + 3]);
 
+                if (i + 1 - index >= read || _pages[i + 1] != page + (i + 1 - index))
+                    break;
+
+                _runCount++;
+            }
+
+            offset = 0;
             return data;
         }
     }

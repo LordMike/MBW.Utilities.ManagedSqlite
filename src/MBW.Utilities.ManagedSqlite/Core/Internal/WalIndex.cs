@@ -169,6 +169,11 @@ internal sealed class WalIndex
     }
 
     /// <summary>
+    /// True when the log holds a committed copy of <paramref name="page"/>
+    /// </summary>
+    public bool Contains(uint page) => _frames.ContainsKey(page);
+
+    /// <summary>
     /// Copies the newest committed copy of <paramref name="page"/> into <paramref name="buffer"/>, and returns false when
     /// the log holds none.
     /// </summary>
