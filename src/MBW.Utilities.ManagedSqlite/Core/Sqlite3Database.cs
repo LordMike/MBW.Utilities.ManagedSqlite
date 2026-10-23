@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
@@ -366,13 +367,12 @@ public sealed class Sqlite3Database : IDisposable
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
         // SQLite reports it on the table's first row read; here the root is read when the table is opened, as are
         // the root page's other checks.
-        if (tbl.Table != null)
-        {
-            bool sqlWithoutRowId = tbl.Table.Has(ParsedTable.TF_WithoutRowid);
-            Checks.Strict(sqlWithoutRowId == root is BTreeIndexPage, "PAGE-18",
-                $"the SQL of table {tbl.Name} declares {(sqlWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(root is BTreeIndexPage ? "an index" : "a table")} b-tree page",
-                tbl.RootPage, "b-tree page header");
-        }
+        // A table row that failed to parse has an Error, which FindTable threw before the table got here
+        Debug.Assert(tbl.Table != null);
+        bool sqlWithoutRowId = tbl.Table!.Has(ParsedTable.TF_WithoutRowid);
+        Checks.Strict(sqlWithoutRowId == root is BTreeIndexPage, "PAGE-18",
+            $"the SQL of table {tbl.Name} declares {(sqlWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(root is BTreeIndexPage ? "an index" : "a table")} b-tree page",
+            tbl.RootPage, "b-tree page header");
 
         return new Sqlite3Table(_reader, root, tbl);
     }
