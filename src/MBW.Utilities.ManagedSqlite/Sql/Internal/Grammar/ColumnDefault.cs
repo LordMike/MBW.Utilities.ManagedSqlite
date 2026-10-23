@@ -242,7 +242,7 @@ internal static class ColumnDefault
                     return true;
                 if (value is double)
                     return false;
-                cast = new Blob(TextEncoding(encoding).GetBytes(value as string ?? ((long)value).ToString(CultureInfo.InvariantCulture)), encoding);
+                cast = new Blob(ToEncoding(encoding).GetBytes(value as string ?? ((long)value).ToString(CultureInfo.InvariantCulture)), encoding);
                 return true;
             case ParsedColumn.AFF_NUMERIC:
                 cast = Numerify(value);
@@ -257,7 +257,7 @@ internal static class ColumnDefault
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L641 (sqlite3VdbeIntValue)
                 if (value is double fromReal)
                     cast = RealToI64(fromReal);
-                else if (!(value is long))
+                else if (value is not long)
                 {
                     Atoi64(ToText(value, out _), out long fromText);
                     cast = fromText;
@@ -270,7 +270,7 @@ internal static class ColumnDefault
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L770 (sqlite3VdbeRealValue)
                 if (value is long fromInteger)
                     cast = (double)fromInteger;
-                else if (!(value is double))
+                else if (value is not double)
                 {
                     AtoF(ToText(value, out _), out double fromText);
                     cast = fromText;
@@ -286,7 +286,7 @@ internal static class ColumnDefault
                 //   if( encoding!=SQLITE_UTF8 ) pMem->n &= ~1;
                 //   rc = sqlite3VdbeChangeEncoding(pMem, encoding);
                 if (value is Blob blob)
-                    cast = TextEncoding(blob.Encoding).GetString(blob.Bytes, 0, encoding == SqliteEncoding.UTF8 ? blob.Bytes.Length : blob.Bytes.Length & ~1);
+                    cast = ToEncoding(blob.Encoding).GetString(blob.Bytes, 0, encoding == SqliteEncoding.UTF8 ? blob.Bytes.Length : blob.Bytes.Length & ~1);
                 else if (value is long number)
                     cast = number.ToString(CultureInfo.InvariantCulture);
                 else if (value is double)
@@ -296,7 +296,7 @@ internal static class ColumnDefault
         }
     }
 
-    private static Encoding TextEncoding(SqliteEncoding encoding) => encoding switch
+    private static Encoding ToEncoding(SqliteEncoding encoding) => encoding switch
     {
         SqliteEncoding.UTF16LE => Encoding.Unicode,
         SqliteEncoding.UTF16BE => Encoding.BigEndianUnicode,
