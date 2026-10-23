@@ -408,7 +408,7 @@ internal static class SqliteParity
             {
                 object[] values = stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray();
                 AssertBlobsSameAsValues(row, stored, definition.RowIdColumn?.Name);
-                return (table.IsWithoutRowId ? null : (long?)row.RowId, values);
+                return (row.HasRowId ? row.RowId : (long?)null, values);
             })
             .ToList();
 

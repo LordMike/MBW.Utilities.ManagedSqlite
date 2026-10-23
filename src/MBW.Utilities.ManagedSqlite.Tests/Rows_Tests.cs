@@ -35,7 +35,7 @@ ALTER TABLE tbl ADD COLUMN NewColumn INTEGER DEFAULT 2000;")));
     }
 
     /// <summary>
-    /// A WITHOUT ROWID row has no rowid, so RowId reads 0, and ColumnData is the record as stored, primary key columns
+    /// A WITHOUT ROWID row has no rowid (HasRowId is false, which the parity dump checks), so RowId reads 0, and ColumnData is the record as stored, primary key columns
     /// first
     /// </summary>
     [Fact]
