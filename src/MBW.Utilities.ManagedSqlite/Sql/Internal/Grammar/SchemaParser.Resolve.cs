@@ -328,9 +328,10 @@ internal sealed partial class SchemaParser
     ///    &amp;&amp; pMatch
     ///    &amp;&amp; (pNC->ncFlags &amp; (NC_IdxExpr|NC_GenCol))==0
     ///    &amp;&amp; sqlite3IsRowid(zCol)
-    ///    &amp;&amp; ALWAYS(VisibleRowid(pMatch->pSTab))
+    ///    &amp;&amp; ALWAYS(VisibleRowid(pMatch->pSTab) || pMatch->fg.isNestedFrom)
     ///   ){
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/resolve.c#L623 (lookupName)
+    /// isNestedFrom marks a subquery in a FROM clause, which a schema expression never has.
     /// </summary>
     private bool LookupColumn(Expr p, string name, int context)
     {
