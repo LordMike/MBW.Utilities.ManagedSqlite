@@ -96,5 +96,5 @@ than the column being read gives the column's DEFAULT by name (`TryGetValueByNam
 3. **REC-17.** A TEXT or BLOB value larger than SQLITE_LIMIT_LENGTH (1,000,000,000 bytes) gives SQLITE_TOOBIG; we read
    it. It needs a file over 1 GB.
 
-Not gaps: invalid UTF-8 and lone UTF-16 surrogates (REC-34, REC-37) become U+FFFD, because a .NET string cannot carry
-the raw bytes; neither side fails. The integrity_check-only checks (REC-26 to 30) are tolerated by both in normal reads.
+Not gaps: invalid UTF-8 and lone UTF-16 surrogates (REC-34, REC-37) become U+FFFD, through the .NET decoder's
+replacement fallback; neither side fails. The integrity_check-only checks (REC-26 to 30) are tolerated by both in normal reads.
