@@ -27,6 +27,36 @@ internal static class ColumnDefault
     /// </summary>
     public static bool TryEvaluate(Expr? expr, char affinity, SqliteEncoding encoding, out object? value)
     {
+        if (!TryEvaluateValue(expr, affinity, encoding, out value))
+            return false;
+
+        if (value is Blob blob)
+            value = blob.Bytes;
+        return true;
+    }
+
+    /// <summary>
+    /// A blob and the encoding SQLite keeps with it (Mem.enc), which decides how it reads as text or a number: UTF-8 for
+    /// a blob literal (sqlite3VdbeMemSetStr with enc 0), the database's encoding for text or a number cast to BLOB
+    ///   }else if( enc==0 ){
+    ///     flags = MEM_Blob;
+    ///     enc = SQLITE_UTF8;
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L1308 (sqlite3VdbeMemSetStr)
+    /// </summary>
+    private sealed class Blob
+    {
+        public readonly byte[] Bytes;
+        public readonly SqliteEncoding Encoding;
+
+        public Blob(byte[] bytes, SqliteEncoding encoding)
+        {
+            Bytes = bytes;
+            Encoding = encoding;
+        }
+    }
+
+    private static bool TryEvaluateValue(Expr? expr, char affinity, SqliteEncoding encoding, out object? value)
+    {
         value = null;
         if (expr == null)
             return true;
@@ -52,7 +82,7 @@ internal static class ColumnDefault
         if (op == TK.CAST)
         {
             char castAffinity = SchemaParser.AffinityType(expr.Text!);
-            if (!TryEvaluate(expr.Left, castAffinity, encoding, out object? operand))
+            if (!TryEvaluateValue(expr.Left, castAffinity, encoding, out object? operand))
                 return false;
 
             // NULL, or no value, stays so
@@ -137,7 +167,7 @@ internal static class ColumnDefault
             //       pVal->u.i = -pVal->u.i;
             //     }
             //     sqlite3ValueApplyAffinity(pVal, affinity, enc);
-            if (!TryEvaluate(expr.Left, affinity, encoding, out object? operand))
+            if (!TryEvaluateValue(expr.Left, affinity, encoding, out object? operand))
                 return false;
 
             // NULL, or no value, stays so
@@ -176,7 +206,7 @@ internal static class ColumnDefault
             byte[] bytes = new byte[(hex.Length - 3) / 2];
             for (int i = 0; i < bytes.Length; i++)
                 bytes[i] = (byte)((SchemaParser.HexToInt(hex[2 + 2 * i]) << 4) | SchemaParser.HexToInt(hex[3 + 2 * i]));
-            value = bytes;
+            value = new Blob(bytes, SqliteEncoding.UTF8);
             return true;
         }
 
@@ -208,11 +238,11 @@ internal static class ColumnDefault
                 //     sqlite3ValueApplyAffinity(pMem, SQLITE_AFF_TEXT, encoding);
                 //     assert( pMem->flags & MEM_Str || pMem->db->mallocFailed );
                 //     if( pMem->flags & MEM_Str ) MemSetTypeFlag(pMem, MEM_Blob);
-                if (value is byte[])
+                if (value is Blob)
                     return true;
                 if (value is double)
                     return false;
-                cast = TextEncoding(encoding).GetBytes(value as string ?? ((long)value).ToString(CultureInfo.InvariantCulture));
+                cast = new Blob(TextEncoding(encoding).GetBytes(value as string ?? ((long)value).ToString(CultureInfo.InvariantCulture)), encoding);
                 return true;
             case ParsedColumn.AFF_NUMERIC:
                 cast = Numerify(value);
@@ -229,7 +259,7 @@ internal static class ColumnDefault
                     cast = RealToI64(fromReal);
                 else if (!(value is long))
                 {
-                    Atoi64(ToText(value), out long fromText);
+                    Atoi64(ToText(value, out _), out long fromText);
                     cast = fromText;
                 }
 
@@ -242,21 +272,21 @@ internal static class ColumnDefault
                     cast = (double)fromInteger;
                 else if (!(value is double))
                 {
-                    AtoF(ToText(value), out double fromText);
+                    AtoF(ToText(value, out _), out double fromText);
                     cast = fromText;
                 }
 
                 return true;
             default:
-                // TEXT: a blob's bytes become text. A blob literal is UTF-8, so in a UTF-16 database an odd last byte is
-                // dropped and the rest translated.
+                // TEXT: a blob's bytes become text in the blob's encoding, which is then translated to the database's.
+                // In a UTF-16 database an odd last byte is dropped first.
                 //   pMem->flags |= (pMem->flags&MEM_Blob)>>3;
                 //   sqlite3ValueApplyAffinity(pMem, SQLITE_AFF_TEXT, encoding);
                 //   ...
                 //   if( encoding!=SQLITE_UTF8 ) pMem->n &= ~1;
                 //   rc = sqlite3VdbeChangeEncoding(pMem, encoding);
-                if (value is byte[] blob)
-                    cast = Encoding.UTF8.GetString(blob, 0, encoding == SqliteEncoding.UTF8 ? blob.Length : blob.Length & ~1);
+                if (value is Blob blob)
+                    cast = TextEncoding(blob.Encoding).GetString(blob.Bytes, 0, encoding == SqliteEncoding.UTF8 ? blob.Bytes.Length : blob.Bytes.Length & ~1);
                 else if (value is long number)
                     cast = number.ToString(CultureInfo.InvariantCulture);
                 else if (value is double)
@@ -274,18 +304,49 @@ internal static class ColumnDefault
     };
 
     /// <summary>
-    /// Text as SQLite's numeric conversions read it; a blob's bytes as the C string SQLite reads, which only matters up
-    /// to the first byte that is not part of a number
+    /// Text as SQLite's numeric conversions read it. A UTF-8 blob's bytes are the C string SQLite reads, which only
+    /// matters up to the first byte that is not part of a number. A UTF-16 blob is read as SQLite copies it for
+    /// sqlite3AtoF: the low bytes of its characters, up to the first character above 0xFF, which sets
+    /// <paramref name="cut"/>.
+    ///   if( pMem->enc==SQLITE_UTF16LE ){
+    ///     for(i=j=0; i&lt;n-1; i+=2, j++){
+    ///       zCopy[j] = z[i];
+    ///       if( z[i+1]!=0 ) break;
+    ///     }
+    ///   ...
+    ///   if( i&lt;n ) rc = -100;
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L697 (sqlite3MemRealValueRCSlowPath)
+    /// sqlite3Atoi64 in util.c stops at the same character.
     /// </summary>
-    private static string ToText(object value)
+    private static string ToText(object value, out bool cut)
     {
-        if (!(value is byte[] blob))
+        cut = false;
+        if (value is not Blob blob)
             return (string)value;
 
-        char[] chars = new char[blob.Length];
-        for (int i = 0; i < blob.Length; i++)
-            chars[i] = (char)blob[i];
-        return new string(chars);
+        byte[] bytes = blob.Bytes;
+        if (blob.Encoding == SqliteEncoding.UTF8)
+        {
+            char[] chars = new char[bytes.Length];
+            for (int i = 0; i < bytes.Length; i++)
+                chars[i] = (char)bytes[i];
+            return new string(chars);
+        }
+
+        int low = blob.Encoding == SqliteEncoding.UTF16LE ? 0 : 1;
+        StringBuilder text = new StringBuilder(bytes.Length / 2);
+        for (int i = 0; i + 1 < bytes.Length; i += 2)
+        {
+            if (bytes[i + 1 - low] != 0)
+            {
+                cut = true;
+                break;
+            }
+
+            text.Append((char)bytes[i + low]);
+        }
+
+        return text.ToString();
     }
 
     private static bool IsHex(string token) => token.Length > 1 && token[0] == '0' && (token[1] | 0x20) == 'x';
@@ -391,8 +452,10 @@ internal static class ColumnDefault
         if (value is long || value is double)
             return value;
 
-        string text = ToText(value);
+        string text = ToText(value, out bool cut);
         int rc = AtoF(text, out double real);
+        if (cut)
+            rc = -100;
         if ((rc & 2) == 0 && Atoi64(text, out long ix) < 2)
             return ix;
 
