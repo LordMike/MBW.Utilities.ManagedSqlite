@@ -237,8 +237,10 @@ public class Journal_Tests
         File.WriteAllBytes(superJournal, new byte[] { 1 });
         SqliteParity.AssertSameAsSqlite(snapshot, true);
 
-        // Without it, the journal is still played back, so no row reads "changed"
+        // Without it, the journal is still played back, so no row reads "changed", as some do in the main file
         File.Delete(superJournal);
+        using (Sqlite3Database mainOnly = Sqlite3Database.FromStreamWithNoJournal(File.OpenRead(snapshot.Database)))
+            Assert.Contains(mainOnly.GetTable("t").EnumerateRows(), r => (string)r.ColumnData[1] == "changed");
         using Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database);
         Assert.DoesNotContain(db.GetTable("t").EnumerateRows(), r => (string)r.ColumnData[1] == "changed");
     }
