@@ -10,7 +10,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects;
 /// </summary>
 internal class BTreeIndexPage : BTreePage
 {
-    public bool IsLeaf => Header.Type == BTreeType.LeafIndexBtreePage;
+    public bool IsLeaf => Header.Type == BTreeType.LeafIndexBTreePage;
 
     public BTreeIndexPage(ReaderBase reader, uint page, BTreeHeader header, byte[] data, int cellPointers)
         : base(reader, page, header, data, cellPointers)

@@ -52,7 +52,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     private static uint RootPage(string table)
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(Base));
-        return db.GetTable(table).SchemaDefinition.RootPage;
+        return db.GetTable(table).SchemaRow.RootPage;
     }
 
     /// <summary>
@@ -592,7 +592,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
             byte[] data = SqliteParity.Build(Script, 8);
             uint root;
             using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
-                root = db.GetTable("Small").SchemaDefinition.RootPage;
+                root = db.GetTable("Small").SchemaRow.RootPage;
 
             DbPatcher p = new DbPatcher(data);
             int record = p.GetRecordOffset(root, 0, out long payloadSize);

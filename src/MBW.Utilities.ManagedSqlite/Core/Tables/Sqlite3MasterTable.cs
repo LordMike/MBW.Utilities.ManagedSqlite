@@ -7,7 +7,7 @@ using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-internal class Sqlite3MasterTable
+internal sealed class Sqlite3MasterTable
 {
     public List<Sqlite3SchemaRow> Tables { get; }
 

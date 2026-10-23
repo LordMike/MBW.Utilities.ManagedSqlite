@@ -28,7 +28,7 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     {
         using Sqlite3Database db = Open();
 
-        Assert.Equal(storedName, db.GetTable(lookup).SchemaDefinition.Name);
+        Assert.Equal(storedName, db.GetTable(lookup).SchemaRow.Name);
     }
 
     [Theory]

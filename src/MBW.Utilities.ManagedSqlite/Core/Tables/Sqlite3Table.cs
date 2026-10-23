@@ -22,7 +22,10 @@ public sealed class Sqlite3Table
 
     private BTreePage? _rootPage;
 
-    public Sqlite3SchemaRow SchemaDefinition { get; }
+    /// <summary>
+    /// The table's row in sqlite_schema
+    /// </summary>
+    public Sqlite3SchemaRow SchemaRow { get; }
 
     /// <summary>
     /// True when the table's root page is an index b-tree page, which is how SQLite stores a WITHOUT ROWID table. A
@@ -38,7 +41,7 @@ public sealed class Sqlite3Table
     /// <param name="table"></param>
     internal Sqlite3Table(ReaderBase reader, BTreePage rootPage, Sqlite3SchemaRow table)
     {
-        SchemaDefinition = table;
+        SchemaRow = table;
         _reader = reader;
         IsWithoutRowId = rootPage is BTreeIndexPage;
 
@@ -50,7 +53,7 @@ public sealed class Sqlite3Table
     /// The root page, read once into an array that the table keeps, so a table that fits on its root page reads its
     /// rows without reading or allocating a page again
     /// </summary>
-    private BTreePage RootPage => _rootPage ??= BTreePage.Parse(_reader, SchemaDefinition.RootPage);
+    private BTreePage RootPage => _rootPage ??= BTreePage.Parse(_reader, SchemaRow.RootPage);
 
     /// <summary>
     /// Enumerates the table's rows in the order SQLite stores them: rowid order, or primary key order for a WITHOUT
@@ -71,7 +74,7 @@ public sealed class Sqlite3Table
             }
             catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
             {
-                throw new SqliteCorruptException($"unable to read the rows of table {SchemaDefinition.Name}", structure: "table b-tree", innerException: e);
+                throw new SqliteCorruptException($"unable to read the rows of table {SchemaRow.Name}", structure: "table b-tree", innerException: e);
             }
 
             yield return rows.Current;

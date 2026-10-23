@@ -46,7 +46,7 @@ public static class SqlExtensions
         if (table.SqlDefinition != null)
             return table.SqlDefinition;
 
-        SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
+        SqlTableDefinition definition = table.SchemaRow.GetTableDefinition();
 
         // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
         // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
@@ -54,8 +54,8 @@ public static class SqlExtensions
         //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
         Checks.Strict(definition.IsWithoutRowId == table.IsWithoutRowId, "PAGE-18",
-            $"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
-            table.SchemaDefinition.RootPage, "b-tree page header");
+            $"the SQL of table {table.SchemaRow.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
+            table.SchemaRow.RootPage, "b-tree page header");
 
         table.SqlDefinition = definition;
         return definition;

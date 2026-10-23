@@ -9,7 +9,7 @@ internal sealed class DatabaseHeader
 {
     public const int HeaderSize = 100;
 
-    private static readonly byte[] _expectedHeader = {
+    private static readonly byte[] ExpectedHeader = {
         (byte) 'S', (byte) 'Q', (byte) 'L', (byte) 'i', (byte) 't', (byte) 'e', (byte) ' ', (byte) 'f',
         (byte) 'o',(byte) 'r', (byte) 'm', (byte) 'a', (byte) 't', (byte) ' ', (byte) '3', 0
     };
@@ -76,10 +76,10 @@ internal sealed class DatabaseHeader
         //   if( memcmp(page1, zMagicHeader, 16)!=0 ){ goto page1_init_failed; }
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3314
         Checks.Strict(HasMagic(data), "HDR-03",
-            $"the magic bytes {data.Take(_expectedHeader.Length).ToArray().ToHex()} did not match {_expectedHeader.ToHex()}",
+            $"the magic bytes {data.Take(ExpectedHeader.Length).ToArray().ToHex()} did not match {ExpectedHeader.ToHex()}",
             structure: "magic bytes");
 
-        int pos = _expectedHeader.Length;
+        int pos = ExpectedHeader.Length;
 
         // The page size is stored as a big-endian 2-byte value, where 1 means 65536
         ushort rawPageSize = ByteArrayReader.ReadUInt16(data, length, ref pos);
@@ -156,9 +156,9 @@ internal sealed class DatabaseHeader
 
     private static bool HasMagic(byte[] data)
     {
-        for (int i = 0; i < _expectedHeader.Length; i++)
+        for (int i = 0; i < ExpectedHeader.Length; i++)
         {
-            if (data[i] != _expectedHeader[i])
+            if (data[i] != ExpectedHeader[i])
                 return false;
         }
 

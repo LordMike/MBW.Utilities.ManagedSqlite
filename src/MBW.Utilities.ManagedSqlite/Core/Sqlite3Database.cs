@@ -263,25 +263,25 @@ public sealed class Sqlite3Database : IDisposable
     private Sqlite3MasterTable OpenMasterTable(out Sqlite3SchemaRow schemaRow)
     {
         // Parse table on Page 1, the sqlite_master table
-        BTreePage rootBtree = BTreePage.Parse(_reader, 1);
+        BTreePage rootBTree = BTreePage.Parse(_reader, 1);
 
         // PAGE-18: the schema table is a rowid table, read with a table cursor, so page 1 must be a table b-tree page.
         // moveToRoot in btree.c:
         //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
         //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
-        Checks.Strict(rootBtree is not BTreeIndexPage, "PAGE-18", $"page 1 is an index b-tree page, but holds the schema table",
+        Checks.Strict(rootBTree is not BTreeIndexPage, "PAGE-18", $"page 1 is an index b-tree page, but holds the schema table",
             1, "b-tree page header");
 
         // Fake the schema for the sqlite_master table
         const string schemaSql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);";
-        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page, schemaSql)
+        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBTree.Page, schemaSql)
         {
             Kind = Sqlite3SchemaKind.Table,
             Table = SchemaParser.ParseCreateTable(schemaSql, "sqlite_master", _reader.Settings)
         };
 
-        Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
+        Sqlite3Table table = new Sqlite3Table(_reader, rootBTree, schemaRow);
         return new Sqlite3MasterTable(this, _reader, table);
     }
 
