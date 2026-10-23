@@ -109,8 +109,6 @@ internal sealed class DatabaseHeader
         VersionValidFor = ByteArrayReader.ReadUInt32(data, length, ref pos);
         Version = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
-        // TODO: Warn/err on mismatch with expected values
-
         Validate(settings);
     }
 
