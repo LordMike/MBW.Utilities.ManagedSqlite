@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
@@ -31,9 +32,11 @@ public sealed class Sqlite3Row
     ///
     /// The row reads its record from its b-tree page's bytes, so a row that is kept keeps its page in memory until
     /// this is read. Then the row has every value, and lets go of the page.
+    ///
+    /// The list is the row's own, which its other accessors read from, so it is read-only.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed</exception>
-    public object?[] ColumnData
+    public IReadOnlyList<object?> ColumnData
     {
         get
         {
