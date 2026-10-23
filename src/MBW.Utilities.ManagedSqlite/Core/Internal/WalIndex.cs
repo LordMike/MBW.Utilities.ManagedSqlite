@@ -1,3 +1,5 @@
+using System;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -91,7 +93,7 @@ internal sealed class WalIndex
         // WALJ-10: a wrong header checksum, too, means the log is ignored. WALJ-12: the salts and checkpoint sequence
         // may hold any value; the salts are only compared with each frame's.
         uint s1 = 0, s2 = 0;
-        Checksum(bigEndianChecksum, header, 0, WalHeaderSize - 8, ref s1, ref s2);
+        Checksum(bigEndianChecksum, header.AsSpan(0, WalHeaderSize - 8), ref s1, ref s2);
         pos = 24;
         if (s1 != ByteArrayReader.ReadUInt32(header, WalHeaderSize, ref pos) || s2 != ByteArrayReader.ReadUInt32(header, WalHeaderSize, ref pos))
             return null;
@@ -135,8 +137,8 @@ internal sealed class WalIndex
             if (!saltsMatch || page == 0)
                 break;
 
-            Checksum(bigEndianChecksum, frame, 0, 8, ref s1, ref s2);
-            Checksum(bigEndianChecksum, frame, FrameHeaderSize, (int)pageSize, ref s1, ref s2);
+            Checksum(bigEndianChecksum, frame.AsSpan(0, 8), ref s1, ref s2);
+            Checksum(bigEndianChecksum, frame.AsSpan(FrameHeaderSize), ref s1, ref s2);
 
             pos = 16;
             if (s1 != ByteArrayReader.ReadUInt32(frame, frameSize, ref pos) || s2 != ByteArrayReader.ReadUInt32(frame, frameSize, ref pos))
@@ -184,29 +186,35 @@ internal sealed class WalIndex
     }
 
     /// <summary>
-    /// SQLite's WAL checksum: two running sums over the data as 32-bit words, in pairs.
+    /// SQLite's WAL checksum: two running sums over the data as 32-bit words, in pairs. The length is a multiple of 8.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L856 (walChecksumBytes)
     /// <code>
     ///   s1 += aData[0] + s2;
     ///   s2 += aData[1] + s1;
     /// </code>
+    /// SQLite has one loop that reads the words in the machine's byte order and one that swaps them; the two loops
+    /// here read them as little-endian or big-endian, so neither branches per word.
     /// </summary>
-    private static void Checksum(bool bigEndian, byte[] data, int offset, int length, ref uint s1, ref uint s2)
+    private static void Checksum(bool bigEndian, ReadOnlySpan<byte> data, ref uint s1, ref uint s2)
     {
         unchecked
         {
-            for (int i = offset; i < offset + length; i += 8)
+            if (bigEndian)
             {
-                s1 += Word(bigEndian, data, i) + s2;
-                s2 += Word(bigEndian, data, i + 4) + s1;
+                for (int i = 0; i < data.Length; i += 8)
+                {
+                    s1 += BinaryPrimitives.ReadUInt32BigEndian(data.Slice(i)) + s2;
+                    s2 += BinaryPrimitives.ReadUInt32BigEndian(data.Slice(i + 4)) + s1;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < data.Length; i += 8)
+                {
+                    s1 += BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(i)) + s2;
+                    s2 += BinaryPrimitives.ReadUInt32LittleEndian(data.Slice(i + 4)) + s1;
+                }
             }
         }
-    }
-
-    private static uint Word(bool bigEndian, byte[] data, int i)
-    {
-        return bigEndian
-            ? (uint)(data[i] << 24 | data[i + 1] << 16 | data[i + 2] << 8 | data[i + 3])
-            : (uint)(data[i] | data[i + 1] << 8 | data[i + 2] << 16 | data[i + 3] << 24);
     }
 }
