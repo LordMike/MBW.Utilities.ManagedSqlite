@@ -60,26 +60,6 @@ public sealed class Sqlite3Table
     /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
     public IEnumerable<Sqlite3Row> EnumerateRows()
     {
-        using IEnumerator<Sqlite3Row> rows = EnumerateRowsInternal().GetEnumerator();
-
-        while (true)
-        {
-            try
-            {
-                if (!rows.MoveNext())
-                    yield break;
-            }
-            catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
-            {
-                throw new SqliteCorruptException($"unable to read the rows of table {SchemaDefinition.Name}", structure: "table b-tree", innerException: e);
-            }
-
-            yield return rows.Current;
-        }
-    }
-
-    private IEnumerable<Sqlite3Row> EnumerateRowsInternal()
-    {
         // A WITHOUT ROWID table is stored in an index b-tree
         return IsWithoutRowId ? EnumerateWithoutRowIdRows() : EnumerateRowIdRows();
     }

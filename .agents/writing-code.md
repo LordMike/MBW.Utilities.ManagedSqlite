@@ -123,9 +123,9 @@ PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= fi
 ```
 
 Rules:
-- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. The
-  exceptions are the entry-point wrappers that turn an unexpected exception into a `SqliteCorruptException` with an
-  inner exception.
+- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. Nothing
+  turns other exceptions into `SqliteCorruptException`: an `IndexOutOfRangeException` or similar from damaged bytes is a
+  missing check, so add one where SQLite makes it, rather than catching the exception.
 - **Pass the message as an interpolated string straight into the call.** The `CheckMessage` handler builds it only when
   the check fails, so a passing check allocates nothing. Don't build the message first.
 - **The check ID is the survey ID.** A check with no ID gets a new row in the right area table, with the next free

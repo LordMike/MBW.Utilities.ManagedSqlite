@@ -45,24 +45,17 @@ public sealed class Sqlite3Database : IDisposable
     /// </summary>
     internal Sqlite3Database(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
     {
+        // A copy, so the caller changing the settings later can't change how this database reads
+        _reader = ReaderBase.Open(main, journal, wal, settings.Clone());
+
         try
         {
-            // A copy, so the caller changing the settings later can't change how this database reads
-            _reader = ReaderBase.Open(main, journal, wal, settings.Clone());
-
-            try
-            {
-                _masterTable = OpenMasterTable(out _masterSchemaRow);
-            }
-            catch
-            {
-                DisposeQuietly(_reader);
-                throw;
-            }
+            _masterTable = OpenMasterTable(out _masterSchemaRow);
         }
-        catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
+        catch
         {
-            throw new SqliteCorruptException("unable to read the database header or schema", innerException: e);
+            DisposeQuietly(_reader);
+            throw;
         }
     }
 
