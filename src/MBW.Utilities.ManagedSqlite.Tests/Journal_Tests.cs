@@ -193,14 +193,8 @@ public class Journal_Tests
 
         // SQLite reads a copy of the database and its side files, and the name in the journal still points at the
         // super-journal next to the original, so SQLite looks up the same file
+        // FromPath opens it in Strict, where a WALJ-45 report would throw, so this also shows FromPath decides
         SqliteParity.AssertSameAsSqlite(snapshot, superJournalExists);
-
-        // FromPath can decide, so it has nothing to report
-        List<string> issues = new List<string>();
-        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
-        using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database, lenient))
-            db.GetTable("t").EnumerateRows().ToList();
-        Assert.Empty(issues);
     }
 
     /// <summary>
