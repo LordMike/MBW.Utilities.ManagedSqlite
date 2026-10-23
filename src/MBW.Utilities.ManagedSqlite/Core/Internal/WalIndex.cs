@@ -1,4 +1,5 @@
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
@@ -22,6 +23,9 @@ internal sealed class WalIndex
     private const uint WalVersion = 3007000;
     private const int WalHeaderSize = 32;
     private const int FrameHeaderSize = 24;
+
+    // The log is read in whole frames, about this many bytes at a time, rather than with one read per frame
+    private const int ChunkSize = 1024 * 1024;
 
     private readonly IFileView _file;
     private readonly Dictionary<uint, long> _frames;
@@ -116,32 +120,44 @@ internal sealed class WalIndex
         List<KeyValuePair<uint, long>> pending = new List<KeyValuePair<uint, long>>();
         uint pageCount = 0;
 
-        byte[] frame = new byte[frameSize];
+        // At least one frame, and no more than the log holds. The buffer comes from the shared pool, so opening a large
+        // log does not allocate a fresh megabyte each time; if a read throws, the buffer is left to the GC.
+        int chunkFrames = (int)Math.Min(frameCount, Math.Max(1, ChunkSize / frameSize));
+        byte[] chunk = ArrayPool<byte>.Shared.Rent(chunkFrames * frameSize);
+        long chunkFirst = 0, chunkEnd = 0;
+
         for (long i = 0; i < frameCount; i++)
         {
             long offset = WalHeaderSize + i * frameSize;
-            if (file.Read(offset, frame, 0, frameSize) != frameSize)
-                break;
+            if (i == chunkEnd)
+            {
+                // A short read ends at the end of the file: the whole frames it did read are checked as usual, and the
+                // next read, of a partial frame or nothing, ends the log
+                int count = (int)Math.Min(chunkFrames, frameCount - i) * frameSize;
+                chunkFirst = i;
+                chunkEnd = i + file.Read(offset, chunk, 0, count) / frameSize;
+                if (chunkEnd == i)
+                    break;
+            }
+
+            ReadOnlySpan<byte> frame = chunk.AsSpan((int)(i - chunkFirst) * frameSize, frameSize);
 
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L1000 (walDecodeFrame)
             // WALJ-14 to WALJ-17: a frame is valid when its salts equal the header's, its page number is not 0, and the running checksum
             // over the WAL header and every frame so far (the first 8 bytes of each frame header, then its page)
             // equals the one it stores. The first invalid frame ends the log: it is a torn write, or a frame left
             // over from before the log was restarted. Neither is an error.
-            pos = 0;
-            uint page = ByteArrayReader.ReadUInt32(frame, frameSize, ref pos);
-            uint commitSize = ByteArrayReader.ReadUInt32(frame, frameSize, ref pos);
+            uint page = BinaryPrimitives.ReadUInt32BigEndian(frame);
+            uint commitSize = BinaryPrimitives.ReadUInt32BigEndian(frame.Slice(4));
 
-            bool saltsMatch = frame[8] == header[16] && frame[9] == header[17] && frame[10] == header[18] && frame[11] == header[19] &&
-                              frame[12] == header[20] && frame[13] == header[21] && frame[14] == header[22] && frame[15] == header[23];
+            bool saltsMatch = frame.Slice(8, 8).SequenceEqual(header.AsSpan(16, 8));
             if (!saltsMatch || page == 0)
                 break;
 
-            Checksum(bigEndianChecksum, frame.AsSpan(0, 8), ref s1, ref s2);
-            Checksum(bigEndianChecksum, frame.AsSpan(FrameHeaderSize), ref s1, ref s2);
+            Checksum(bigEndianChecksum, frame.Slice(0, 8), ref s1, ref s2);
+            Checksum(bigEndianChecksum, frame.Slice(FrameHeaderSize), ref s1, ref s2);
 
-            pos = 16;
-            if (s1 != ByteArrayReader.ReadUInt32(frame, frameSize, ref pos) || s2 != ByteArrayReader.ReadUInt32(frame, frameSize, ref pos))
+            if (s1 != BinaryPrimitives.ReadUInt32BigEndian(frame.Slice(16)) || s2 != BinaryPrimitives.ReadUInt32BigEndian(frame.Slice(20)))
                 break;
 
             pending.Add(new KeyValuePair<uint, long>(page, offset + FrameHeaderSize));
@@ -163,6 +179,8 @@ internal sealed class WalIndex
                 pageCount = commitSize;
             }
         }
+
+        ArrayPool<byte>.Shared.Return(chunk);
 
         if (pageCount == 0)
             return null;
