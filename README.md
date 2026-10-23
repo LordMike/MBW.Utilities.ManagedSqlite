@@ -1,13 +1,14 @@
-## MBW.Utilities.ManagedSqlite [![Generic Build](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/dotnet.yml/badge.svg)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/dotnet.yml) [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.Core.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite.Core) [![GHPackages](https://img.shields.io/badge/package-alpha-green)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692005)
+## MBW.Utilities.ManagedSqlite [![Generic Build](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/ci.yml/badge.svg)](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/actions/workflows/ci.yml) [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite)
 
 Managed C# read-only parser for SQLite3 databases. Provides access to table and row data.
 
-## Packages
+## Install
 
-| Package | Nuget | Alpha |
-| ------------- |:-------------:|:-------------:|
-| MBW.Utilities.ManagedSqlite.Core | [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.Core.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite.Core) | [Alpha](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692005) |
-| MBW.Utilities.ManagedSqlite.Sql | [![NuGet](https://img.shields.io/nuget/v/MBW.Utilities.ManagedSqlite.Sql.svg)](https://www.nuget.org/packages/MBW.Utilities.ManagedSqlite.Sql) | [Alpha](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/packages/692006) |
+```
+dotnet add package MBW.Utilities.ManagedSqlite
+```
+
+To migrate from `MBW.Utilities.ManagedSqlite.Core` or `MBW.Utilities.ManagedSqlite.Sql`, reference `MBW.Utilities.ManagedSqlite` only.
 
 ## How to use
 
@@ -18,7 +19,7 @@ using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
     // Access all tables using db.GetTables(), or a single using db.GetTable("name")
     Sqlite3Table tbl = db.GetTable("MyTable");
     
-    // Read out the SQL schema of the table (to get column names) using the MBW.Utilities.ManagedSqlite.Sql package
+    // Read out the SQL schema of the table (to get column names)
     SqlTableDefinition schema = tbl.GetTableDefinition();
 
     // Iterate all rows on the table using EnumerateRows()
@@ -29,7 +30,7 @@ using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
     Sqlite3Row row = rows.First();
     object data = row.ColumnData[0];
 
-    // Using the SQL package also provides a TryGetValueByName(), this package also tries to detect row-id substitutes
+    // TryGetValueByName() reads a column by name, and also detects row-id substitutes
     row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
     
     // Try casting it to a specific type (you must know the C# type)
@@ -41,7 +42,7 @@ using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
 
 * Reads SQLite3 databases, in all managed code
 * Provides close-to-raw access to the structured data
-* An SQL package exists to help parse the SQLite3 schemas
+* Parses the SQLite3 schemas (the CREATE statements) with a port of SQLite's own parser
 
 ## Notes
 
@@ -64,7 +65,8 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 
 ### Differences from SQLite
 
-* **Column DEFAULTs are not applied.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column. SQLite returns the column's DEFAULT for it, but this library returns no value (`null`).
+* **Column DEFAULTs are applied by name only.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column, and SQLite reads the column's DEFAULT for it. `TryGetValueByName` does the same; `TryGetOrdinal` and `ColumnData` show the record as stored, without the column. A DEFAULT with a `CAST`, or a negation that is a real in a TEXT column, is not evaluated, and reads as no value. A column without a DEFAULT reads as NULL, as in SQLite.
+* **Lenient opens a database whose schema SQLite finds malformed.** As in SQLite, the whole schema is loaded and checked when the database is opened, and in Strict a malformed table, view, index or trigger makes the open throw `SqliteCorruptException`. Lenient reports the error to `OnValidationIssue` and keeps it on the row that failed, so only that row's table cannot be opened, and reads the other tables.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs
