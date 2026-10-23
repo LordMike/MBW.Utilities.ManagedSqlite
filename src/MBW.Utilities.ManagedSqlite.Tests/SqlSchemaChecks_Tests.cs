@@ -47,7 +47,7 @@ public class SqlSchemaChecks_Tests
         using Sqlite3Database lenient = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("b", lenient.GetTable("u").GetTableDefinition().Columns.Single().Name);
         Assert.Equal(new[] { check }, issues);
-        // A row that failed made nothing; a relaxed check fails no row
+        // A row that failed made nothing
         Assert.All(lenient.GetSchema().Where(s => s.Error != null), failed =>
         {
             Assert.Equal(check, failed.Error.Check);
