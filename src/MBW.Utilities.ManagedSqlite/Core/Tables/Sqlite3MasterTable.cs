@@ -64,7 +64,8 @@ internal class Sqlite3MasterTable
         catch (SqliteCorruptException e) when (settings.Validation == SqliteValidation.Lenient)
         {
             row.Error = e;
-            settings.OnValidationIssue?.Invoke(new SqliteValidationIssue(e.Check!, e.Message, e.Page, e.Structure));
+            // Every error here comes from a check (Checks.Fail, Strict or Relaxable), so it has an ID
+            settings.OnValidationIssue?.Invoke(new SqliteValidationIssue(e.Check!, e.Detail, e.Page, e.Structure));
         }
     }
 

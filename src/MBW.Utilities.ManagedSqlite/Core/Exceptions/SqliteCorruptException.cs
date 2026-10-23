@@ -23,12 +23,19 @@ public sealed class SqliteCorruptException : SqliteException
     /// </summary>
     public string? Check { get; }
 
+    /// <summary>
+    /// The check's own message, without the prefix and the structure and page that <see cref="Exception.Message"/>
+    /// adds, as a <see cref="SqliteValidationIssue"/> carries it
+    /// </summary>
+    internal string Detail { get; }
+
     internal SqliteCorruptException(string message, uint? page = null, string? structure = null, Exception? innerException = null, string? check = null)
         : base(FormatMessage(message, page, structure), innerException)
     {
         Page = page;
         Structure = structure;
         Check = check;
+        Detail = message;
     }
 
     private static string FormatMessage(string message, uint? page, string? structure)
