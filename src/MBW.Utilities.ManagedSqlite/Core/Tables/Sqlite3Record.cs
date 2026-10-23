@@ -264,11 +264,11 @@ internal struct Sqlite3Record
             //     ...
             //     pC->aRow = 0;
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3055 (OP_Column)
-            // A serial type that starts inside the header reads up to 8 bytes past it, as it would in the payload, so
-            // those are read too. A header that ends just before the end of the local bytes is read the same way.
-            if (_overflow != null && _overflow.Header == null && headerSize + 8 > _overflow.Local)
+            // A header in the local bytes is parsed from them, and one read from the overflow pages is read to its end
+            // and no further: a serial type that runs past the header is corrupt (zHdr>zEndHdr) whatever follows it.
+            if (_overflow != null && _overflow.Header == null && headerSize > _overflow.Local)
             {
-                _overflow.Header = new byte[Math.Min(_length, headerSize + 8)];
+                _overflow.Header = new byte[Math.Min(_length, headerSize)];
                 CopyPayload(0, _overflow.Header, row);
             }
 
