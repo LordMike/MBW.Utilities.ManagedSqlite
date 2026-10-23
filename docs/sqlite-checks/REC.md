@@ -1,7 +1,7 @@
 # REC: record format, serial types and value decoding
 
 Link base: `https://github.com/sqlite/sqlite/blob/version-3.53.4/src/<file>#L<line>` (SQLite 3.53.4, split amalgamation line numbers).
-Our files: `src/MBW.Utilities.ManagedSqlite.Core/...` (abbreviated `Core/`), `src/MBW.Utilities.ManagedSqlite.Sql/...` (`Sql/`).
+Our files: `src/MBW.Utilities.ManagedSqlite/Core/...` (abbreviated `Core/`), `src/MBW.Utilities.ManagedSqlite/Sql/...` (`Sql/`).
 
 ## 1. Overview
 

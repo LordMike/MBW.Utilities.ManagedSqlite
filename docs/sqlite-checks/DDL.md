@@ -19,7 +19,7 @@ Our side is different. The Core library never parses SQL. `MBW.Utilities.Managed
 
 Every row marked "verified" was run on real SQLite (3.45.1 through Python, with the rows written via `writable_schema`, opened both rw and ro) and on our parser through a harness at `review/sqlite-checks/repro/ddl/` (`cases.txt`, `cases2.txt`, `t.py`, `t3.py`, `H/`).
 
-Legend for "Ours": `Sql/` = `src/MBW.Utilities.ManagedSqlite.Sql/`, `Core/` = `src/MBW.Utilities.ManagedSqlite.Core/`. "When" for SQLite is always *schema load*, which happens on the first prepare and makes the whole DB unusable, unless the row says *deferred*. The "When (ours)" column shows where our equivalent would sit (`table def` = `GetTableDefinition`).
+Legend for "Ours": `Sql/` = `src/MBW.Utilities.ManagedSqlite/Sql/`, `Core/` = `src/MBW.Utilities.ManagedSqlite/Core/`. "When" for SQLite is always *schema load*, which happens on the first prepare and makes the whole DB unusable, unless the row says *deferred*. The "When (ours)" column shows where our equivalent would sit (`table def` = `GetTableDefinition`).
 
 ## 2. Checks
 
