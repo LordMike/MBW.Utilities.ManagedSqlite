@@ -87,7 +87,8 @@ DELETE FROM t WHERE Id % 2 = 0;")]
     public void BTreeShape(string name, string script) => SqliteParity.AssertSameAsSqlite(script);
 
     [Theory]
-    // sqlite_master no longer fits on page 1, so it becomes an interior page over leaves
+    // sqlite_master no longer fits on page 1, so it becomes an interior page with a cell and a right-most pointer, each
+    // to a leaf
     [InlineData("sqlite_master over several pages", @"
 PRAGMA page_size = 512;
 CREATE TABLE t1 (Id INTEGER PRIMARY KEY, Value TEXT);
@@ -96,7 +97,9 @@ CREATE TABLE t3 (Id INTEGER PRIMARY KEY, Value TEXT);
 CREATE TABLE t4 (Id INTEGER PRIMARY KEY, Value TEXT);
 CREATE TABLE t5 (Id INTEGER PRIMARY KEY, Value TEXT);
 CREATE TABLE t6 (Id INTEGER PRIMARY KEY, Value TEXT);
-INSERT INTO t6 VALUES (1, 'v6');")]
+CREATE TABLE t7 (Id INTEGER PRIMARY KEY, Value TEXT);
+CREATE TABLE t8 (Id INTEGER PRIMARY KEY, Value TEXT);
+INSERT INTO t8 VALUES (1, 'v8');")]
     // Rows written before ADD COLUMN have no value for the new column in their record, and read as NULL
     [InlineData("ALTER TABLE ADD COLUMN without default", @"
 CREATE TABLE tbl (Id INTEGER PRIMARY KEY, MyInt INTEGER);
