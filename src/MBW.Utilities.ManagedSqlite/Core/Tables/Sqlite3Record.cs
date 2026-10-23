@@ -252,9 +252,11 @@ internal struct Sqlite3Record
             // rest of the header can hold, as each serial type takes at least one byte.
             if (_fields != null && 2 * i + 2 > _fields.Length)
             {
+                // _fields holds two ints per field, so a field count of _fields.Length doubles it. Both bounds are at
+                // least i + 1, as i <= p2 here.
                 long most = i + Math.Max(1, _headerSize - headerPos);
                 long fields = Math.Min(Math.Max(_fields.Length, (long)p2 + 1), most);
-                Array.Resize(ref _fields, 2 * (int)Math.Max(fields, i + 1));
+                Array.Resize(ref _fields, 2 * (int)fields);
             }
 
             // A serial type that runs past the payload runs past the header too, which the checks below reject
