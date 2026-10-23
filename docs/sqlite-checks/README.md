@@ -70,3 +70,9 @@ The WAL and rollback journal checks in [WALJ.md](WALJ.md). The code for each car
 | WALJ-43, WALJ-44, WALJ-45 | Not implemented: the reader reads one database, so a hot journal is played back whatever super-journal it names (listed under Differences from SQLite in the README) |
 | WALJ-01 to WALJ-03, WALJ-06 to WALJ-10, WALJ-12 to WALJ-21, WALJ-24, WALJ-27, WALJ-29, WALJ-34, WALJ-36, WALJ-37, WALJ-39, WALJ-42, WALJ-46 to WALJ-60 | Tolerated as SQLite tolerates them: bad WAL headers or frames end the WAL at the last valid commit, a journal that is not hot is ignored, and playback stops at the first bad record |
 | WALJ-04, WALJ-05, WALJ-22, WALJ-23, WALJ-30 to WALJ-33, WALJ-35, WALJ-38, WALJ-40, WALJ-41, WALJ-62 | Not applicable: locks, the `-shm` wal-index (the WAL is always recovered from the `-wal` file), open options, build flags and writes |
+
+## Added later
+
+| Checks | What the reader does |
+|---|---|
+| PAGE-40 | The reader's own bound: a b-tree walk that follows as many child pointers as the database has pages has reached a page twice, and fails in both modes, so a shared subtree cannot make a scan run for ever. SQLite has no such check; a walk within the bound reads shared rows as often as SQLite does |

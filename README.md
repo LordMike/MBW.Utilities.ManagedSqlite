@@ -98,6 +98,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 * **Hot journals are played back, not refused.** See [Journal modes](#journal-modes).
 * **Super-journals are ignored.** The library reads one database at a time. A hot journal from a transaction across attached databases is always played back, where SQLite plays it back only while the super-journal file still exists. If that transaction did commit, the library reads the database as it was just before it.
 * **A WAL with a different page size than the database fails in Strict.** It can only belong to another database. SQLite reads it without an error, leaving part of each page undefined; Lenient ignores the WAL.
+* **A b-tree that shares pages between its branches fails once it reaches more pages than the database has.** Such a tree can only come from corruption. SQLite reads a shared subtree's rows once for each pointer to it, and in a deep tree that can take longer than the scan could ever finish; the library reads it as SQLite does while the walk follows fewer child pointers than the database has pages, and then throws `SqliteCorruptException` (check `PAGE-40`) in either mode.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs
