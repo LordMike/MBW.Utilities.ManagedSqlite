@@ -295,6 +295,7 @@ public sealed class Sqlite3Database : IDisposable
     /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
     {
@@ -313,6 +314,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <summary>
     /// Gets a table by name, see <see cref="TryGetTable"/>.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     /// <exception cref="KeyNotFoundException">No table with that name exists</exception>
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
@@ -332,6 +334,9 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     private Sqlite3SchemaRow? FindTable(string name)
     {
+        if (name == null)
+            throw new ArgumentNullException(nameof(name));
+
         // Names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c), so tables named
         // "é" and "É" are two tables
         AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
