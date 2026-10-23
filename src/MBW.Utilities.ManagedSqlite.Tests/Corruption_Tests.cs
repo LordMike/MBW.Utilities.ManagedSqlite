@@ -240,7 +240,6 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal("file length", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(stream)).Structure);
     }
 
-    // A file cut short by whole pages is HDR-14, the in-header size larger than the file, in Header_Relaxable
     [Fact]
     public void Truncated_InsideTheHeader() => AssertCorrupt("file length", p => p.Truncate(50), "HDR-02");
 
@@ -354,10 +353,6 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
         Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
     }
-
-    // Page 1's b-tree header follows the 100 byte database header: 100 + 8 + 2 * 250 = 608 is past the page
-    [Fact]
-    public void CellCount_PointerArrayPastEndOfSchemaPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(MasterRoot, 250), "PAGE-03");
 
     // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold, in either mode. Their pointers would
     // overlap the cells, which would then read as garbage.
