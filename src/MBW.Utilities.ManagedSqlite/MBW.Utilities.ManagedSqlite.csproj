@@ -5,6 +5,7 @@
     <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <Description>SQLite3 library in managed C# that can read sqlite db files: the binary database, its tables and rows, and the table definitions from the schema's CREATE statements.</Description>
+    <PackageTags>sqlite;sqlite3;database;db;reader;managed;parser;file-format</PackageTags>
   </PropertyGroup>
 
   <ItemGroup>
