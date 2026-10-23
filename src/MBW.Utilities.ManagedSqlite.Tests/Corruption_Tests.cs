@@ -351,6 +351,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [InlineData("Small", 0x0A, SqliteValidation.Strict)]
     [InlineData("Keyed", 0x05, SqliteValidation.Strict)]
     [InlineData("Small", 0x0A, SqliteValidation.Lenient)]
+    [InlineData("Keyed", 0x05, SqliteValidation.Lenient)]
     public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType, SqliteValidation validation)
     {
         byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
