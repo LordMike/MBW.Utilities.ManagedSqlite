@@ -70,14 +70,14 @@ using Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db", settings);
 
 * **`Validation`** sets how strictly the file is checked. `Strict`, the default, fails exactly where SQLite fails. `Lenient` reads on past damage that SQLite rejects but that leaves the data intact, such as an unknown file format version. Damage that could give wrong values fails in both modes.
 * **`OnValidationIssue`** is called for each check that `Lenient` reads past.
-* **`FallbackEncoding`** is the text encoding to use when the header names none, which SQLite never writes. The default is UTF-8, as in SQLite.
+* **`FallbackEncoding`** is the text encoding to use when the header's encoding field is 0, which SQLite never writes. The default is UTF-8, as in SQLite. A wrong encoding reads text as garbage.
 
 ### Errors
 
 All of the library's own exceptions derive from `SqliteException`:
 
 * **`SqliteCorruptException`**: the file is malformed. `Check` names the consistency check that failed (the IDs are listed in [docs/sqlite-checks](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md)), and `Page` and `Structure` say where, when known. Damage is reported where SQLite reports it: a malformed header or schema fails the open (in Lenient, a schema row that fails to load fails only the open of its table), a damaged b-tree fails the table's open or its row enumeration, and a bad value fails only the read of that value.
-* **`SqliteInvalidEncodingException`**: the settings' `FallbackEncoding` is not a text encoding.
+* **`SqliteInvalidEncodingException`**: the settings' `FallbackEncoding` is not a text encoding. This fails the open.
 
 Lookups throw the usual .NET exceptions: `GetTable` throws `KeyNotFoundException` for a name that is no table, and `NotSupportedException` for a virtual table.
 
