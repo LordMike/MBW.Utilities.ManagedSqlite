@@ -4,12 +4,17 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
-using MBW.Utilities.ManagedSqlite.Sql.Internal;
 
 namespace TestDataGenerator;
 
 class Program
 {
+    // Words that start a constraint rather than a column definition
+    private static readonly HashSet<string> NonColumnKeywords = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+    {
+        "CONSTRAINT", "PRIMARY", "NOT", "UNIQUE", "CHECK", "DEFAULT", "COLLATE", "FOREIGN", "REFERENCES"
+    };
+
     // Type names and their CLR types, for the generated column descriptions
     private static readonly (string[] words, Type type)[] TypeKeywords =
         new[] {
@@ -86,7 +91,7 @@ class Program
                 {
                     var colNames = col.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
-                    if (SqlKeywords.NonColumnKeywords.Contains(colNames.First()))
+                    if (NonColumnKeywords.Contains(colNames.First()))
                         continue;
 
                     var types = colNames.Where(s => TypeKeywords.Any(x => x.words.Contains(s))).ToArray();

@@ -1,0 +1,8 @@
+<Project>
+
+  <!-- Warns a project that references this package directly; a package that depends on it does not pass it on -->
+  <Target Name="WarnMbwManagedSqliteSqlObsolete" BeforeTargets="ResolveAssemblyReferences">
+    <Warning Code="MBWSQLITE001" Text="MBW.Utilities.ManagedSqlite.Sql is obsolete. Reference MBW.Utilities.ManagedSqlite instead; the namespaces and types are the same." />
+  </Target>
+
+</Project>

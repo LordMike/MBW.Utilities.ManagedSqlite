@@ -13,15 +13,13 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{7F205CD8-F96
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Core", "src\MBW.Utilities.ManagedSqlite.Core\MBW.Utilities.ManagedSqlite.Core.csproj", "{CC1ED7E9-3D0F-418D-A8DE-CC4A3F98D1BA}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Core.Tests", "src\MBW.Utilities.ManagedSqlite.Core.Tests\MBW.Utilities.ManagedSqlite.Core.Tests.csproj", "{FE9497EE-8CF5-4CBE-B051-398F32E7ACD3}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Tests", "src\MBW.Utilities.ManagedSqlite.Tests\MBW.Utilities.ManagedSqlite.Tests.csproj", "{FE9497EE-8CF5-4CBE-B051-398F32E7ACD3}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Reader", "src\MBW.Utilities.ManagedSqlite.Reader\MBW.Utilities.ManagedSqlite.Reader.csproj", "{FD5FA3F8-587F-4D45-96B2-1FFA0F419629}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Sql", "src\MBW.Utilities.ManagedSqlite.Sql\MBW.Utilities.ManagedSqlite.Sql.csproj", "{3B41163B-8FCB-4569-9843-510DF5D6A91D}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "TestDataGenerator", "src\TestDataGenerator\TestDataGenerator.csproj", "{901F8D38-6910-47C3-8D9C-44EF487DEF46}"
-EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Sql.Tests", "src\MBW.Utilities.ManagedSqlite.Sql.Tests\MBW.Utilities.ManagedSqlite.Sql.Tests.csproj", "{162FE8EB-FB16-47A6-912A-C018DC4E962A}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Imports", "_Imports", "{63529930-D46E-4D5A-989F-29EA708A1261}"
 	ProjectSection(SolutionItems) = preProject
@@ -30,6 +28,10 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "_Imports", "_Imports", "{63
 	EndProjectSection
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite.Benchmarks", "src\MBW.Utilities.ManagedSqlite.Benchmarks\MBW.Utilities.ManagedSqlite.Benchmarks.csproj", "{A3E9A84B-49D6-4A86-BA08-055A9BBACFFF}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "MBW.Utilities.ManagedSqlite", "src\MBW.Utilities.ManagedSqlite\MBW.Utilities.ManagedSqlite.csproj", "{2F879601-61DE-43F0-9644-6F6329566D02}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SqliteGrammarGenerator", "tools\SqliteGrammarGenerator\SqliteGrammarGenerator.csproj", "{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -57,14 +59,18 @@ Global
 		{901F8D38-6910-47C3-8D9C-44EF487DEF46}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{901F8D38-6910-47C3-8D9C-44EF487DEF46}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{901F8D38-6910-47C3-8D9C-44EF487DEF46}.Release|Any CPU.Build.0 = Release|Any CPU
-		{162FE8EB-FB16-47A6-912A-C018DC4E962A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{162FE8EB-FB16-47A6-912A-C018DC4E962A}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{162FE8EB-FB16-47A6-912A-C018DC4E962A}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{162FE8EB-FB16-47A6-912A-C018DC4E962A}.Release|Any CPU.Build.0 = Release|Any CPU
 		{A3E9A84B-49D6-4A86-BA08-055A9BBACFFF}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{A3E9A84B-49D6-4A86-BA08-055A9BBACFFF}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{A3E9A84B-49D6-4A86-BA08-055A9BBACFFF}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{A3E9A84B-49D6-4A86-BA08-055A9BBACFFF}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2F879601-61DE-43F0-9644-6F6329566D02}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2F879601-61DE-43F0-9644-6F6329566D02}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2F879601-61DE-43F0-9644-6F6329566D02}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2F879601-61DE-43F0-9644-6F6329566D02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6D3B9E52-0C1A-4F7B-9B8E-2B6A41C0D7E3}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -75,9 +81,9 @@ Global
 		{FD5FA3F8-587F-4D45-96B2-1FFA0F419629} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{3B41163B-8FCB-4569-9843-510DF5D6A91D} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{901F8D38-6910-47C3-8D9C-44EF487DEF46} = {7F205CD8-F964-4521-95FF-15A73F05C893}
-		{162FE8EB-FB16-47A6-912A-C018DC4E962A} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 		{63529930-D46E-4D5A-989F-29EA708A1261} = {5A21CA7B-C932-4454-A9DB-5A341A46AE66}
 		{A3E9A84B-49D6-4A86-BA08-055A9BBACFFF} = {7F205CD8-F964-4521-95FF-15A73F05C893}
+		{2F879601-61DE-43F0-9644-6F6329566D02} = {7F205CD8-F964-4521-95FF-15A73F05C893}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {74AACA01-FA22-4FF7-834F-9B5B6E76EBB1}

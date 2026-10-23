@@ -3,6 +3,7 @@ using System.IO;
 using BenchmarkDotNet.Attributes;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
 
@@ -133,4 +134,14 @@ public class SchemaBenchmarks
 
     [Benchmark, BenchmarkCategory("OpenTable")]
     public Sqlite3Table ManagedOpenTable() => _db.GetTable(TestDatabases.TableName);
+
+    /// <summary>
+    /// Opens a fresh database and parses a table's definition, which in Strict loads and checks the whole schema first
+    /// </summary>
+    [Benchmark, BenchmarkCategory("TableDefinition")]
+    public int ManagedTableDefinition()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(_image, false));
+        return db.GetTable(TestDatabases.TableName).GetTableDefinition().Columns.Count;
+    }
 }

@@ -72,7 +72,7 @@ class Program
                 out List<Sqlite3SchemaRow> tables))
             return 1;
 
-        Console.WriteLine($"Database: pagesize {db.Header.PageSize:N0}B, encoding {db.Header.TextEncoding}");
+        Console.WriteLine($"Database: pagesize {db.Header.PageSize:N0}B, encoding {db.TextEncoding}");
         Console.WriteLine($"          size {db.Header.DatabaseSizeInPages:N0} pages/{db.Header.DatabaseSizeInPages * db.Header.PageSize:N0}B - actual size: {stream.Length:N0}B");
         Console.WriteLine();
 

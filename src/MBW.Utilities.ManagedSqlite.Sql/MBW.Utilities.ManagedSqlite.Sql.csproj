@@ -1,27 +1,24 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <Nullable>enable</Nullable>
-    <Description>SQLite3 library in managed C# that can read sqlite db files. This package contains SQL statement parsers to read SQLite3 schemas from the database.</Description>
+    <Description>Obsolete: use MBW.Utilities.ManagedSqlite. This package is empty: it depends on MBW.Utilities.ManagedSqlite, and warns (MBWSQLITE001) when a project references it.</Description>
+    <PackageTags>obsolete</PackageTags>
+    <!-- No assembly of its own, only the dependency and the warning -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <!-- NU5128: dependency groups without a lib folder, which is the point of an empty package -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Superpower" Version="2.0.0" />
-  </ItemGroup>
-
-  <ItemGroup Condition="'$(TargetFramework)'=='netstandard1.0'">
-    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+    <None Include="build\*.targets" Pack="true" PackagePath="build\" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite.Core\MBW.Utilities.ManagedSqlite.Core.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <InternalsVisibleTo Include="TestDataGenerator" />
-    <InternalsVisibleTo Include="MBW.Utilities.ManagedSqlite.Sql.Tests" />
+    <ProjectReference Include="..\MBW.Utilities.ManagedSqlite\MBW.Utilities.ManagedSqlite.csproj" />
   </ItemGroup>
 
 </Project>
