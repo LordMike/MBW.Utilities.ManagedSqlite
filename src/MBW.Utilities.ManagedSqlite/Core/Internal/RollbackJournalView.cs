@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Text;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -18,10 +17,11 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5335 (sqlite3PagerSharedLock)
 /// </para>
 /// <para>
-/// A journal that names a super-journal (a transaction over several attached databases) is played back only while the
-/// super-journal exists, as in SQLite; when it is gone, the transaction committed (WALJ-45). See
-/// <see cref="Apply"/> for when that cannot be known.
-/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2885-L2896 (pager_playback)
+/// WALJ-43 to WALJ-45: a journal that names a super-journal (a transaction over several attached databases) is played
+/// back whether or not the super-journal still exists, as this reader reads one database only. SQLite skips the playback
+/// when the super-journal is gone, as the transaction then committed; this reader then shows the state just before that
+/// transaction, which is still consistent.
+/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2891-L2896 (pager_playback)
 /// </para>
 /// https://www.sqlite.org/fileformat.html#the_rollback_journal
 /// </remarks>
@@ -37,14 +37,6 @@ internal sealed class RollbackJournalView : IFileView
 
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1663-L1665 (readJournalHdr), MAX_SECTOR_SIZE
     private const uint MaxSectorSize = 0x10000;
-
-    // SQLite reads a super-journal name shorter than the VFS's mxPathname plus 1. That is 512 on unix, 1040 for the
-    // default Windows VFS and 65534 for its long-path VFS. The journal may come from any of them, so the largest bound
-    // is used: no other VFS writes a longer name.
-    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_unix.c#L180 (MAX_PATHNAME)
-    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_win.c#L144 (SQLITE_WIN32_MAX_PATH_BYTES)
-    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_win.c#L152-L153 (SQLITE_WINNT_MAX_PATH_BYTES)
-    private const uint MaxSuperJournalName = 2 * 32767 + 1;
 
     // The lock-byte page holds the byte at offset 1 GiB, PENDING_BYTE
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.h#L53 (PAGER_SJ_PGNO_COMPUTED)
@@ -70,11 +62,9 @@ internal sealed class RollbackJournalView : IFileView
     /// Plays back <paramref name="journal"/> over <paramref name="main"/> if it is hot, and returns the result.
     /// Returns <paramref name="main"/> unchanged when the journal is not hot or its first header is not usable.
     /// <paramref name="initialPageSize"/> is the page size from the main file's header, used where the journal does
-    /// not give its own. <paramref name="superJournalExists"/> tells whether a super-journal named by the journal
-    /// exists; when it is null (a journal given as a stream), that cannot be known, which fails WALJ-45 in Strict and
-    /// plays the journal back in Lenient. The view does not own either file.
+    /// not give its own. The view does not own either file.
     /// </summary>
-    public static IFileView Apply(IFileView main, IFileView journal, uint initialPageSize, Func<string, bool>? superJournalExists, Sqlite3Settings settings)
+    public static IFileView Apply(IFileView main, IFileView journal, uint initialPageSize)
     {
         // WALJ-34, WALJ-36, WALJ-37: a journal is hot when it exists, is not empty, its first byte is not 0, no connection holds a RESERVED lock,
         // and the database is not empty. A PERSIST journal after a commit has a zeroed header, and a TRUNCATE journal
@@ -88,32 +78,6 @@ internal sealed class RollbackJournalView : IFileView
         byte[] first = new byte[1];
         if (main.Length == 0 || journal.Read(0, first, 0, 1) != 1 || first[0] == 0)
             return main;
-
-        // WALJ-45: a journal that names a super-journal that no longer exists is not hot: the transaction over several
-        // databases committed, and the journal only waits to be deleted. pager_playback in pager.c:
-        //   rc = readSuperJournal(pPager->jfd, 1+(i64)pPager->pVfs->mxPathname, &zSuper);
-        //   if( rc==SQLITE_OK && zSuper ){
-        //     rc = sqlite3OsAccess(pVfs, zSuper, SQLITE_ACCESS_EXISTS, &res);
-        //   }
-        //   if( rc!=SQLITE_OK || !res ){
-        //     goto end_playback;
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2891-L2896 (pager_playback)
-        // A stream gives no file system to look in, so Strict cannot decide and fails. Lenient plays the journal back:
-        // at worst the database reads as it was just before a transaction that did commit, never half-written.
-        if (ReadSuperJournalName(journal) is { } superJournal)
-        {
-            if (superJournalExists != null)
-            {
-                if (!superJournalExists(superJournal))
-                    return main;
-            }
-            else
-            {
-                Checks.Relaxable(false, settings, "WALJ-45",
-                    $"the journal names the super-journal \"{superJournal}\", and only its existence decides whether the journal is played back",
-                    structure: "rollback journal");
-            }
-        }
 
         long journalSize = journal.Length;
         uint pageSize = initialPageSize;
@@ -266,73 +230,6 @@ internal sealed class RollbackJournalView : IFileView
             return main;
 
         return new RollbackJournalView(main, journal, pageSize, pages, length);
-    }
-
-    /// <summary>
-    /// WALJ-43, WALJ-44: the super-journal name at the end of the journal, or null when there is none. The record is the
-    /// name, its length, a checksum of its bytes and the journal magic; any of them out of place means there is none,
-    /// and so does a checksum that does not match, which SQLite reads as "definitely roll back".
-    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1303 (readSuperJournal)
-    /// <code>
-    ///   if( SQLITE_OK!=(rc = sqlite3OsFileSize(pJrnl, &amp;szJ))
-    ///    || szJ&lt;16
-    ///    || SQLITE_OK!=(rc = read32bits(pJrnl, szJ-16, &amp;len))
-    ///    || len>=nSuper
-    ///    || len>szJ-16
-    ///    || len==0
-    ///    || SQLITE_OK!=(rc = read32bits(pJrnl, szJ-12, &amp;cksum))
-    ///    || SQLITE_OK!=(rc = sqlite3OsRead(pJrnl, aMagic, 8, szJ-8))
-    ///    || memcmp(aMagic, aJournalMagic, 8)
-    ///   ){
-    ///     return rc;
-    ///   }
-    ///   ...
-    ///       for(u=0; u&lt;len; u++){
-    ///         cksum -= zOut[u];
-    ///       }
-    ///     }
-    ///     if( rc!=SQLITE_OK || cksum || zOut[0]==0 ){
-    /// </code>
-    /// </summary>
-    private static string? ReadSuperJournalName(IFileView journal)
-    {
-        long size = journal.Length;
-        if (size < 16)
-            return null;
-
-        byte[] tail = new byte[16];
-        if (journal.Read(size - 16, tail, 0, 16) != 16)
-            return null;
-
-        int pos = 0;
-        uint length = ByteArrayReader.ReadUInt32(tail, 16, ref pos);
-        uint checksum = ByteArrayReader.ReadUInt32(tail, 16, ref pos);
-        for (int i = 0; i < JournalMagic.Length; i++)
-        {
-            if (tail[8 + i] != JournalMagic[i])
-                return null;
-        }
-
-        if (length == 0 || length >= MaxSuperJournalName || length > size - 16)
-            return null;
-
-        byte[] name = new byte[length];
-        if (journal.Read(size - 16 - length, name, 0, name.Length) != name.Length)
-            return null;
-
-        // The name is summed as C chars, which are signed on the platforms SQLite is built for
-        unchecked
-        {
-            foreach (byte b in name)
-                checksum -= (uint)(sbyte)b;
-        }
-
-        if (checksum != 0 || name[0] == 0)
-            return null;
-
-        // SQLite writes the name without a terminator, but looks it up as a C string, so a NUL within it ends it
-        int end = Array.IndexOf(name, (byte)0);
-        return Encoding.UTF8.GetString(name, 0, end < 0 ? name.Length : end);
     }
 
     /// <summary>

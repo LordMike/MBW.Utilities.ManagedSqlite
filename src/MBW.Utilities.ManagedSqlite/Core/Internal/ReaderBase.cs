@@ -153,10 +153,9 @@ internal sealed class ReaderBase : IDisposable
     /// Reads and validates the database header, and returns a reader for the database's pages. A hot
     /// <paramref name="journal"/> is played back over <paramref name="main"/> first, then the committed frames of
     /// <paramref name="wal"/> are laid over the result, in the order SQLite's pager does it. The reader owns all three
-    /// files and disposes them, also when this method throws. <paramref name="superJournalExists"/> looks up a
-    /// super-journal the journal names, or is null when there is no file system to look in.
+    /// files and disposes them, also when this method throws.
     /// </summary>
-    internal static ReaderBase Open(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings, Func<string, bool>? superJournalExists = null)
+    internal static ReaderBase Open(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
     {
         List<IDisposable> owned = new List<IDisposable> { main };
         if (journal != null)
@@ -166,7 +165,7 @@ internal sealed class ReaderBase : IDisposable
 
         try
         {
-            return OpenCore(main, journal, wal, owned, settings, superJournalExists);
+            return OpenCore(main, journal, wal, owned, settings);
         }
         catch
         {
@@ -176,7 +175,7 @@ internal sealed class ReaderBase : IDisposable
         }
     }
 
-    private static ReaderBase OpenCore(IFileView main, IFileView? journal, IFileView? walFile, List<IDisposable> owned, Sqlite3Settings settings, Func<string, bool>? superJournalExists)
+    private static ReaderBase OpenCore(IFileView main, IFileView? journal, IFileView? walFile, List<IDisposable> owned, Sqlite3Settings settings)
     {
         // A caller error, so it fails for every file, not only for those whose encoding field is 0
         if (settings.FallbackEncoding is { } fallback && fallback is not (SqliteEncoding.UTF8 or SqliteEncoding.UTF16LE or SqliteEncoding.UTF16BE))
@@ -191,7 +190,7 @@ internal sealed class ReaderBase : IDisposable
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5280 (sqlite3PagerSharedLock)
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3385 (pagerOpenWalIfPresent)
         if (journal != null)
-            file = RollbackJournalView.Apply(main, journal, InitialPageSize(main), superJournalExists, settings);
+            file = RollbackJournalView.Apply(main, journal, InitialPageSize(main));
 
         // WALJ-01, WALJ-02: a WAL is used whatever the header's read version says, but not next to an empty database,
         // where SQLite deletes it. pagerOpenWalIfPresent in pager.c:

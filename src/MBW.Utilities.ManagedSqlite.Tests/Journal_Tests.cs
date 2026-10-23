@@ -222,67 +222,32 @@ public class Journal_Tests
     }
 
     /// <summary>
-    /// WALJ-43 to WALJ-45: a journal of a transaction over several databases names a super-journal, and SQLite plays it
-    /// back only while that file exists. FromPath looks it up as SQLite does.
-    /// </summary>
-    [Theory]
-    [InlineData(true)]
-    [InlineData(false)]
-    public void SuperJournalDecidesThePlayback(bool superJournalExists)
-    {
-        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Rollback + ManyRows + "BEGIN; " + ChangeRows);
-        string superJournal = snapshot.Database + "-mjæ0123";
-        AppendSuperJournal(snapshot.Database + "-journal", superJournal);
-        if (superJournalExists)
-            File.WriteAllBytes(superJournal, new byte[] { 1 });
-
-        // SQLite reads a copy of the database and its side files, and the name in the journal still points at the
-        // super-journal next to the original, so SQLite looks up the same file
-        // FromPath opens it in Strict, where a WALJ-45 report would throw, so this also shows FromPath decides
-        SqliteParity.AssertSameAsSqlite(snapshot, superJournalExists);
-    }
-
-    /// <summary>
-    /// WALJ-43, WALJ-44: a super-journal record whose name checksum is wrong, or whose length does not fit the journal,
-    /// is no record, so the journal is played back although the super-journal it names does not exist
-    /// </summary>
-    [Theory]
-    [InlineData(1, 0)]
-    [InlineData(0, 1_000_000)]
-    public void SuperJournalRecordSqliteDoesNotRead(int checksumDelta, int lengthDelta)
-    {
-        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Rollback + ManyRows + "BEGIN; " + ChangeRows);
-        AppendSuperJournal(snapshot.Database + "-journal", snapshot.Database + "-mjæ0123", checksumDelta, lengthDelta);
-
-        SqliteParity.AssertSameAsSqlite(snapshot, true);
-    }
-
-    /// <summary>
-    /// WALJ-45: a journal given as a stream names a super-journal, and nothing tells whether that file exists. Strict
-    /// fails; Lenient reports it and plays the journal back.
+    /// WALJ-43 to WALJ-45: a journal of a transaction over several databases names a super-journal. SQLite plays it back
+    /// only while that file exists; the library reads one database and always plays it back (a documented difference).
     /// </summary>
     [Fact]
-    public void SuperJournalOfAStreamIsRelaxable()
+    public void SuperJournalIsIgnored()
     {
         using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Rollback + ManyRows + "BEGIN; " + ChangeRows);
         string superJournal = snapshot.Database + "-mjæ0123";
         AppendSuperJournal(snapshot.Database + "-journal", superJournal);
 
-        Assert.Equal("WALJ-45", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithJournal(File.OpenRead(snapshot.Database), File.OpenRead(snapshot.Database + "-journal"))).Check);
+        // While the super-journal exists, SQLite plays the journal back too. The name in the journal points at the
+        // original directory, so SQLite, which reads a copy, looks up this file.
+        File.WriteAllBytes(superJournal, new byte[] { 1 });
+        SqliteParity.AssertSameAsSqlite(snapshot, true);
 
-        // Played back, so the crashed update is undone and no row reads "changed"
-        List<string> issues = new List<string>();
-        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
-        using (Sqlite3Database db = Sqlite3Database.FromStreamWithJournal(File.OpenRead(snapshot.Database), File.OpenRead(snapshot.Database + "-journal"), lenient))
-            Assert.DoesNotContain(db.GetTable("t").EnumerateRows(), r => (string)r.ColumnData[1] == "changed");
-        Assert.Equal(new[] { "WALJ-45" }, issues);
+        // Without it, the journal is still played back, so no row reads "changed"
+        File.Delete(superJournal);
+        using Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database);
+        Assert.DoesNotContain(db.GetTable("t").EnumerateRows(), r => (string)r.ColumnData[1] == "changed");
     }
 
     /// <summary>
     /// Appends a super-journal record to a journal, as writeSuperJournal in pager.c writes it: the lock-byte page number,
     /// the name, its length, the sum of its bytes as signed chars, and the journal magic
     /// </summary>
-    private static void AppendSuperJournal(string journal, string name, int checksumDelta = 0, int lengthDelta = 0)
+    private static void AppendSuperJournal(string journal, string name)
     {
         byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
         uint checksum = 0;
@@ -293,8 +258,8 @@ public class Journal_Tests
         byte[] record = new byte[4 + nameBytes.Length + 16];
         WriteBigEndian(record, 0, 0x40000000 / 4096 + 1);
         nameBytes.CopyTo(record, 4);
-        WriteBigEndian(record, 4 + nameBytes.Length, (uint)(nameBytes.Length + lengthDelta));
-        WriteBigEndian(record, 8 + nameBytes.Length, checksum + (uint)checksumDelta);
+        WriteBigEndian(record, 4 + nameBytes.Length, (uint)nameBytes.Length);
+        WriteBigEndian(record, 8 + nameBytes.Length, checksum);
         new byte[] { 0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7 }.CopyTo(record, 12 + nameBytes.Length);
         fs.Write(record, 0, record.Length);
     }
