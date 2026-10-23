@@ -94,7 +94,7 @@ It is stricter than SQLite for records with surplus fields and for header size 0
 **We return different values without failing:**
 4. **REC-11, DEFAULT for short records.** SQLite returns the column DEFAULT (with affinity) when a record has fewer fields (ALTER TABLE ADD COLUMN). We report the column as missing. This is a value-parity gap, not a corruption check.
 5. **REC-21.** The rowid-alias column returns false instead of the rowid when the record is shorter than the alias's position (the check order in `SqlExtensions.cs:62` vs `:66`).
-6. **REC-34/36/37, text decoding.** No failures, but we lose data: invalid UTF-8 and lone surrogates become U+FFFD, and an odd trailing UTF-16 byte becomes U+FFFD where SQLite drops it.
+6. **REC-34/37, text decoding.** No failures, but we lose data: invalid UTF-8 and lone surrogates become U+FFFD. (REC-36, an odd trailing UTF-16 byte, is now dropped as SQLite drops it.)
 
 **SQLite rejects what we accept (minor):**
 7. **REC-03.** Header size > 98307 is always corrupt in SQLite; we have no cap.

@@ -41,6 +41,7 @@ The code for each of these carries its ID in a comment.
 | CELL-13, CELL-16 | An overflow chain that ends early is corrupt; the last overflow page's next pointer is never read |
 | REC-03, REC-04, REC-05, REC-10, CELL-21, CELL-22, CELL-23 | Records are decoded lazily, up to the field read, with OP_Column's checks |
 | REC-21 | A rowid alias column reads the rowid even when the record is short |
+| REC-36 | UTF-16 text of an odd number of bytes drops the last byte, as sqlite3VdbeMemTranslate does |
 | CELL-38 | The reader's own bound: a payload no larger than the database's pages could hold |
 | SCHEMA-11, SCHEMA-13, SCHEMA-15, SCHEMA-17, SCHEMA-19, SCHEMA-22, SCHEMA-26, SCHEMA-58, DDL-58 | Schema rows are read as sqlite3InitCallback reads them: each value as text, cut at a NUL, and the open fails where SQLite's schema load does |
 | SCHEMA-26, DDL-03 | Relaxable: a row's type must agree with its statement (SCHEMA-26), and its name and tbl_name with the statement's names (DDL-03) |

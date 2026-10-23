@@ -107,6 +107,24 @@ INSERT INTO tbl VALUES ('very long', replace(hex(zeroblob(75000)), '0', 'x'));")
     }
 
     /// <summary>
+    /// REC-36: UTF-16 text of an odd number of bytes drops the last byte, as sqlite3VdbeMemTranslate in utf.c does
+    /// (https://github.com/sqlite/sqlite/blob/version-3.53.4/src/utf.c#L297). SQL cannot store one, since a CAST to
+    /// TEXT also drops the byte, so the 3-byte blob's serial type in a's record header (18) is made text (19).
+    /// </summary>
+    [Theory]
+    [InlineData("UTF-16le")]
+    [InlineData("UTF-16be")]
+    public void OddLengthUtf16TextDropsLastByte(string encoding)
+    {
+        SqliteParity.AssertSameAsSqlite($"PRAGMA encoding = '{encoding}'; CREATE TABLE tbl (a, b TEXT); INSERT INTO tbl VALUES (x'616263', 'one');", data =>
+        {
+            DbPatcher patcher = new DbPatcher(data);
+            int record = patcher.GetRecordOffset(2, 0, out _);
+            return patcher.WriteByte(record + 1, 18, 19).Data;
+        });
+    }
+
+    /// <summary>
     /// An empty blob, the largest that stays on the leaf page, and the smallest that overflows. With the default
     /// 4096 byte page a table leaf holds at most 4096 - 35 = 4061 bytes of record locally. A single-blob record has
     /// a 3 byte header (header size, then a 2 byte serial type for sizes of 52 to 8187), so 4058 bytes is the largest

@@ -478,6 +478,13 @@ internal sealed class ReaderBase : IDisposable
 
     internal string DecodeString(byte[] buffer, int offset, int count)
     {
+        // REC-36: UTF-16 text of an odd number of bytes drops the last byte when SQLite translates it.
+        // sqlite3VdbeMemTranslate in utf.c:
+        //   pMem->n &= ~1;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/utf.c#L297 (sqlite3VdbeMemTranslate)
+        if (TextEncoding != SqliteEncoding.UTF8)
+            count &= ~1;
+
         return _encoding.GetString(buffer, offset, count);
     }
 }
