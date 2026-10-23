@@ -26,15 +26,16 @@ using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
     // Note that this library does not do SQL selects, it's a raw parser
     IEnumerable<Sqlite3Row> rows = tbl.EnumerateRows();
     
-    // Get the data of column 0 on row 0
+    // Get the data of column 1 on the first row, as it is stored in the record
     Sqlite3Row row = rows.First();
-    object data = row.ColumnData[0];
+    object? data = row.ColumnData[1];
 
-    // TryGetValueByName() reads a column by name, and also detects row-id substitutes
-    row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
-    
-    // Try casting it to a specific type (you must know the C# type)
-    row.TryGetOrdinal<int>(0, out int myInteger);
+    // TryGetValueByName() reads a column by name, as SQLite does. An INTEGER PRIMARY KEY column is an alias of the
+    // row id, which the record stores as NULL, so ColumnData[0] is null for Id; by name, Id reads the row id.
+    row.TryGetValueByName("Id", out object? myId);
+
+    // Read column 1 as a specific C# type
+    row.TryGetOrdinal<string>(1, out string? myName);
 }
 ```
 
@@ -42,8 +43,7 @@ using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
 
 Pick the factory that matches the files you have.
 
-> [!IMPORTANT]
-> If the database has a `-wal` or `-journal` file next to it, you must pass it in. The `-wal` file can hold committed data that is not in the main file yet, and a hot `-journal` means a write was interrupted and the main file may be half-written. Without them, the library reads stale or inconsistent data, and it cannot warn you: nothing in the main file says whether such a file exists. `FromPath` finds them for you.
+**Important:** if the database has a `-wal` or `-journal` file next to it, you must pass it in. The `-wal` file can hold committed data that is not in the main file yet, and a hot `-journal` means a write was interrupted and the main file may be half-written. Without them, the library reads stale or inconsistent data, and it cannot warn you: nothing in the main file says whether such a file exists. `FromPath` finds them for you.
 
 | You have | Use |
 |---|---|
@@ -53,6 +53,33 @@ Pick the factory that matches the files you have.
 | The database file and its `-journal` file (rollback modes) | `Sqlite3Database.FromStreamWithJournal(database, journal)` |
 
 The stream factories dispose the streams with the database, unless you pass `leaveOpen: true`. Streams must be readable and seekable.
+
+### Settings and validation
+
+Every factory takes an optional `Sqlite3Settings`:
+
+```csharp
+Sqlite3Settings settings = new Sqlite3Settings
+{
+    Validation = SqliteValidation.Lenient,
+    OnValidationIssue = issue => Console.WriteLine(issue) // e.g. "HDR-14: ..."
+};
+
+using Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db", settings);
+```
+
+* **`Validation`** sets how strictly the file is checked. `Strict`, the default, fails exactly where SQLite fails. `Lenient` reads on past damage that SQLite rejects but that leaves the data intact, such as an unknown file format version. Damage that could give wrong values fails in both modes.
+* **`OnValidationIssue`** is called for each check that `Lenient` reads past.
+* **`FallbackEncoding`** is the text encoding to use when the header names none, which SQLite never writes. The default is UTF-8, as in SQLite.
+
+### Errors
+
+All of the library's own exceptions derive from `SqliteException`:
+
+* **`SqliteCorruptException`**: the file is malformed. `Check` names the consistency check that failed (the IDs are listed in [docs/sqlite-checks](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md)), and `Page` and `Structure` say where, when known. Damage is reported where SQLite reports it: a malformed header or schema fails the open, a damaged b-tree fails the table's open or its row enumeration, and a bad value fails only the read of that value.
+* **`SqliteInvalidEncodingException`**: the settings' `FallbackEncoding` is not a text encoding.
+
+Lookups throw the usual .NET exceptions: `GetTable` throws `KeyNotFoundException` for a name that is no table, and `NotSupportedException` for a virtual table.
 
 ### Journal modes
 
@@ -76,7 +103,6 @@ The library assumes nothing else uses the files while a database is open:
 ## Notes
 
 * This is not an ADO.Net substitute, it will not support SQL statements or use indexes - it will only provide access to the data in a database.
-* All the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
 * Interestingly, SQLite3 allows _any_ value in _any_ column. So you may get different types out of the raw files, should you encounter an app that does this.
 
 ## Known limitations
