@@ -107,7 +107,7 @@ public class SqlCreateTable_Tests
     [InlineData("b DEFAULT (CAST('12abc' AS INTEGER)), c DEFAULT (CAST(1.9 AS INT)), d DEFAULT (CAST('99999999999999999999' AS INTEGER)), e DEFAULT (CAST(-'1e20' AS INTEGER)), f DEFAULT (CAST(x'3132' AS INTEGER)), g DEFAULT (CAST(NULL AS INTEGER))")]
     [InlineData("b DEFAULT (CAST(5 AS REAL)), c DEFAULT (CAST(' 1.5x' AS DOUBLE)), d DEFAULT (CAST('1e3' AS NUMERIC)), e DEFAULT (CAST(x'2D35' AS NUMERIC)), f INTEGER DEFAULT (CAST('2.0' AS REAL)), g TEXT DEFAULT (CAST(5 AS TEXT)), h INTEGER DEFAULT (CAST(5 AS TEXT))")]
     [InlineData("b DEFAULT (CAST('abc' AS BLOB)), c DEFAULT (CAST(5 AS BLOB)), d DEFAULT (CAST(x'616263' AS TEXT)), e TEXT DEFAULT (CAST(x'' AS VARCHAR(10)))")]
-    [InlineData("b DEFAULT (CAST('abc' AS BLOB)), c DEFAULT (CAST(5 AS BLOB)), d DEFAULT (CAST(x'616263' AS TEXT)), e DEFAULT (CAST(x'61626364' AS TEXT))", "UTF-16le")]
+    [InlineData("b DEFAULT (CAST('abc' AS BLOB)), c DEFAULT (CAST(5 AS BLOB)), d DEFAULT (CAST(x'616263' AS TEXT)), e DEFAULT (CAST(x'61626364' AS TEXT)), f DEFAULT (CAST(CAST('abc' AS BLOB) AS TEXT)), g DEFAULT (CAST(CAST(12 AS BLOB) AS INTEGER)), h DEFAULT (-CAST('12' AS BLOB)), i DEFAULT (CAST(CAST('1.5' AS BLOB) AS REAL)), j DEFAULT (-CAST('1.5Ā' AS BLOB))", "UTF-16le")]
     [InlineData("b DEFAULT (CAST('abc' AS BLOB))", "UTF-16be")]
     public void DefaultOfShortRecord(string columns, string encoding = "UTF-8") => SqliteParity.AssertSameAsSqlite(
         $"PRAGMA encoding = '{encoding}'; CREATE TABLE t (a); INSERT INTO t VALUES (1);", $"UPDATE sqlite_schema SET sql = 'CREATE TABLE t (a, {columns.Replace("'", "''")})' WHERE name = 't'");
