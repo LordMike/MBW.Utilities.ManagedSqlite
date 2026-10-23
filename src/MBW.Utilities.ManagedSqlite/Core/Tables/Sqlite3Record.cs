@@ -247,8 +247,15 @@ internal struct Sqlite3Record
         bool overread = false;
         do
         {
+            // Grow to at least double, and straight to field p2 when that is further, so reading a late column of a wide
+            // table makes one larger array instead of a row of discarded doubled ones. Neither goes past the fields the
+            // rest of the header can hold, as each serial type takes at least one byte.
             if (_fields != null && 2 * i + 2 > _fields.Length)
-                Array.Resize(ref _fields, _fields.Length * 2);
+            {
+                long most = i + Math.Max(1, _headerSize - headerPos);
+                long fields = Math.Min(Math.Max(_fields.Length, (long)p2 + 1), most);
+                Array.Resize(ref _fields, 2 * (int)Math.Max(fields, i + 1));
+            }
 
             // A serial type that runs past the payload runs past the header too, which the checks below reject
             int pos = _start + headerPos;
