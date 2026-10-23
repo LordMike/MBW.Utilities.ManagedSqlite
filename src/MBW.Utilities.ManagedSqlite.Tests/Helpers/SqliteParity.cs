@@ -156,16 +156,17 @@ internal static class SqliteParity
     }
 
     /// <summary>
-    /// Asserts that SQLite reports SQLITE_CANTOPEN when it reads the database in <paramref name="snapshot"/>
+    /// Asserts that SQLite fails with <paramref name="errorCode"/> when it reads the database in
+    /// <paramref name="snapshot"/>
     /// </summary>
-    public static void AssertSqliteCannotOpen(SnapshotDirectory snapshot)
+    public static void AssertSqliteFails(SnapshotDirectory snapshot, int errorCode)
     {
         using SnapshotDirectory copy = snapshot.Copy();
 
         using SqliteConnection connection = new SqliteConnection($"Data Source={copy.Database};Pooling=False");
         connection.Open();
         SqliteException ex = Assert.Throws<SqliteException>(() => Query(connection, "SELECT * FROM sqlite_master"));
-        Assert.Equal(raw.SQLITE_CANTOPEN, ex.SqliteErrorCode);
+        Assert.Equal(errorCode, ex.SqliteErrorCode);
     }
 
     /// <summary>

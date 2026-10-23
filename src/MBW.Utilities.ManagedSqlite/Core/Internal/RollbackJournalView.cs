@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Text;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -17,10 +18,10 @@ namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5335 (sqlite3PagerSharedLock)
 /// </para>
 /// <para>
-/// A journal that names a super-journal (a transaction over several attached databases) is played back whether or not
-/// the super-journal still exists. SQLite skips the playback when the super-journal is gone, as the transaction then
-/// committed; this reader would then show the state just before that transaction, which is still consistent.
-/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2891-L2896 (pager_playback)
+/// A journal that names a super-journal (a transaction over several attached databases) is played back only while the
+/// super-journal exists, as in SQLite; when it is gone, the transaction committed (WALJ-45). See
+/// <see cref="Apply"/> for when that cannot be known.
+/// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2885-L2896 (pager_playback)
 /// </para>
 /// https://www.sqlite.org/fileformat.html#the_rollback_journal
 /// </remarks>
@@ -36,6 +37,10 @@ internal sealed class RollbackJournalView : IFileView
 
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1663-L1665 (readJournalHdr), MAX_SECTOR_SIZE
     private const uint MaxSectorSize = 0x10000;
+
+    // The longest super-journal name SQLite reads, including its terminator: the unix VFS's mxPathname plus 1
+    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_unix.c#L180 (MAX_PATHNAME)
+    private const uint MaxSuperJournalName = 512 + 1;
 
     // The lock-byte page holds the byte at offset 1 GiB, PENDING_BYTE
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.h#L53 (PAGER_SJ_PGNO_COMPUTED)
@@ -61,11 +66,13 @@ internal sealed class RollbackJournalView : IFileView
     /// Plays back <paramref name="journal"/> over <paramref name="main"/> if it is hot, and returns the result.
     /// Returns <paramref name="main"/> unchanged when the journal is not hot or its first header is not usable.
     /// <paramref name="initialPageSize"/> is the page size from the main file's header, used where the journal does
-    /// not give its own. The view does not own either file.
+    /// not give its own. <paramref name="superJournalExists"/> tells whether a super-journal named by the journal
+    /// exists; when it is null (a journal given as a stream), that cannot be known, which fails WALJ-45 in Strict and
+    /// plays the journal back in Lenient. The view does not own either file.
     /// </summary>
-    public static IFileView Apply(IFileView main, IFileView journal, uint initialPageSize)
+    public static IFileView Apply(IFileView main, IFileView journal, uint initialPageSize, Func<string, bool>? superJournalExists, Sqlite3Settings settings)
     {
-        // A journal is hot when it exists, is not empty, its first byte is not 0, no connection holds a RESERVED lock,
+        // WALJ-34, WALJ-36, WALJ-37: a journal is hot when it exists, is not empty, its first byte is not 0, no connection holds a RESERVED lock,
         // and the database is not empty. A PERSIST journal after a commit has a zeroed header, and a TRUNCATE journal
         // is empty. This reader takes no locks and assumes no other connection is writing.
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5180 (hasHotJournal)
@@ -77,6 +84,32 @@ internal sealed class RollbackJournalView : IFileView
         byte[] first = new byte[1];
         if (main.Length == 0 || journal.Read(0, first, 0, 1) != 1 || first[0] == 0)
             return main;
+
+        // WALJ-45: a journal that names a super-journal that no longer exists is not hot: the transaction over several
+        // databases committed, and the journal only waits to be deleted. pager_playback in pager.c:
+        //   rc = readSuperJournal(pPager->jfd, 1+(i64)pPager->pVfs->mxPathname, &zSuper);
+        //   if( rc==SQLITE_OK && zSuper ){
+        //     rc = sqlite3OsAccess(pVfs, zSuper, SQLITE_ACCESS_EXISTS, &res);
+        //   }
+        //   if( rc!=SQLITE_OK || !res ){
+        //     goto end_playback;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2891-L2896 (pager_playback)
+        // A stream gives no file system to look in, so Strict cannot decide and fails. Lenient plays the journal back:
+        // at worst the database reads as it was just before a transaction that did commit, never half-written.
+        if (ReadSuperJournalName(journal) is { } superJournal)
+        {
+            if (superJournalExists != null)
+            {
+                if (!superJournalExists(superJournal))
+                    return main;
+            }
+            else
+            {
+                Checks.Relaxable(false, settings, "WALJ-45",
+                    $"the journal names the super-journal \"{superJournal}\", and only its existence decides whether the journal is played back",
+                    structure: "rollback journal");
+            }
+        }
 
         long journalSize = journal.Length;
         uint pageSize = initialPageSize;
@@ -97,7 +130,7 @@ internal sealed class RollbackJournalView : IFileView
         while (!done)
         {
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1590 (readJournalHdr)
-            // Each header starts at the next multiple of the sector size (journalHdrOffset), and must fit in the file
+            // WALJ-46, WALJ-47: each header starts at the next multiple of the sector size (journalHdrOffset), and must fit in the file
             // with a whole sector, or the journal ends. A wrong magic ends it too. None of these are errors.
             //   pPager->journalOff = journalHdrOffset(pPager);
             //   if( pPager->journalOff+JOURNAL_HDR_SZ(pPager) > journalSize ){
@@ -123,7 +156,7 @@ internal sealed class RollbackJournalView : IFileView
 
             if (offset == 0)
             {
-                // Only the first header holds the sector size and page size. A page size of 0 comes from SQLite before
+                // WALJ-49, WALJ-50, WALJ-51: only the first header holds the sector size and page size. A page size of 0 comes from SQLite before
                 // 3.5.8 and means the database's. A value out of range means the header is not to be trusted, and
                 // nothing is played back.
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1640-L1690 (readJournalHdr)
@@ -151,7 +184,7 @@ internal sealed class RollbackJournalView : IFileView
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2924-L2927 (pager_playback)
             //   if( nRec==0xffffffff ){
             //     nRec = (int)((szJ - JOURNAL_HDR_SZ(pPager))/JOURNAL_PG_SZ(pPager));
-            // A journal written with synchronous=OFF never updates its record count, so the file size gives it. A
+            // WALJ-52, WALJ-53: a journal written with synchronous=OFF never updates its record count, so the file size gives it. A
             // count of 0 in a hot journal means the segment has no records (the special case for 0 is not for hot
             // journals).
             long records = recordCount == 0xffffffff ? (journalSize - sectorSize) / (pageSize + 8) : recordCount;
@@ -160,7 +193,7 @@ internal sealed class RollbackJournalView : IFileView
             //   if( pPager->journalOff==JOURNAL_HDR_SZ(pPager) ){
             //     rc = pager_truncate(pPager, mxPg);
             //     pPager->dbSize = mxPg;
-            // The first header cuts the file back to the size it had before the transaction, even when no record
+            // WALJ-54: the first header cuts the file back to the size it had before the transaction, even when no record
             // follows. The page count in later headers is not used.
             if (!truncated)
             {
@@ -172,7 +205,7 @@ internal sealed class RollbackJournalView : IFileView
             for (long r = 0; r < records; r++)
             {
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L2298 (pager_playback_one_page)
-                // A record is the page number, the original page and a checksum. A short read ends the playback
+                // WALJ-55 to WALJ-59: a record is the page number, the original page and a checksum. A short read ends the playback
                 // without an error, as does page 0, the lock-byte page or a wrong checksum. Pages past the original
                 // size are skipped.
                 //   if( pgno==0 || pgno==PAGER_SJ_PGNO(pPager) ){
@@ -219,7 +252,7 @@ internal sealed class RollbackJournalView : IFileView
                     break;
                 }
 
-                // Records are played back in journal order, so a later copy of a page wins, as on disk
+                // WALJ-60: records are played back in journal order, so a later copy of a page wins, as on disk
                 pages[page] = recordOffset + 4;
                 length = Math.Max(length, (long)page * pageSize);
             }
@@ -229,6 +262,73 @@ internal sealed class RollbackJournalView : IFileView
             return main;
 
         return new RollbackJournalView(main, journal, pageSize, pages, length);
+    }
+
+    /// <summary>
+    /// WALJ-43, WALJ-44: the super-journal name at the end of the journal, or null when there is none. The record is the
+    /// name, its length, a checksum of its bytes and the journal magic; any of them out of place means there is none,
+    /// and so does a checksum that does not match, which SQLite reads as "definitely roll back".
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1303 (readSuperJournal)
+    /// <code>
+    ///   if( SQLITE_OK!=(rc = sqlite3OsFileSize(pJrnl, &amp;szJ))
+    ///    || szJ&lt;16
+    ///    || SQLITE_OK!=(rc = read32bits(pJrnl, szJ-16, &amp;len))
+    ///    || len>=nSuper
+    ///    || len>szJ-16
+    ///    || len==0
+    ///    || SQLITE_OK!=(rc = read32bits(pJrnl, szJ-12, &amp;cksum))
+    ///    || SQLITE_OK!=(rc = sqlite3OsRead(pJrnl, aMagic, 8, szJ-8))
+    ///    || memcmp(aMagic, aJournalMagic, 8)
+    ///   ){
+    ///     return rc;
+    ///   }
+    ///   ...
+    ///       for(u=0; u&lt;len; u++){
+    ///         cksum -= zOut[u];
+    ///       }
+    ///     }
+    ///     if( rc!=SQLITE_OK || cksum || zOut[0]==0 ){
+    /// </code>
+    /// </summary>
+    private static string? ReadSuperJournalName(IFileView journal)
+    {
+        long size = journal.Length;
+        if (size < 16)
+            return null;
+
+        byte[] tail = new byte[16];
+        if (journal.Read(size - 16, tail, 0, 16) != 16)
+            return null;
+
+        int pos = 0;
+        uint length = ByteArrayReader.ReadUInt32(tail, 16, ref pos);
+        uint checksum = ByteArrayReader.ReadUInt32(tail, 16, ref pos);
+        for (int i = 0; i < JournalMagic.Length; i++)
+        {
+            if (tail[8 + i] != JournalMagic[i])
+                return null;
+        }
+
+        if (length == 0 || length >= MaxSuperJournalName || length > size - 16)
+            return null;
+
+        byte[] name = new byte[length];
+        if (journal.Read(size - 16 - length, name, 0, name.Length) != name.Length)
+            return null;
+
+        // The name is summed as C chars, which are signed on the platforms SQLite is built for
+        unchecked
+        {
+            foreach (byte b in name)
+                checksum -= (uint)(sbyte)b;
+        }
+
+        if (checksum != 0 || name[0] == 0)
+            return null;
+
+        // The name is NUL-terminated within its length when SQLite pads it
+        int end = Array.IndexOf(name, (byte)0);
+        return Encoding.UTF8.GetString(name, 0, end < 0 ? name.Length : end);
     }
 
     /// <summary>

@@ -52,7 +52,7 @@ internal sealed class WalIndex
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L1418-L1421 (walIndexRecover)
         //   rc = sqlite3OsFileSize(pWal->pWalFd, &nSize);
         //   if( nSize>WAL_HDRSIZE ){
-        // A log no longer than its header is empty.
+        // WALJ-06: a log no longer than its header is empty.
         long size = file.Length;
         if (size <= WalHeaderSize)
             return null;
@@ -74,12 +74,12 @@ internal sealed class WalIndex
         //   ){
         //     goto finished;
         //   }
-        // A log with a wrong magic or page size is ignored as a whole, without an error. The page size is a plain
+        // WALJ-07, WALJ-09: a log with a wrong magic or page size is ignored as a whole, without an error. The page size is a plain
         // 32-bit value here: 65536 is stored as is, unlike the database header's "1".
         if ((magic & 0xFFFFFFFE) != WalMagic || (pageSize & (pageSize - 1)) != 0 || pageSize > 65536 || pageSize < 512)
             return null;
 
-        // The low bit of the magic says in which byte order the checksums add up the 32-bit words: big-endian when set,
+        // WALJ-08: the low bit of the magic says in which byte order the checksums add up the 32-bit words: big-endian when set,
         // little-endian when clear. SQLite compares it with the machine's byte order to pick its native or byte-swapped
         // loop, which comes to the same thing on any machine.
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L856 (walChecksumBytes)
@@ -88,7 +88,8 @@ internal sealed class WalIndex
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L1460-L1468 (walIndexRecover)
         //   walChecksumBytes(pWal->hdr.bigEndCksum==SQLITE_BIGENDIAN, aBuf, WAL_HDRSIZE-2*4, 0, pWal->hdr.aFrameCksum);
         //   if( pWal->hdr.aFrameCksum[0]!=sqlite3Get4byte(&aBuf[24]) || ... ) goto finished;
-        // A wrong header checksum, too, means the log is ignored.
+        // WALJ-10: a wrong header checksum, too, means the log is ignored. WALJ-12: the salts and checkpoint sequence
+        // may hold any value; the salts are only compared with each frame's.
         uint s1 = 0, s2 = 0;
         Checksum(bigEndianChecksum, header, 0, WalHeaderSize - 8, ref s1, ref s2);
         pos = 24;
@@ -105,7 +106,7 @@ internal sealed class WalIndex
 
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L1489 (walIndexRecover)
         //   iLastFrame = (nSize - WAL_HDRSIZE) / szFrame;
-        // A partial frame at the end of the log is not counted.
+        // WALJ-13: a partial frame at the end of the log is not counted.
         int frameSize = (int)pageSize + FrameHeaderSize;
         long frameCount = (size - WalHeaderSize) / frameSize;
 
@@ -121,7 +122,7 @@ internal sealed class WalIndex
                 break;
 
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L1000 (walDecodeFrame)
-            // A frame is valid when its salts equal the header's, its page number is not 0, and the running checksum
+            // WALJ-14 to WALJ-17: a frame is valid when its salts equal the header's, its page number is not 0, and the running checksum
             // over the WAL header and every frame so far (the first 8 bytes of each frame header, then its page)
             // equals the one it stores. The first invalid frame ends the log: it is a torn write, or a frame left
             // over from before the log was restarted. Neither is an error.
@@ -147,8 +148,10 @@ internal sealed class WalIndex
             //   if( nTruncate ){
             //     pWal->hdr.mxFrame = iFrame;
             //     pWal->hdr.nPage = nTruncate;
-            // A frame with a database size ends a transaction. Frames after the last one belong to a transaction
-            // that never committed, and are dropped.
+            // WALJ-18, WALJ-19, WALJ-24: a frame with a database size ends a transaction, and that size, whatever it
+            // is, becomes the page count. Frames after the last one belong to a transaction that never committed, and
+            // are dropped. WALJ-20, WALJ-21: frames of pages past that count, or of the lock-byte page, are kept like
+            // any other, as the reader never asks for them, and the newest committed copy of a page wins.
             if (commitSize != 0)
             {
                 foreach (KeyValuePair<uint, long> entry in pending)

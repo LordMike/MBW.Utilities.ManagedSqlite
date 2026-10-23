@@ -43,12 +43,12 @@ public sealed class Sqlite3Database : IDisposable
     /// Opens the database in <paramref name="main"/>, with its optional rollback journal and WAL. The database owns the
     /// files and disposes them, also when the open fails.
     /// </summary>
-    internal Sqlite3Database(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
+    internal Sqlite3Database(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings, Func<string, bool>? superJournalExists = null)
     {
         try
         {
             // A copy, so the caller changing the settings later can't change how this database reads
-            _reader = ReaderBase.Open(main, journal, wal, settings.Clone());
+            _reader = ReaderBase.Open(main, journal, wal, settings.Clone(), superJournalExists);
 
             try
             {
@@ -126,10 +126,12 @@ public sealed class Sqlite3Database : IDisposable
     /// <remarks>
     /// A read-only SQLite connection refuses to read a database with a hot journal (SQLITE_READONLY_ROLLBACK); a
     /// writable one plays the journal back into the file first. This method gives what the writable connection would
-    /// read. A journal that is not hot (empty, or with a zeroed header after a commit) is ignored. A journal that names
-    /// a super-journal is always played back; if that multi-database transaction did commit, the database reads as it
-    /// was just before it. A journal that belongs to another database gives wrong results. Neither file may be written
-    /// to while the database is open.
+    /// read. A journal that is not hot (empty, or with a zeroed header after a commit) is ignored. A journal of a
+    /// transaction over several databases names a super-journal, and SQLite plays it back only while that file exists.
+    /// A stream cannot tell, so such a journal fails in Strict (WALJ-45) and is played back in Lenient: if that
+    /// transaction did commit, the database reads as it was just before it. <see cref="FromPath"/> looks the
+    /// super-journal up. A journal that belongs to another database gives wrong results. Neither file may be written to
+    /// while the database is open.
     /// </remarks>
     /// <param name="database">The main database file, a seekable stream</param>
     /// <param name="journal">The database's <c>-journal</c> file, a seekable stream</param>
@@ -155,7 +157,8 @@ public sealed class Sqlite3Database : IDisposable
     /// The files are opened for reading, allowing others to read them too. The database must not be written to while
     /// it is open, and its side files must belong to it: SQLite leaves no mark in the main file that says a side file
     /// should exist, so a deleted or misplaced journal cannot be detected. See <see cref="FromStreamWithWal"/> and
-    /// <see cref="FromStreamWithJournal"/> for how each side file is read.
+    /// <see cref="FromStreamWithJournal"/> for how each side file is read. A super-journal the journal names is looked up
+    /// on the file system, as SQLite does.
     /// </remarks>
     /// <param name="path">The path of the main database file</param>
     /// <param name="settings">Settings, or null for the defaults</param>
@@ -188,7 +191,7 @@ public sealed class Sqlite3Database : IDisposable
             throw;
         }
 
-        return FromStreams(database, journal, wal, settings, false);
+        return FromStreams(database, journal, wal, settings, false, File.Exists);
     }
 
     private static FileStream OpenRead(string path)
@@ -200,7 +203,7 @@ public sealed class Sqlite3Database : IDisposable
     /// Wraps the streams in file views and opens the database. Unless <paramref name="leaveOpen"/>, the streams are
     /// disposed when the open fails, and the database disposes them otherwise.
     /// </summary>
-    private static Sqlite3Database FromStreams(Stream database, Stream? journal, Stream? wal, Sqlite3Settings? settings, bool leaveOpen)
+    private static Sqlite3Database FromStreams(Stream database, Stream? journal, Stream? wal, Sqlite3Settings? settings, bool leaveOpen, Func<string, bool>? superJournalExists = null)
     {
         if (database == null)
             throw new ArgumentNullException(nameof(database));
@@ -231,7 +234,7 @@ public sealed class Sqlite3Database : IDisposable
             throw;
         }
 
-        return new Sqlite3Database(main, journalView, walView, settings ?? new Sqlite3Settings());
+        return new Sqlite3Database(main, journalView, walView, settings ?? new Sqlite3Settings(), superJournalExists);
     }
 
     private static void CheckStream(Stream stream, string parameterName)

@@ -5,6 +5,7 @@ using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
+using SQLitePCL;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Tests;
@@ -113,7 +114,7 @@ public class Journal_Tests
         File.WriteAllBytes(wal, bytes);
         RewriteWalChecksums(wal, bigEndian: false);
 
-        SqliteParity.AssertSqliteCannotOpen(snapshot);
+        SqliteParity.AssertSqliteFails(snapshot, raw.SQLITE_CANTOPEN);
         Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database));
     }
 
@@ -136,6 +137,96 @@ public class Journal_Tests
         using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database, lenient))
             Assert.Equal(2, db.GetTable("t").EnumerateRows().Count());
         Assert.Equal(new[] { "WALJ-28" }, issues);
+    }
+
+    /// <summary>
+    /// WALJ-26: the header on the WAL's page 1 says the database has more pages than the WAL's last commit. SQLite fails
+    /// (SQLITE_CORRUPT); the pages that exist are intact, so Lenient reports it and reads on.
+    /// </summary>
+    [Fact]
+    public void HeaderPageCountMustFitTheWal()
+    {
+        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Wal + Checkpoint + "CREATE TABLE u (x); INSERT INTO u VALUES (1);");
+        string wal = snapshot.Database + "-wal";
+        byte[] bytes = File.ReadAllBytes(wal);
+        int frameSize = WalFrameSize(snapshot.Database);
+        for (int frame = 32; frame + frameSize <= bytes.Length; frame += frameSize)
+        {
+            if (bytes[frame] == 0 && bytes[frame + 1] == 0 && bytes[frame + 2] == 0 && bytes[frame + 3] == 1)
+                bytes[frame + 24 + 30] += 100;
+        }
+
+        File.WriteAllBytes(wal, bytes);
+        RewriteWalChecksums(wal, bigEndian: false);
+
+        SqliteParity.AssertSqliteFails(snapshot, raw.SQLITE_CORRUPT);
+        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database));
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database, lenient))
+            Assert.Single(db.GetTable("u").EnumerateRows());
+        Assert.Equal(new[] { "WALJ-26" }, issues);
+    }
+
+    /// <summary>
+    /// WALJ-43 to WALJ-45: a journal of a transaction over several databases names a super-journal, and SQLite plays it
+    /// back only while that file exists. FromPath looks it up as SQLite does.
+    /// </summary>
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void SuperJournalDecidesThePlayback(bool superJournalExists)
+    {
+        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Rollback + ManyRows + "BEGIN; " + ChangeRows);
+        string superJournal = snapshot.Database + "-mjæ0123";
+        AppendSuperJournal(snapshot.Database + "-journal", superJournal);
+        if (superJournalExists)
+            File.WriteAllBytes(superJournal, new byte[] { 1 });
+
+        SqliteParity.AssertSameAsSqlite(snapshot, superJournalExists);
+    }
+
+    /// <summary>
+    /// WALJ-45: a journal given as a stream names a super-journal, and nothing tells whether that file exists. Strict
+    /// fails; Lenient reports it and plays the journal back.
+    /// </summary>
+    [Fact]
+    public void SuperJournalOfAStreamIsRelaxable()
+    {
+        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Rollback + ManyRows + "BEGIN; " + ChangeRows);
+        string superJournal = snapshot.Database + "-mjæ0123";
+        AppendSuperJournal(snapshot.Database + "-journal", superJournal);
+
+        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithJournal(File.OpenRead(snapshot.Database), File.OpenRead(snapshot.Database + "-journal")));
+
+        // Played back, so the crashed update is undone and no row reads "changed"
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        using (Sqlite3Database db = Sqlite3Database.FromStreamWithJournal(File.OpenRead(snapshot.Database), File.OpenRead(snapshot.Database + "-journal"), lenient))
+            Assert.DoesNotContain(db.GetTable("t").EnumerateRows(), r => (string)r.ColumnData[1] == "changed");
+        Assert.Equal(new[] { "WALJ-45" }, issues);
+    }
+
+    /// <summary>
+    /// Appends a super-journal record to a journal, as writeSuperJournal in pager.c writes it: the lock-byte page number,
+    /// the name, its length, the sum of its bytes as signed chars, and the journal magic
+    /// </summary>
+    private static void AppendSuperJournal(string journal, string name)
+    {
+        byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
+        uint checksum = 0;
+        foreach (byte b in nameBytes)
+            checksum += (uint)(sbyte)b;
+
+        using FileStream fs = new FileStream(journal, FileMode.Append, FileAccess.Write);
+        byte[] record = new byte[4 + nameBytes.Length + 16];
+        WriteBigEndian(record, 0, 0x40000000 / 4096 + 1);
+        nameBytes.CopyTo(record, 4);
+        WriteBigEndian(record, 4 + nameBytes.Length, (uint)nameBytes.Length);
+        WriteBigEndian(record, 8 + nameBytes.Length, checksum);
+        new byte[] { 0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7 }.CopyTo(record, 12 + nameBytes.Length);
+        fs.Write(record, 0, record.Length);
     }
 
     /// <summary>

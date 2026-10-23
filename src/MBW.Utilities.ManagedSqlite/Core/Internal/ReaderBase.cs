@@ -121,9 +121,15 @@ internal sealed class ReaderBase : IDisposable
         // The pages that do exist are intact in such a file (truncated, or a wrong header), so Lenient uses the file's
         // count instead, as SQLite does with writable_schema.
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3405 (lockBtree)
-        PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= filePages, settings, "HDR-14",
-                $"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}",
-                structure: "file length")
+        // WALJ-26 is the same check against the WAL's page count, and Relaxable for the same reason.
+        bool sizeFits = header.DatabaseSizeInPages <= filePages;
+        PageCount = headerSizeValid && (wal != null
+                ? Checks.Relaxable(sizeFits, settings, "WALJ-26",
+                    $"the header says the database has {header.DatabaseSizeInPages} pages, but the WAL's last commit holds {filePages}",
+                    structure: "file length")
+                : Checks.Relaxable(sizeFits, settings, "HDR-14",
+                    $"the header says the database has {header.DatabaseSizeInPages} pages, but the file holds {filePages}",
+                    structure: "file length"))
             ? header.DatabaseSizeInPages
             : filePages;
 
@@ -147,9 +153,10 @@ internal sealed class ReaderBase : IDisposable
     /// Reads and validates the database header, and returns a reader for the database's pages. A hot
     /// <paramref name="journal"/> is played back over <paramref name="main"/> first, then the committed frames of
     /// <paramref name="wal"/> are laid over the result, in the order SQLite's pager does it. The reader owns all three
-    /// files and disposes them, also when this method throws.
+    /// files and disposes them, also when this method throws. <paramref name="superJournalExists"/> looks up a
+    /// super-journal the journal names, or is null when there is no file system to look in.
     /// </summary>
-    internal static ReaderBase Open(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
+    internal static ReaderBase Open(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings, Func<string, bool>? superJournalExists = null)
     {
         List<IDisposable> owned = new List<IDisposable> { main };
         if (journal != null)
@@ -159,7 +166,7 @@ internal sealed class ReaderBase : IDisposable
 
         try
         {
-            return Open(main, journal, wal, owned, settings);
+            return Open(main, journal, wal, owned, settings, superJournalExists);
         }
         catch
         {
@@ -169,7 +176,7 @@ internal sealed class ReaderBase : IDisposable
         }
     }
 
-    private static ReaderBase Open(IFileView main, IFileView? journal, IFileView? walFile, List<IDisposable> owned, Sqlite3Settings settings)
+    private static ReaderBase Open(IFileView main, IFileView? journal, IFileView? walFile, List<IDisposable> owned, Sqlite3Settings settings, Func<string, bool>? superJournalExists)
     {
         // A caller error, so it fails for every file, not only for those whose encoding field is 0
         if (settings.FallbackEncoding is { } fallback && fallback is not (SqliteEncoding.UTF8 or SqliteEncoding.UTF16LE or SqliteEncoding.UTF16BE))
@@ -177,22 +184,26 @@ internal sealed class ReaderBase : IDisposable
 
         IFileView file = main;
 
-        // A hot journal is played back first, then the WAL is opened on the result. sqlite3PagerSharedLock in pager.c,
+        // WALJ-39, WALJ-42: a hot journal is played back (where a read-only SQLite connection fails with
+        // SQLITE_READONLY_ROLLBACK, this reader does what a writable one does, in memory), then the WAL is opened on the
+        // result. sqlite3PagerSharedLock in pager.c,
         // and pagerOpenWalIfPresent, which it calls after the playback:
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5280 (sqlite3PagerSharedLock)
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3385 (pagerOpenWalIfPresent)
         if (journal != null)
-            file = RollbackJournalView.Apply(main, journal, InitialPageSize(main));
+            file = RollbackJournalView.Apply(main, journal, InitialPageSize(main), superJournalExists, settings);
 
-        // A WAL next to an empty database is not used; SQLite deletes it. pagerOpenWalIfPresent in pager.c:
+        // WALJ-01, WALJ-02: a WAL is used whatever the header's read version says, but not next to an empty database,
+        // where SQLite deletes it. pagerOpenWalIfPresent in pager.c:
         //   rc = pagerPagecount(pPager, &nPage);
         //   if( nPage==0 ){
         //     rc = sqlite3OsDelete(pPager->pVfs, pPager->zWal, 0);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3399 (pagerOpenWalIfPresent)
         WalIndex? wal = walFile != null && file.Length > 0 ? WalIndex.Read(walFile) : null;
 
-        // WALJ-25: every header check runs on the newest committed page 1, which the WAL holds when a transaction changed
-        // it. The main file's page 1 may then be stale. lockBtree reads page 1 through the pager once the WAL is open:
+        // WALJ-25, WALJ-27, WALJ-61: every header check runs on the newest committed page 1, after any journal playback,
+        // and it also gives the page size. The WAL holds that page 1 when a transaction changed it; the main file's page
+        // 1 may then be stale. lockBtree reads page 1 through the pager once the WAL is open:
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3341 (lockBtree)
         byte[] headerData = new byte[DatabaseHeader.HeaderSize];
 
@@ -415,8 +426,8 @@ internal sealed class ReaderBase : IDisposable
             if (_wal.TryReadPage(page, buffer, (int)PageSize))
                 return;
 
-            // A committed transaction can grow the database without the file growing; the pages it did not write are
-            // zeros, as SQLite reads them past the end of the file. readDbPage in pager.c:
+            // WALJ-29: a committed transaction can grow the database without the file growing; the pages it did not
+            // write are zeros, as SQLite reads them past the end of the file. readDbPage in pager.c:
             //   rc = sqlite3OsRead(pPager->fd, pPg->pData, pPager->pageSize, iOffset);
             //   if( rc==SQLITE_IOERR_SHORT_READ ){
             //     rc = SQLITE_OK;
