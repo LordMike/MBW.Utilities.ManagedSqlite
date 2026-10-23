@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Sql;
 using MBW.Utilities.ManagedSqlite.Core;
+using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;

@@ -4,9 +4,14 @@ using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
-using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql;
 
-namespace MBW.Utilities.ManagedSqlite.Sql;
+// The extensions live in the namespace of the types they extend, so a using for Sqlite3Row brings them along. Keep
+// them here, not in the namespace of their folder.
+// ReSharper disable once CheckNamespace
+#pragma warning disable IDE0130 // Namespace does not match folder structure
+namespace MBW.Utilities.ManagedSqlite.Core.Tables;
+#pragma warning restore IDE0130
 
 public static class SqlExtensions
 {
