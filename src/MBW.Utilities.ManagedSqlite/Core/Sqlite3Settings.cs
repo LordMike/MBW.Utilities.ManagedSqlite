@@ -21,7 +21,8 @@ public sealed class Sqlite3Settings
     public SqliteValidation Validation { get; set; } = SqliteValidation.Strict;
 
     /// <summary>
-    /// Called for each check that fails in <see cref="SqliteValidation.Lenient"/> mode. The reader then reads on.
+    /// Called for each check that fails in <see cref="SqliteValidation.Lenient"/> mode. The reader then reads on; for a
+    /// schema row that fails to load, it reads on without that row's table, which then throws when it is opened.
     /// </summary>
     public Action<SqliteValidationIssue>? OnValidationIssue { get; set; }
 }

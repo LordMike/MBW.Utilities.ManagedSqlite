@@ -146,7 +146,8 @@ Each check gets parity tests in the corruption suite (`Tests/Corruption_Tests.cs
 `SqliteParity.Build` and patched with `DbPatcher`):
 - **Strict:** SQLite fails (`SqliteParity.AssertSqliteReportsCorrupt`, or `AssertSqliteFails` for a non-CORRUPT error),
   we throw `SqliteCorruptException` with that `Check` ID, and the database object stays usable for undamaged tables. A
-  check that holds in every mode also gets a Lenient case: it still throws, and nothing is reported.
+  check that holds in every mode also gets a Lenient case: it still throws, and nothing is reported. A schema row's
+  statement check is the exception: Lenient reports it at open, and that row's table throws from `GetTable`.
 - **Relaxable, Lenient:** we read on, every row we return is intact (compare with SQLite, or with what the script
   wrote), and `OnValidationIssue` received the ID exactly once. `SqliteParity.AssertSameAsSqlite(script, patch,
   settings)` opens our side with Lenient settings.
