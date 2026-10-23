@@ -56,3 +56,17 @@ The code for each of these carries its ID in a comment.
 | REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity; a DEFAULT with a CAST is not evaluated. A STORED generated column reads its expression the same way, as SQLite does (sqlite3ColumnDefault on the generation expression) |
 
 A Strict check on a schema row's statement fails the open in Strict. In Lenient it is reported at open, and only that row's table cannot be opened.
+
+## Implemented in #61
+
+The WAL and rollback journal checks in [WALJ.md](WALJ.md). The code for each carries its ID in a comment.
+
+| Checks | What the reader does |
+|---|---|
+| WALJ-11 | Strict: an unknown WAL format version fails the open with `SqliteCorruptException` (SQLite returns `SQLITE_CANTOPEN`) |
+| WALJ-25, WALJ-61 | The header is read from the newest committed copy of page 1, in the WAL if it has one |
+| WALJ-26 | Relaxable: the header's page count must fit in the pages the WAL's last commit holds, as HDR-14 does for the file |
+| WALJ-28 | Relaxable: a WAL whose page size differs from the main file's fails in Strict; Lenient reports it and ignores the WAL |
+| WALJ-43, WALJ-44, WALJ-45 | Not implemented: the reader reads one database, so a hot journal is played back whatever super-journal it names (listed under Differences from SQLite in the README) |
+| WALJ-01 to WALJ-03, WALJ-06 to WALJ-10, WALJ-12 to WALJ-21, WALJ-24, WALJ-27, WALJ-29, WALJ-34, WALJ-36, WALJ-37, WALJ-39, WALJ-42, WALJ-46 to WALJ-60 | Tolerated as SQLite tolerates them: bad WAL headers or frames end the WAL at the last valid commit, a journal that is not hot is ignored, and playback stops at the first bad record |
+| WALJ-04, WALJ-05, WALJ-22, WALJ-23, WALJ-30 to WALJ-33, WALJ-35, WALJ-38, WALJ-40, WALJ-41, WALJ-62 | Not applicable: locks, the `-shm` wal-index (the WAL is always recovered from the `-wal` file), open options, build flags and writes |

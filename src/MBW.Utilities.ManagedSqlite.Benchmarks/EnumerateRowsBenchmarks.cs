@@ -41,7 +41,7 @@ public class EnumerateRowsBenchmarks
         _rawDb = _native.OpenRaw();
         _rawSelect = NativeDatabase.Prepare(_rawDb, _select.CommandText);
 
-        _db = new Sqlite3Database(new MemoryStream(image, false));
+        _db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(image, false));
         _table = _db.GetTable(TestDatabases.TableName);
 
         if (Sqlite() != Rows || AdoNet() != Rows || Managed() != Rows || ManagedByName() != Rows)

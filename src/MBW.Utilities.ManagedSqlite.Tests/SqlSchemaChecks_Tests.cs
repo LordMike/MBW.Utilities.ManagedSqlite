@@ -39,11 +39,11 @@ public class SqlSchemaChecks_Tests
     {
         SqliteParity.AssertSqliteReportsCorrupt(data, "u");
 
-        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data))).Check);
 
         // Lenient reports the error, keeps it on the row that failed, and loads on
         List<string> issues = new List<string>();
-        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        using Sqlite3Database lenient = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("b", lenient.GetTable("u").GetTableDefinition().Columns.Single().Name);
         Assert.Equal(new[] { check }, issues);
     }
@@ -52,7 +52,7 @@ public class SqlSchemaChecks_Tests
     {
         SqliteParity.AssertSqliteReads(data, "u");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         Assert.Equal("b", db.GetTable("u").GetTableDefinition().Columns.Single().Name);
     }
 
@@ -171,7 +171,7 @@ public class SqlSchemaChecks_Tests
                             "INSERT INTO sqlite_schema VALUES ('table', 'x', 'x', (SELECT rootpage FROM sqlite_schema WHERE name = 'u'), 'CREATE TABLE x (q UNIQUE)')", 2);
         SqliteParity.AssertSqliteFails(data, "u");
 
-        Assert.Equal("DDL-10", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
+        Assert.Equal("DDL-10", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data))).Check);
     }
 
     /// <summary>

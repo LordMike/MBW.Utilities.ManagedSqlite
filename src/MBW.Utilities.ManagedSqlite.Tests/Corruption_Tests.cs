@@ -52,7 +52,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     private static uint RootPage(string table)
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(Base));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(Base));
         return db.GetTable(table).SchemaDefinition.RootPage;
     }
 
@@ -73,7 +73,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     /// </summary>
     private static void ReadEverything(byte[] data)
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
         foreach (Sqlite3SchemaRow schema in db.GetTables().Where(s => s.Type == "table").ToList())
             ReadTable(db, schema.Name);
@@ -162,7 +162,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         foreach (SqliteValidation validation in new[] { SqliteValidation.Strict, SqliteValidation.Lenient })
         {
             Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
-            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), settings)).Check);
+            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), settings)).Check);
         }
 
         Assert.Empty(issues);
@@ -191,12 +191,12 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         }).Data;
 
         SqliteParity.AssertSqliteFails(data, "Small");
-        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data))).Check);
 
         List<string> issues = new List<string>();
         Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient);
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), lenient);
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small", "Keyed");
         Assert.Equal(new[] { check }, issues);
     }
@@ -221,7 +221,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         DbPatcher patcher = new DbPatcher(Base);
         byte[] data = patcher.SetVersionValidFor(patcher.ReadUInt32(24) + 1).SetDatabaseSizeInPages(PastTheEnd).Data;
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
     }
 
@@ -231,13 +231,15 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void Truncated_EmptyFile() => SqliteParity.AssertSameAsSqlite("", _ => new byte[0]);
 
-    // A stream positioned at its end is not an empty file
+    // A stream positioned at its end is not an empty file: the stream is the whole file, read from its start
     [Fact]
     public void Truncated_StreamAtItsEnd()
     {
         MemoryStream stream = new MemoryStream(Base);
         stream.Seek(0, SeekOrigin.End);
-        Assert.Equal("file length", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(stream)).Structure);
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(stream);
+        SqliteParity.AssertTablesSameAsSqlite(Script, db, "Keyed");
     }
 
     [Fact]
@@ -251,7 +253,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     {
         byte[] data = new DbPatcher(Base).Truncate(Base.Length - 100).Data;
 
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+        using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
         {
             SqliteParity.AssertTablesSameAsSqlite(Script, db, "Deep", "Small");
             SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Keyed"));
@@ -293,12 +295,12 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         byte[] data = new DbPatcher(Base).SetCellCount(emptied, 0).Data;
 
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+        using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
             Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => ReadTable(db, table)).Check);
 
         List<string> issues = new List<string>();
         Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient))
+        using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), lenient))
         {
             // The database keeps a copy of the settings it opened with, so this changes nothing for it
             lenient.Validation = SqliteValidation.Strict;
@@ -332,7 +334,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         byte[] data = new DbPatcher(Base).SetPageType(MasterRoot, 0x0A).Data;
 
         SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
-        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = validation })).Check);
+        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = validation })).Check);
     }
 
     [Fact]
@@ -353,7 +355,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
     }
 
@@ -367,7 +369,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         byte[] data = new DbPatcher(Base).SetCellCount(SmallRoot, 249).Data;
         SqliteParity.AssertSqliteReportsCorrupt(data, "Small");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = validation });
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = validation });
         Assert.Equal("PAGE-03", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Small"))).Check);
     }
 
@@ -429,7 +431,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         foreach (SqliteValidation validation in new[] { SqliteValidation.Strict, SqliteValidation.Lenient })
         {
             Sqlite3Settings settings = new Sqlite3Settings { Validation = validation };
-            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), settings)).Check);
+            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), settings)).Check);
         }
     }
 
@@ -448,10 +450,10 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
         SqliteParity.AssertSqliteReportsCorrupt(data, "t");
 
-        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
+        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data))).Check);
 
         List<SqliteValidationIssue> issues = new List<SqliteValidationIssue>();
-        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = issues.Add });
+        using Sqlite3Database lenient = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = issues.Add });
         Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => lenient.GetTable(name)).Check);
         Assert.Equal(new[] { check }, issues.Select(i => i.Check));
         Assert.StartsWith("malformed database schema", issues.Single().Message);
@@ -482,13 +484,13 @@ CREATE VIRTUAL TABLE f USING fts5(c);
 
         SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() =>
         {
-            using Sqlite3Database strict = new Sqlite3Database(new MemoryStream(data));
+            using Sqlite3Database strict = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
             strict.GetTable("u").GetTableDefinition();
         });
         Assert.Equal(check, ex.Check);
 
         List<string> issues = new List<string>();
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, db, "t", "u");
         Assert.Equal(new[] { check }, issues);
     }
@@ -519,10 +521,10 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET {update}");
         SqliteParity.AssertSqliteReportsCorrupt(data, "t");
 
-        Assert.Equal("SCHEMA-19", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
+        Assert.Equal("SCHEMA-19", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data))).Check);
 
         List<string> issues = new List<string>();
-        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        using Sqlite3Database lenient = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("DDL-08", Assert.Throws<SqliteCorruptException>(() => lenient.GetTable(name)).Check);
         Assert.Equal(new[] { "SCHEMA-19", "DDL-08" }, issues);
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
@@ -536,7 +538,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
                                                        "sql = 'CREATE TABLE IF NOT EXISTS sqlite_master (b)' WHERE name = 'u'");
         SqliteParity.AssertSqliteReads(data, "t");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, db, "t");
     }
 
@@ -549,7 +551,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     {
         byte[] data = SqliteParity.Build(SchemaScript, $"UPDATE sqlite_schema SET rowid = -1, name = 't', tbl_name = 't', sql = '{sql}' WHERE name = 'u'");
 
-        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
+        using Sqlite3Database lenient = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
     }
 
@@ -559,7 +561,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     {
         byte[] data = SqliteParity.Build(SchemaScript, "UPDATE sqlite_schema SET rootpage = (SELECT rootpage FROM sqlite_schema WHERE name = 't') WHERE name = 'f'");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         Assert.Throws<NotSupportedException>(() => db.GetTable("f"));
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, db, "t", "u");
     }
@@ -590,7 +592,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         {
             byte[] data = SqliteParity.Build(Script, 8);
             uint root;
-            using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data)))
+            using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
                 root = db.GetTable("Small").SchemaDefinition.RootPage;
 
             DbPatcher p = new DbPatcher(data);
@@ -696,7 +698,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         DbPatcher p = new DbPatcher(Base);
         byte[] data = p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 4, 1).Data;
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         Sqlite3Row row = db.GetTable("Small").EnumerateRows().First();
         Assert.Equal("CELL-23", Assert.Throws<SqliteCorruptException>(() => row.TryGetOrdinal(1, out _)).Check);
         Assert.Equal("CELL-23", Assert.Throws<SqliteCorruptException>(() => row.TryGetOrdinal(1, out _)).Check);
@@ -742,7 +744,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         DbPatcher patcher = new DbPatcher(Base);
         byte[] data = patcher.SetOverflowNextPointer(patcher.GetOverflowChain(SmallRoot, 1).Last(), PastTheEnd).Data;
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small");
     }
 
@@ -763,7 +765,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
 
         List<string> issues = new List<string>();
         Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
-        using Sqlite3Database db = new Sqlite3Database(new PageMappedStream(patcher.PageSize, (lockBytePage + 1L) * patcher.PageSize, pages), settings);
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new PageMappedStream(patcher.PageSize, (lockBytePage + 1L) * patcher.PageSize, pages), settings);
         SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Small"));
         Assert.Equal("HDR-20", ex.Check);
         Assert.Empty(issues);
@@ -780,7 +782,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
 
         Exception ex = RunBounded(() =>
         {
-            using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
             SqliteCorruptException corrupt = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep"));
             Assert.Equal("PAGE-24", corrupt.Check);
