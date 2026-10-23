@@ -201,6 +201,26 @@ internal sealed class ReaderBase : IDisposable
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3399 (pagerOpenWalIfPresent)
         WalIndex? wal = walFile != null && file.Length > 0 ? WalIndex.Read(walFile) : null;
 
+        // WALJ-28: a WAL whose page size differs from the database's can only belong to another database. SQLite reads
+        // min(database page size, WAL page size) bytes of each frame, leaving the rest of the page undefined, and fails
+        // only on a write or checkpoint. That cannot be reproduced, so Strict fails, and Lenient ignores the WAL and
+        // reads the file alone. The WAL is compared with the page size the pager starts with, from the main file's
+        // header: page 1 in the WAL always carries the WAL's own page size. sqlite3WalReadFrame in wal.c:
+        //   sz = pWal->hdr.szPage;
+        //   sz = (sz&0xfe00) + ((sz&0x0001)<<16);
+        //   testcase( sz<=32768 );
+        //   testcase( sz>=65536 );
+        //   iOffset = walFrameOffset(iRead, sz) + WAL_FRAME_HDRSIZE;
+        //   return sqlite3OsRead(pWal->pWalFd, pOut, (nOut>sz ? sz : nOut), iOffset);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L3666 (sqlite3WalReadFrame)
+        if (wal != null)
+        {
+            uint filePageSize = InitialPageSize(file);
+            if (!Checks.Relaxable(wal.PageSize == filePageSize, settings, "WALJ-28",
+                    $"the WAL page size {wal.PageSize} differs from the database page size {filePageSize}", structure: "WAL header"))
+                wal = null;
+        }
+
         // WALJ-25, WALJ-27, WALJ-61: every header check runs on the newest committed page 1, after any journal playback,
         // and it also gives the page size. The WAL holds that page 1 when a transaction changed it; the main file's page
         // 1 may then be stale. lockBtree reads page 1 through the pager once the WAL is open:
@@ -236,25 +256,6 @@ internal sealed class ReaderBase : IDisposable
         }
 
         DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
-
-        // WALJ-28: a WAL whose page size differs from the database's can only belong to another database. SQLite reads
-        // min(database page size, WAL page size) bytes of each frame, leaving the rest of the page undefined, and fails
-        // only on a write or checkpoint. That cannot be reproduced, so Strict fails, and Lenient ignores the WAL and
-        // reads the file alone, header included. sqlite3WalReadFrame in wal.c:
-        //   sz = pWal->hdr.szPage;
-        //   sz = (sz&0xfe00) + ((sz&0x0001)<<16);
-        //   testcase( sz<=32768 );
-        //   testcase( sz>=65536 );
-        //   iOffset = walFrameOffset(iRead, sz) + WAL_FRAME_HDRSIZE;
-        //   return sqlite3OsRead(pWal->pWalFd, pOut, (nOut>sz ? sz : nOut), iOffset);
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/wal.c#L3666 (sqlite3WalReadFrame)
-        if (wal != null && !Checks.Relaxable(wal.PageSize == header.PageSize, settings, "WALJ-28",
-                $"the WAL page size {wal.PageSize} differs from the database page size {header.PageSize}", structure: "WAL header"))
-        {
-            wal = null;
-            read = file.Read(0, headerData, 0, headerData.Length);
-            header = new DatabaseHeader(headerData, read, settings);
-        }
 
         // HDR-30, REC-40, SCHEMA-01: SQLite never rejects the text encoding field. A non-zero value is masked to its low
         // two bits, where 0 means UTF-8; a field of 0 leaves the connection's default encoding, which is UTF-8 unless

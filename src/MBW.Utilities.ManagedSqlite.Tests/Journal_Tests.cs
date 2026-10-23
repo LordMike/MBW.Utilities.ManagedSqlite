@@ -120,16 +120,19 @@ public class Journal_Tests
 
     /// <summary>
     /// A WAL whose page size differs from the database's can only come from another database (WALJ-28). This is a
-    /// deliberate difference: SQLite reads such frames without an error, leaving part of each page undefined.
+    /// deliberate difference: SQLite reads such frames without an error, leaving part of each page undefined. A WAL that
+    /// holds page 1 carries its own page size in that page's header, so the check must not read the header from it.
     /// </summary>
-    [Fact]
-    public void WalPageSizeMustMatchTheDatabase()
+    [Theory]
+    [InlineData("INSERT INTO t (b) VALUES ('three');")]
+    [InlineData("CREATE TABLE u (x);")]
+    public void WalPageSizeMustMatchTheDatabase(string otherWrite)
     {
         using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three');");
-        using SqliteParity.SnapshotDirectory other = SqliteParity.Snapshot("PRAGMA page_size = 1024;" + Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three');");
+        using SqliteParity.SnapshotDirectory other = SqliteParity.Snapshot("PRAGMA page_size = 1024;" + Wal + Checkpoint + otherWrite);
         File.Copy(other.Database + "-wal", snapshot.Database + "-wal", true);
 
-        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database));
+        Assert.Equal("WALJ-28", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database)).Check);
 
         // Lenient reports it and reads the main file alone
         List<string> issues = new List<string>();
