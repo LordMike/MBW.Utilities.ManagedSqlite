@@ -86,7 +86,8 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     }
 
     /// <summary>
-    /// Runs the action with a timeout, and returns the exception it threw, if any
+    /// Runs the action with a timeout, and returns the exception it threw, if any. A
+    /// <see cref="SqliteCorruptException"/> must name the check that failed.
     /// </summary>
     private static Exception RunBounded(Action action)
     {
@@ -99,6 +100,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         }
         catch (AggregateException e)
         {
+            if (e.InnerException is SqliteCorruptException corrupt)
+                Assert.NotNull(corrupt.Check);
+
             return e.InnerException;
         }
 
