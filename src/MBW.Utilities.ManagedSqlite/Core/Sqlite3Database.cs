@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
@@ -368,7 +367,6 @@ public sealed class Sqlite3Database : IDisposable
         // SQLite reports it on the table's first row read; here the root is read when the table is opened, as are
         // the root page's other checks.
         // A table row that failed to parse has an Error, which FindTable threw before the table got here
-        Debug.Assert(tbl.Table != null);
         bool sqlWithoutRowId = tbl.Table!.Has(ParsedTable.TF_WithoutRowid);
         Checks.Strict(sqlWithoutRowId == root is BTreeIndexPage, "PAGE-18",
             $"the SQL of table {tbl.Name} declares {(sqlWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(root is BTreeIndexPage ? "an index" : "a table")} b-tree page",
