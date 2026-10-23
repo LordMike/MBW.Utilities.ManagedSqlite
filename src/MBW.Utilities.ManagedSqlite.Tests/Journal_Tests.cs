@@ -116,6 +116,10 @@ public class Journal_Tests
 
         SqliteParity.AssertSqliteFails(snapshot, raw.SQLITE_CANTOPEN);
         Assert.Equal("WALJ-11", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database)).Check);
+
+        // Not relaxable: there is no way to read a WAL of an unknown format
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient };
+        Assert.Equal("WALJ-11", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database, lenient)).Check);
     }
 
     /// <summary>
@@ -187,7 +191,31 @@ public class Journal_Tests
         if (superJournalExists)
             File.WriteAllBytes(superJournal, new byte[] { 1 });
 
+        // SQLite reads a copy of the database and its side files, and the name in the journal still points at the
+        // super-journal next to the original, so SQLite looks up the same file
         SqliteParity.AssertSameAsSqlite(snapshot, superJournalExists);
+
+        // FromPath can decide, so it has nothing to report
+        List<string> issues = new List<string>();
+        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database, lenient))
+            db.GetTable("t").EnumerateRows().ToList();
+        Assert.Empty(issues);
+    }
+
+    /// <summary>
+    /// WALJ-43, WALJ-44: a super-journal record whose name checksum is wrong, or whose length does not fit the journal,
+    /// is no record, so the journal is played back although the super-journal it names does not exist
+    /// </summary>
+    [Theory]
+    [InlineData(1, 0)]
+    [InlineData(0, 1_000_000)]
+    public void SuperJournalRecordSqliteDoesNotRead(int checksumDelta, int lengthDelta)
+    {
+        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(Rollback + ManyRows + "BEGIN; " + ChangeRows);
+        AppendSuperJournal(snapshot.Database + "-journal", snapshot.Database + "-mjæ0123", checksumDelta, lengthDelta);
+
+        SqliteParity.AssertSameAsSqlite(snapshot, true);
     }
 
     /// <summary>
@@ -215,7 +243,7 @@ public class Journal_Tests
     /// Appends a super-journal record to a journal, as writeSuperJournal in pager.c writes it: the lock-byte page number,
     /// the name, its length, the sum of its bytes as signed chars, and the journal magic
     /// </summary>
-    private static void AppendSuperJournal(string journal, string name)
+    private static void AppendSuperJournal(string journal, string name, int checksumDelta = 0, int lengthDelta = 0)
     {
         byte[] nameBytes = System.Text.Encoding.UTF8.GetBytes(name);
         uint checksum = 0;
@@ -226,8 +254,8 @@ public class Journal_Tests
         byte[] record = new byte[4 + nameBytes.Length + 16];
         WriteBigEndian(record, 0, 0x40000000 / 4096 + 1);
         nameBytes.CopyTo(record, 4);
-        WriteBigEndian(record, 4 + nameBytes.Length, (uint)nameBytes.Length);
-        WriteBigEndian(record, 8 + nameBytes.Length, checksum);
+        WriteBigEndian(record, 4 + nameBytes.Length, (uint)(nameBytes.Length + lengthDelta));
+        WriteBigEndian(record, 8 + nameBytes.Length, checksum + (uint)checksumDelta);
         new byte[] { 0xd9, 0xd5, 0x05, 0xf9, 0x20, 0xa1, 0x63, 0xd7 }.CopyTo(record, 12 + nameBytes.Length);
         fs.Write(record, 0, record.Length);
     }
