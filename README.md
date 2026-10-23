@@ -79,7 +79,7 @@ All of the library's own exceptions derive from `SqliteException`:
 * **`SqliteCorruptException`**: the file is malformed. `Check` names the consistency check that failed (the IDs are listed in [docs/sqlite-checks](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md)), and `Page` and `Structure` say where, when known. Damage is reported where SQLite reports it: a malformed header or schema fails the open (in Lenient, a schema row that fails to load fails only the open of its table), a damaged b-tree fails the table's open or its row enumeration, and a bad value fails only the read of that value.
 * **`SqliteInvalidEncodingException`**: the settings' `FallbackEncoding` is not a text encoding. This fails the open.
 
-Lookups throw the usual .NET exceptions: `GetTable` throws `KeyNotFoundException` for a name that is no table, and `NotSupportedException` for a virtual table. `GetTableDefinition()` on a schema row of a view, index or trigger throws `InvalidOperationException`.
+Lookups throw the usual .NET exceptions: `GetTable` throws `KeyNotFoundException` for a name that is no table, and `NotSupportedException` for a virtual table. `GetTableDefinition()` on a schema row of a view, index or trigger throws `InvalidOperationException`, and on a virtual table `NotSupportedException`, since its module declares the columns.
 
 ### Journal modes
 
@@ -104,7 +104,7 @@ The library assumes nothing else uses the files while a database is open:
 
 * This is not an ADO.Net substitute, it will not support SQL statements or use indexes - it will only provide access to the data in a database.
 * Interestingly, SQLite3 allows _any_ value in _any_ column. So you may get different types out of the raw files, should you encounter an app that does this.
-* `GetTableDefinition()` also works on a `Sqlite3SchemaRow` from `GetTables()`, so a table's columns can be read without opening the table. It throws for a row that is not a table.
+* `GetTableDefinition()` also works on a `Sqlite3SchemaRow` from `GetTables()`, so a table's columns can be read without opening the table. It throws as described under [Errors](#errors).
 
 ## Known limitations
 
@@ -129,7 +129,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 
 ## Development
 
-* Build with `dotnet build -c Release` and test with `dotnet test -c Release`. The tests use real SQLite (Microsoft.Data.Sqlite) as the oracle: each case builds a database with SQLite and compares what both read.
+* Build with `dotnet build -c Release` and test with `dotnet test -c Release`. The tests use real SQLite (Microsoft.Data.Sqlite) as the oracle: most cases build a database with SQLite and compare what both read.
 * Benchmarks against SQLite: see [the benchmarks README](src/MBW.Utilities.ManagedSqlite.Benchmarks/README.md).
 * Conventions for code and tests, for people and agents alike: [AGENTS.md](AGENTS.md) and [.agents/writing-code.md](.agents/writing-code.md).
 * Every consistency check SQLite makes, and whether this library makes it: [docs/sqlite-checks](docs/sqlite-checks/README.md).
