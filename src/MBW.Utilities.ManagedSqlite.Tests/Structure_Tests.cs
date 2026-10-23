@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
@@ -8,6 +9,7 @@ namespace MBW.Utilities.ManagedSqlite.Tests;
 /// <summary>
 /// Each case builds a database with real SQLite and compares SQLite's dump of it with the library's.
 /// </summary>
+[SuppressMessage("Usage", "xUnit1026", Justification = "A theory's name parameter only labels its case in the test runner")]
 public class Structure_Tests
 {
     private static string PageSizeScript(int pageSize)
