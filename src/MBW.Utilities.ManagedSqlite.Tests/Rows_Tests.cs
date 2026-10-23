@@ -86,6 +86,7 @@ INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
     [InlineData("NULL", typeof(int), true)]
     [InlineData("7", typeof(int?), true)]
     [InlineData("7", typeof(double), true)]
+    [InlineData("3.4028235e38", typeof(float), true)]
     [InlineData("3.5", typeof(long), true)]
     [InlineData("-3.5", typeof(long), true)]
     [InlineData("5000000000", typeof(int), false)]
