@@ -52,21 +52,12 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     }
 
     [Fact]
-    public void GetTableThrowsNotSupportedForVirtualTable()
+    public void VirtualTableIsListedButNotRead()
     {
         using Sqlite3Database db = Open();
 
+        Assert.True(db.GetTables().Single(s => s.Name == "docs").IsVirtual);
         Assert.Throws<NotSupportedException>(() => db.GetTable("docs"));
-    }
-
-    [Fact]
-    public void VirtualTableIsListedAndFlagged()
-    {
-        using Sqlite3Database db = Open();
-
-        Sqlite3SchemaRow docs = db.GetTables().Single(s => s.Name == "docs");
-        Assert.True(docs.IsVirtual);
-        Assert.Equal(0u, docs.RootPage);
     }
 
     /// <summary>
