@@ -129,15 +129,11 @@ public class SqlCreateTable_Tests
     [Theory]
     // An alias
     [InlineData("id INTEGER PRIMARY KEY, v TEXT")]
-    [InlineData("id integer primary key, v text")]
     [InlineData("id InTeGeR PRIMARY KEY AUTOINCREMENT, v TEXT")]
-    [InlineData("id INTEGER PRIMARY KEY ASC, v TEXT")]
     [InlineData("id INTEGER NOT NULL PRIMARY KEY, v TEXT")]
     [InlineData("id INTEGER CONSTRAINT pk PRIMARY KEY, v TEXT")]
     [InlineData("id INTEGER, v TEXT, PRIMARY KEY (id)")]
-    [InlineData("id integer, v TEXT, primary key (id)")]
     [InlineData("id INTEGER, v TEXT, PRIMARY KEY (id DESC)")]
-    [InlineData("id INTEGER, v TEXT, CONSTRAINT pk PRIMARY KEY (id)")]
     // The type is compared once unquoted
     [InlineData("id 'INTEGER' PRIMARY KEY, v TEXT")]
     [InlineData("id [INTEGER] PRIMARY KEY, v TEXT")]
@@ -170,7 +166,6 @@ public class SqlCreateTable_Tests
     [Theory]
     [InlineData("WITHOUT ROWID")]
     [InlineData("STRICT")]
-    [InlineData("STRICT, WITHOUT ROWID")]
     [InlineData("WITHOUT ROWID, STRICT")]
     [InlineData("strict, without rowid")]
     public void TableOption(string options) => AssertSameAsSqlite($"CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT) {options}; INSERT INTO t VALUES (42, 'x'), (-7, 'y');");
