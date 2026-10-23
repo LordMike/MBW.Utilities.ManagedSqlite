@@ -204,10 +204,11 @@ internal sealed class ReaderBase : IDisposable
         // WALJ-28: a WAL whose page size differs from the database's can only belong to another database. SQLite reads
         // min(database page size, WAL page size) bytes of each frame, leaving the rest of the page undefined, and fails
         // only on a write or checkpoint. That cannot be reproduced, so Strict fails, and Lenient ignores the WAL and
-        // reads the file alone. The WAL is compared with the page size in the main file's header: page 1 in the WAL
-        // always carries the WAL's own page size. When the main file's page size is not valid, there is nothing to
-        // compare with; SQLite then takes the page size from page 1 in the WAL (lockBtree resets the pager's page size
-        // to it), and so does this reader. sqlite3WalReadFrame in wal.c:
+        // reads the file alone. The WAL is compared with the page size in the main file's header, before the header is
+        // read from page 1 in the WAL, which normally carries the WAL's own page size. When the main file's page size
+        // is not valid, there is nothing to compare with yet; SQLite then takes the page size from page 1 in the WAL
+        // (lockBtree resets the pager's page size to it), and the check below compares that. sqlite3WalReadFrame in
+        // wal.c:
         //   sz = pWal->hdr.szPage;
         //   sz = (sz&0xfe00) + ((sz&0x0001)<<16);
         //   testcase( sz<=32768 );
@@ -254,6 +255,16 @@ internal sealed class ReaderBase : IDisposable
         }
 
         DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
+
+        // WALJ-28 again, on the page size the database is read with: a page 1 in the WAL that gives another page size
+        // than the WAL's own leaves SQLite reading part of each page too
+        if (wal != null && !Checks.Relaxable(wal.PageSize == header.PageSize, settings, "WALJ-28",
+                $"the WAL page size {wal.PageSize} differs from the database page size {header.PageSize}", structure: "WAL header"))
+        {
+            wal = null;
+            read = file.Read(0, headerData, 0, headerData.Length);
+            header = new DatabaseHeader(headerData, read, settings);
+        }
 
         // HDR-30, REC-40, SCHEMA-01: SQLite never rejects the text encoding field. A non-zero value is masked to its low
         // two bits, where 0 means UTF-8; a field of 0 leaves the connection's default encoding, which is UTF-8 unless

@@ -164,6 +164,34 @@ public class Journal_Tests
     }
 
     /// <summary>
+    /// WALJ-28 also holds for the page size the database is read with: page 1 in the WAL giving another page size than
+    /// the WAL's own fails, where the main file has none to compare with
+    /// </summary>
+    [Fact]
+    public void WalPageOneMustMatchTheWalPageSize()
+    {
+        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot("PRAGMA page_size = 1024;" + Wal + Checkpoint + "CREATE TABLE u (x); INSERT INTO u VALUES (1);");
+        using (FileStream fs = new FileStream(snapshot.Database, FileMode.Open, FileAccess.Write))
+        {
+            fs.Position = 16;
+            fs.Write(new byte[2], 0, 2);
+        }
+
+        string wal = snapshot.Database + "-wal";
+        byte[] bytes = File.ReadAllBytes(wal);
+        int frameSize = WalFrameSize(snapshot.Database);
+        for (int frame = 32; frame + frameSize <= bytes.Length; frame += frameSize)
+        {
+            if (bytes[frame] == 0 && bytes[frame + 1] == 0 && bytes[frame + 2] == 0 && bytes[frame + 3] == 1)
+                bytes[frame + 24 + 16] = 0x10;
+        }
+        File.WriteAllBytes(wal, bytes);
+        RewriteWalChecksums(wal, bigEndian: false);
+
+        Assert.Equal("WALJ-28", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database)).Check);
+    }
+
+    /// <summary>
     /// WALJ-26: the header on the WAL's page 1 says the database has more pages than the WAL's last commit. SQLite fails
     /// (SQLITE_CORRUPT); the pages that exist are intact, so Lenient reports it and reads on.
     /// </summary>
