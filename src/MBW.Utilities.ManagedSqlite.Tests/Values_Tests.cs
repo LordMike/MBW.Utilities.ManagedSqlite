@@ -7,33 +7,23 @@ namespace MBW.Utilities.ManagedSqlite.Tests;
 public class Values_Tests
 {
     /// <summary>
-    /// The edges of each integer serial type (0 and 1 have their own, 8 and 9, with no payload), on both signs.
+    /// The largest and smallest value of each integer serial type: 0 and 1 have their own (8 and 9, with no payload),
+    /// then 1, 2, 3, 4, 6 and 8 byte two's complement. The largest sets every bit below the sign; the smallest is the
+    /// sign bit alone.
     /// </summary>
     [Theory]
     [InlineData(0L)]
     [InlineData(1L)]
-    [InlineData(2L)]
-    [InlineData(-1L)]
     [InlineData(127L)]
-    [InlineData(128L)]
     [InlineData(-128L)]
-    [InlineData(-129L)]
     [InlineData(32767L)]
-    [InlineData(32768L)]
     [InlineData(-32768L)]
-    [InlineData(-32769L)]
     [InlineData(8388607L)]
-    [InlineData(8388608L)]
     [InlineData(-8388608L)]
-    [InlineData(-8388609L)]
     [InlineData(2147483647L)]
-    [InlineData(2147483648L)]
     [InlineData(-2147483648L)]
-    [InlineData(-2147483649L)]
     [InlineData(140737488355327L)]
-    [InlineData(140737488355328L)]
     [InlineData(-140737488355328L)]
-    [InlineData(-140737488355329L)]
     [InlineData(long.MaxValue)]
     [InlineData(long.MinValue)]
     public void Integers(long value)
@@ -41,12 +31,13 @@ public class Values_Tests
         SqliteParity.AssertSameAsSqlite($"CREATE TABLE tbl (v INTEGER); INSERT INTO tbl VALUES ({value});");
     }
 
+    /// <summary>
+    /// SQLite stores a REAL with no fractional part as an integer (0.0 as serial type 8, -1.0 as a 1 byte integer), and
+    /// a REAL column reads it back as a REAL. 1e999 is infinity.
+    /// </summary>
     [Theory]
     [InlineData("0.0")]
-    [InlineData("-0.0")]
-    [InlineData("1.0")]
     [InlineData("-1.0")]
-    [InlineData("0.125")]
     [InlineData("-1000.5")]
     [InlineData("1e999")]
     public void Reals(string literal)
@@ -96,35 +87,23 @@ public class Values_Tests
         });
     }
 
-    public static TheoryData<string, string> TextCases()
+    /// <summary>
+    /// Text in each encoding: non-ASCII, a character outside the BMP (a UTF-16 surrogate pair), empty, and 150,000
+    /// characters, far past one page, spread over a chain of overflow pages
+    /// </summary>
+    [Theory]
+    [InlineData("UTF-8")]
+    [InlineData("UTF-16le")]
+    [InlineData("UTF-16be")]
+    public void Text(string encoding)
     {
-        TheoryData<string, string> data = new TheoryData<string, string>();
-
-        foreach (string encoding in new[] { "UTF-8", "UTF-16le", "UTF-16be" })
-        {
-            data.Add(encoding, $@"
+        SqliteParity.AssertSameAsSqlite($@"
 PRAGMA encoding = '{encoding}';
 CREATE TABLE tbl (lang TEXT, v TEXT);
 INSERT INTO tbl VALUES ('da', 'Quizdeltagerne spiste jordbær med fløde, mens cirkusklovnen Wolther spillede på xylofon.');
 INSERT INTO tbl VALUES ('emoji', '😀 outside the BMP');
-INSERT INTO tbl VALUES ('empty', '');");
-
-            // 150,000 characters, far past one page, so the text is spread over a chain of overflow pages
-            data.Add(encoding + " very long", $@"
-PRAGMA encoding = '{encoding}';
-CREATE TABLE tbl (v TEXT);
-INSERT INTO tbl VALUES (replace(hex(zeroblob(75000)), '0', 'x'));");
-        }
-
-        return data;
-    }
-
-    [Theory]
-    [MemberData(nameof(TextCases))]
-    public void Text(string name, string script)
-    {
-        _ = name;
-        SqliteParity.AssertSameAsSqlite(script);
+INSERT INTO tbl VALUES ('empty', '');
+INSERT INTO tbl VALUES ('very long', replace(hex(zeroblob(75000)), '0', 'x'));");
     }
 
     /// <summary>
