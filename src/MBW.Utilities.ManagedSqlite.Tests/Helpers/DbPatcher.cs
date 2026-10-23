@@ -219,6 +219,33 @@ internal sealed class DbPatcher
         return this;
     }
 
+    /// <summary>
+    /// Writes an interior table page on a zeroed page, such as one <see cref="AppendPages"/> added: a cell for each
+    /// child but the last, which becomes the right-most pointer. Each cell's key is 0, as a scan does not read the keys.
+    /// </summary>
+    public DbPatcher WriteInteriorTablePage(uint page, params uint[] children)
+    {
+        int offset = PageOffset(page);
+        Assert.Equal(-1, Data.AsSpan(offset, PageSize).IndexOfAnyExcept((byte)0));
+        foreach (uint child in children)
+            RequirePageNumber(child);
+
+        // Each cell is a 4-byte child page number and a 1-byte key, packed at the end of the page
+        int cells = children.Length - 1;
+        int contentStart = PageSize - 5 * cells;
+        Write(offset, 0x05);
+        WriteUInt16(offset + 3, (ushort)cells);
+        WriteUInt16(offset + 5, (ushort)contentStart);
+        WriteUInt32(offset + 8, children[cells]);
+        for (int i = 0; i < cells; i++)
+        {
+            WriteUInt16(offset + 12 + 2 * i, (ushort)(contentStart + 5 * i));
+            WriteUInt32(offset + contentStart + 5 * i, children[i]);
+        }
+
+        return this;
+    }
+
     // Primitives
 
     /// <summary>
