@@ -147,6 +147,23 @@ public class Journal_Tests
     }
 
     /// <summary>
+    /// A main file whose page size field is damaged gives nothing to compare the WAL with (WALJ-28). SQLite then takes the
+    /// page size from page 1 in the WAL, and reads the database.
+    /// </summary>
+    [Fact]
+    public void DamagedPageSizeIsReadFromTheWal()
+    {
+        using SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot("PRAGMA page_size = 1024;" + Wal + Checkpoint + "CREATE TABLE u (x); INSERT INTO u VALUES (1);");
+        using (FileStream fs = new FileStream(snapshot.Database, FileMode.Open, FileAccess.Write))
+        {
+            fs.Position = 16;
+            fs.Write(new byte[2], 0, 2);
+        }
+
+        SqliteParity.AssertSameAsSqlite(snapshot, true);
+    }
+
+    /// <summary>
     /// WALJ-26: the header on the WAL's page 1 says the database has more pages than the WAL's last commit. SQLite fails
     /// (SQLITE_CORRUPT); the pages that exist are intact, so Lenient reports it and reads on.
     /// </summary>
