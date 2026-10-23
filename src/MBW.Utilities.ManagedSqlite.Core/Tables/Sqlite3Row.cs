@@ -13,7 +13,8 @@ public sealed class Sqlite3Row
     public long RowId { get; }
 
     /// <summary>
-    /// Not readonly: reading a value moves the record's parse state on, in place
+    /// Not readonly: reading a value moves the record's parse state on, in place. Cleared once
+    /// <see cref="ColumnData"/> holds every value, which lets go of the page.
     /// </summary>
     private Sqlite3Record _record;
 
@@ -28,10 +29,25 @@ public sealed class Sqlite3Row
     /// decodes only up to the field asked for, as SQLite does. Once this is read, <c>TryGetOrdinal</c> returns these
     /// same values.
     ///
-    /// The row reads its record from its b-tree page's bytes, so a row that is kept keeps its page in memory.
+    /// The row reads its record from its b-tree page's bytes, so a row that is kept keeps its page in memory until
+    /// this is read. Then the row has every value, and lets go of the page.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed</exception>
-    public object?[] ColumnData => _columnData ??= _record.ReadAll(this);
+    public object?[] ColumnData
+    {
+        get
+        {
+            if (_columnData == null)
+            {
+                _columnData = _record.ReadAll(this);
+
+                // Every read now goes through the values, so the record and the page it refers to can be collected
+                _record = default;
+            }
+
+            return _columnData;
+        }
+    }
 
     internal Sqlite3Row(Sqlite3Table table, long rowId, Sqlite3Record record)
     {
@@ -51,7 +67,11 @@ public sealed class Sqlite3Row
     /// <summary>
     /// True when fields <paramref name="a"/> and <paramref name="b"/> of the record exist and decode to equal values
     /// </summary>
-    internal bool FieldsEqual(int a, int b) => _record.FieldsEqual(a, b, this);
+    internal bool FieldsEqual(int a, int b)
+    {
+        // Without the record, equal values can't be told from equal bytes; false only means "compare the values"
+        return _columnData == null && _record.FieldsEqual(a, b, this);
+    }
 
     internal bool TryGetField(int index, out object? value)
     {
@@ -65,12 +85,20 @@ public sealed class Sqlite3Row
 
     /// <summary>
     /// The bytes of field <paramref name="index"/> of the record when it holds a BLOB, without copying them: the memory
-    /// is a slice of the page or payload the row was read from, which it keeps alive. Like
-    /// <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up to that field. False when the
-    /// record has fewer fields, or the field holds another type.
+    /// is a slice of the page or payload the row was read from, which it keeps alive. Once <see cref="ColumnData"/> is
+    /// read, it is that value's array instead. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the
+    /// record only up to that field. False when the record has fewer fields, or the field holds another type.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
-    public bool TryGetBlob(ushort index, out ReadOnlyMemory<byte> value) => _record.TryGetBlob(index, this, out value);
+    public bool TryGetBlob(ushort index, out ReadOnlyMemory<byte> value)
+    {
+        if (_columnData == null)
+            return _record.TryGetBlob(index, this, out value);
+
+        bool isBlob = index < _columnData.Length && _columnData[index] is byte[];
+        value = isBlob ? (byte[])_columnData[index]! : default;
+        return isBlob;
+    }
 
     public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
     {
