@@ -422,6 +422,9 @@ internal struct Sqlite3Record
             if (serialType >= 12 && (serialType & 0x01) == 0x00)
                 return ReadPayload(offset, size, row);
 
+            if (serialType >= 12 && size > WholeValueBytes)
+                return reader.DecodeString(ReadPayload(offset, size, row), 0, size);
+
             if (serialType >= 12)
             {
                 byte[] text = ArrayPool<byte>.Shared.Rent(size);
@@ -493,10 +496,27 @@ internal struct Sqlite3Record
     }
 
     /// <summary>
+    /// A value's array is allocated before its pages are read up to this size; for a larger one, the chain is
+    /// followed first, see <see cref="ReadPayload"/>
+    /// </summary>
+    private const int WholeValueBytes = 1 << 20;
+
+    /// <summary>
     /// <paramref name="size"/> bytes of the payload from <paramref name="offset"/>, in an array of their own
     /// </summary>
     private readonly byte[] ReadPayload(int offset, int size, Sqlite3Row row)
     {
+        // The size comes from the record header, which damage can make far larger than the overflow chain that holds
+        // it, up to the CELL-38 bound. SQLite allocates such a value whole (sqlite3VdbeMemFromBtree) and then fails
+        // CELL-13 where the chain ends. Here a value over 1 MiB first follows the chain to the page of its last byte,
+        // so a chain that ends early fails before the array is allocated.
+        if (size > WholeValueBytes)
+        {
+            ReaderBase reader = row.Table.Reader;
+            int pageData = (int)(reader.PageSize - reader.ReservedSpace) - sizeof(uint);
+            _overflow!.ReadPage((offset + size - 1 - _overflow.Local) / pageData, row, this);
+        }
+
         byte[] bytes = new byte[size];
         CopyPayload(offset, bytes, row);
         return bytes;
