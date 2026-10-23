@@ -40,7 +40,10 @@ using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
 
 ### Opening a database
 
-Pick the factory that matches the files you have. SQLite leaves no mark in the main file that says a `-wal` or `-journal` file should exist, so the library cannot tell you picked the wrong one.
+Pick the factory that matches the files you have.
+
+> [!IMPORTANT]
+> If the database has a `-wal` or `-journal` file next to it, you must pass it in. The `-wal` file can hold committed data that is not in the main file yet, and a hot `-journal` means the main file is half-written. Without them, the library reads stale or inconsistent data, and it cannot warn you: SQLite leaves no mark in the main file that says such a file should exist. `FromPath` finds them for you.
 
 | You have | Use |
 |---|---|
