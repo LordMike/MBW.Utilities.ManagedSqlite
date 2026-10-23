@@ -78,7 +78,7 @@ class Program
 
         foreach (Sqlite3SchemaRow row in tables)
         {
-            if (row.Kind != Sqlite3SchemaKind.Table)
+            if (row.Kind is not (Sqlite3SchemaKind.Table or Sqlite3SchemaKind.VirtualTable))
                 continue;
 
             Console.WriteLine($"{row.Type} {row.Name}");
