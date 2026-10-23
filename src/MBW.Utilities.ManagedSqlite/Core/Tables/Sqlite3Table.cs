@@ -15,10 +15,10 @@ public sealed class Sqlite3Table
     internal ReaderBase Reader => _reader;
 
     /// <summary>
-    /// The Sql package's definition of this table, kept once it was read without error, so reading values by name
-    /// does not look it up for each value
+    /// The table's definition, kept once <see cref="Sql.SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
+    /// without error, so reading values by name does not look it up for each value
     /// </summary>
-    internal object? SqlDefinition { get; set; }
+    internal Sql.SqlTableDefinition? SqlDefinition { get; set; }
 
     private BTreePage? _rootPage;
 

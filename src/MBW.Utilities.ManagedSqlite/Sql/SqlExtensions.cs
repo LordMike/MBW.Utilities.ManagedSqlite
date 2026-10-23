@@ -43,8 +43,8 @@ public static class SqlExtensions
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
         // A definition that was read without error reads the same again: the schema and the checks below don't change
-        if (table.SqlDefinition is SqlTableDefinition known)
-            return known;
+        if (table.SqlDefinition != null)
+            return table.SqlDefinition;
 
         SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
 
