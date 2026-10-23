@@ -13,6 +13,11 @@
     <PackageProjectUrl>https://github.com/LordMike/MBW.Utilities.ManagedSqlite</PackageProjectUrl>
   </PropertyGroup>
 
+  <!-- CI builds fail on warnings, so a warning cannot land unnoticed; local builds still only report them -->
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
   <PropertyGroup>
     <RepositoryUrl>https://github.com/LordMike/MBW.Utilities.ManagedSqlite</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
