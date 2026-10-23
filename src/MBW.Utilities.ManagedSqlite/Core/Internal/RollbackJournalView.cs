@@ -38,9 +38,11 @@ internal sealed class RollbackJournalView : IFileView
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L1663-L1665 (readJournalHdr), MAX_SECTOR_SIZE
     private const uint MaxSectorSize = 0x10000;
 
-    // The longest super-journal name SQLite reads, including its terminator: the unix VFS's mxPathname plus 1
+    // SQLite reads a super-journal name shorter than the VFS's mxPathname plus 1. That is 512 on unix and 1040 on
+    // Windows, and the journal may come from either, so the larger bound is used: no unix journal holds a longer name.
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_unix.c#L180 (MAX_PATHNAME)
-    private const uint MaxSuperJournalName = 512 + 1;
+    // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/os_win.c#L144 (SQLITE_WIN32_MAX_PATH_BYTES)
+    private const uint MaxSuperJournalName = 260 * 4 + 1;
 
     // The lock-byte page holds the byte at offset 1 GiB, PENDING_BYTE
     // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.h#L53 (PAGER_SJ_PGNO_COMPUTED)
