@@ -40,6 +40,9 @@ internal static class BTreeTools
         // belongs to the table, which reads it again on the next walk.
         byte[]? spare = null;
 
+        // The child pointers followed so far, for PAGE-40 in ParseChild
+        uint followed = 0;
+
         while (stack.Count > 0)
         {
             KeyValuePair<BTreeInteriorTablePage, int> top = stack.Pop();
@@ -69,7 +72,7 @@ internal static class BTreeTools
             // Come back for the next child after this one. The stack now holds this page and its ancestors.
             stack.Push(new KeyValuePair<BTreeInteriorTablePage, int>(interior, child + 1));
 
-            BTreePage subPage = ParseChild(interior, childPage, structure, stack.Count - 1, BTreeKind.Table, spare);
+            BTreePage subPage = ParseChild(interior, childPage, structure, stack.Count - 1, ++followed, BTreeKind.Table, spare);
             spare = null;
             if (subPage is BTreeLeafTablePage leaf)
                 yield return leaf;
@@ -93,6 +96,9 @@ internal static class BTreeTools
         // Depth-first, keeping the interior pages and the index of the next child to visit
         Stack<KeyValuePair<BTreeIndexPage, int>> stack = new Stack<KeyValuePair<BTreeIndexPage, int>>();
         stack.Push(new KeyValuePair<BTreeIndexPage, int>(root, 0));
+
+        // The child pointers followed so far, for PAGE-40 in ParseChild
+        uint followed = 0;
 
         while (stack.Count > 0)
         {
@@ -132,7 +138,7 @@ internal static class BTreeTools
             stack.Push(new KeyValuePair<BTreeIndexPage, int>(page, child + 1));
 
             // ParseChild rejects a table page here, so the child is an index page
-            BTreeIndexPage subPage = (BTreeIndexPage)ParseChild(page, childPage, structure, stack.Count - 1, BTreeKind.Index);
+            BTreeIndexPage subPage = (BTreeIndexPage)ParseChild(page, childPage, structure, stack.Count - 1, ++followed, BTreeKind.Index);
             stack.Push(new KeyValuePair<BTreeIndexPage, int>(subPage, 0));
         }
     }
@@ -150,7 +156,7 @@ internal static class BTreeTools
         Checks.Relaxable(root.CellCount > 0 || root.Page == 1, root.Reader.Settings, "PAGE-19",
             $"interior root page {root.Page} has no cells", root.Page, "b-tree page header");
 
-    private static BTreePage ParseChild(BTreePage parent, uint childPage, string structure, int depth, BTreeKind kind, byte[]? buffer = null)
+    private static BTreePage ParseChild(BTreePage parent, uint childPage, string structure, int depth, uint followed, BTreeKind kind, byte[]? buffer = null)
     {
         uint pageCount = parent.Reader.PageCount;
 
@@ -173,6 +179,16 @@ internal static class BTreeTools
         //     return SQLITE_CORRUPT_BKPT;
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5460 (moveToChild)
         Checks.Strict(depth + 1 < MaxDepth, "PAGE-24", $"the b-tree is deeper than {MaxDepth} levels", parent.Page, structure);
+
+        // PAGE-40: a walk follows fewer child pointers than the database has pages. This is the reader's own bound, not
+        // SQLite's: in a b-tree each page but the root is the child of one pointer, so a walk that follows pageCount of
+        // them has reached some page twice. SQLite only finds that in integrity_check (PAGE-26). On a read it walks a
+        // shared subtree once for each pointer to it, which within 20 levels can be exponentially many times, so a scan
+        // of such a file never ends. A walk within the bound reads the shared rows as often as SQLite does. A cycle that
+        // follows many pointers before it repeats fails here before it reaches PAGE-24; SQLite reports it as corrupt too.
+        // Strict in both modes: reading on is what never ends, and stopping early would drop rows.
+        Checks.Strict(pageCount == 0 || followed < pageCount, "PAGE-40",
+            $"the walk has followed {followed} child pointers, but the database has {pageCount} pages, so it reached a page twice", parent.Page, structure);
 
         BTreePage child = BTreePage.Parse(parent.Reader, childPage, kind, buffer);
 

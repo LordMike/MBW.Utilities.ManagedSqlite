@@ -772,13 +772,13 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     }
 
     /// <summary>
-    /// Deep's left interior page points back to the root. As in SQLite, the depth limit is what stops the cycle: root
-    /// and left page alternate, so the walk gives up at the root's first child pointer.
+    /// Deep's left interior page's first child pointer leads back to the root. As in SQLite, the depth limit is what
+    /// stops the cycle: root and left page alternate before any leaf, so the walk gives up after 20 levels.
     /// </summary>
     [Fact]
     public void Corruption_OtherTablesStillReadLikeSqlite()
     {
-        byte[] data = new DbPatcher(Base).SetRightMostPointer(DeepLeft, DeepRoot).Data;
+        byte[] data = new DbPatcher(Base).SetChildPointer(DeepLeft, 0, DeepRoot).Data;
 
         Exception ex = RunBounded(() =>
         {
