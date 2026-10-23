@@ -135,18 +135,19 @@ Rules:
 - **A Relaxable check that can fire repeatedly** (on every read of the same page) should report once; see HDR-17 in
   `ReaderBase.ReadPage`.
 - **Comment and link format:** follow "Citing SQLite source" above, and start the comment with the check ID.
-- **Schema checks may fail late.** A check on a CREATE statement may fail when that table is opened, not at database
-  open, even in Strict.
+- **Schema checks fail at open.** Every sqlite_schema row is parsed when the database is opened, as SQLite loads it, so
+  Strict fails the open; Lenient reports the error and keeps it on the row, which then cannot be opened.
 - **Structural damage fails the enumerator; a bad value fails only its cell.** Pages, cells, overflow and record headers
   belong to the first group. Invalid text belongs to the second.
 
 ### Test it
 
-Each check gets parity tests in the corruption suite (`Core.Tests/Corruption_Tests.cs`, a database built by
+Each check gets parity tests in the corruption suite (`Tests/Corruption_Tests.cs`, a database built by
 `SqliteParity.Build` and patched with `DbPatcher`):
 - **Strict:** SQLite fails (`SqliteParity.AssertSqliteReportsCorrupt`, or `AssertSqliteFails` for a non-CORRUPT error),
   we throw `SqliteCorruptException` with that `Check` ID, and the database object stays usable for undamaged tables. A
-  check that holds in every mode also gets a Lenient case: it still throws, and nothing is reported.
+  check that holds in every mode also gets a Lenient case: it still throws, and nothing is reported. A schema row's
+  statement check is the exception: Lenient reports it at open, and that row's table throws from `GetTable`.
 - **Relaxable, Lenient:** we read on, every row we return is intact (compare with SQLite, or with what the script
   wrote), and `OnValidationIssue` received the ID exactly once. `SqliteParity.AssertSameAsSqlite(script, patch,
   settings)` opens our side with Lenient settings.
@@ -166,7 +167,7 @@ Each check gets parity tests in the corruption suite (`Core.Tests/Corruption_Tes
 ## Tests
 
 - **SQLite is the oracle.** Value and schema tests are `SqliteParity.AssertSameAsSqlite(script)` theories
-  (`Core.Tests/Helpers/SqliteParity.cs`). The script creates and fills its tables in real SQLite, in memory, and the
+  (`Tests/Helpers/SqliteParity.cs`). The script creates and fills its tables in real SQLite, in memory, and the
   assertion compares SQLite's view (schema, then rows) with ours. Corruption tests build a database the same way, patch
   bytes, and assert that SQLite and we fail, or read on, alike.
 - **A patch asserts what it overwrites.** Before a test changes bytes or schema rows, it asserts that the target holds
@@ -176,7 +177,7 @@ Each check gets parity tests in the corruption suite (`Core.Tests/Corruption_Tes
   `writable_schema` edit asserts how many rows it changed (`SqliteParity.Build(script, edit, rows)`).
 - **Tests in one file look alike.** Each theory fixes the statement shape (e.g.
   `CREATE TABLE t ({columns}) WITHOUT ROWID; INSERT INTO t VALUES {values}`), and its `[InlineData]` rows give only what
-  varies. All CREATE syntax lives in `Sql.Tests/SqlCreateTable_Tests.cs`.
+  varies. All CREATE syntax lives in `Tests/SqlCreateTable_Tests.cs`.
 - **A test must add a new syntax or code path.** Don't add rows like "N columns" unless something special happens at N.
 - **One API path per assertion.** Don't test `TryGetX` and `GetX` for the same lookup; keep `Try*` only where its false
   result is the behaviour under test.

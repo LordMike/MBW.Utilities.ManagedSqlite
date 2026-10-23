@@ -1,6 +1,6 @@
 # SCHEMA: loading sqlite_schema rows into schema objects
 
-Area key: SCHEMA. Sources: SQLite 3.53.4 split amalgamation (`prepare.c`, `build.c`, `trigger.c`, `vtab.c`, `callback.c`, `analyze.c`, `parse.c`/`parse.y`, `util.c`, `btree.c`). Our code: `src/MBW.Utilities.ManagedSqlite.Core` and `src/MBW.Utilities.ManagedSqlite.Sql` at commit `debcfb3`.
+Area key: SCHEMA. Sources: SQLite 3.53.4 split amalgamation (`prepare.c`, `build.c`, `trigger.c`, `vtab.c`, `callback.c`, `analyze.c`, `parse.c`/`parse.y`, `util.c`, `btree.c`). Our code: `src/MBW.Utilities.ManagedSqlite/Core` and `src/MBW.Utilities.ManagedSqlite/Sql` at commit `debcfb3`.
 
 **How the results were checked.** Every row marked "verified" was reproduced in two steps. First, a test database was built with Python's `sqlite3` module (SQLite 3.45.1), and its `sqlite_master` was edited under `PRAGMA writable_schema=ON` or its header bytes were patched. Second, it was opened on a fresh connection, which ran `SELECT count(*) FROM sqlite_master` (this loads the schema) and then a `SELECT` from the target table. The same file was then run through our library (`Sqlite3Database` → `GetTable` → `EnumerateRows` → `GetTableDefinition`). The scripts and generated databases are in `review/sqlite-checks/repro/schema/` (`t.py`, `t2.py`, `t3.py`, `db_*.db`). The .NET harness is a copy of the repo under `.../scratchpad/repo/src/Harness`. The repo itself was not modified.
 
