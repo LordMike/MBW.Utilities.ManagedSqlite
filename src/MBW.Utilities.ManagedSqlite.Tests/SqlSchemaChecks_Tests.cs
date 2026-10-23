@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Sql;
@@ -40,9 +41,11 @@ public class SqlSchemaChecks_Tests
 
         Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data))).Check);
 
-        // Lenient keeps the error on the row that failed, and loads on
-        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
+        // Lenient reports the error, keeps it on the row that failed, and loads on
+        List<string> issues = new List<string>();
+        using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("b", lenient.GetTable("u").GetTableDefinition().Columns.Single().Name);
+        Assert.Contains(check, issues);
     }
 
     private static void AssertAccepted(byte[] data)

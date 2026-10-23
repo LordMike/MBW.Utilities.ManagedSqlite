@@ -136,7 +136,7 @@ Rules:
   `ReaderBase.ReadPage`.
 - **Comment and link format:** follow "Citing SQLite source" above, and start the comment with the check ID.
 - **Schema checks fail at open.** Every sqlite_schema row is parsed when the database is opened, as SQLite loads it, so
-  Strict fails the open; Lenient keeps the error on the row, which then cannot be opened.
+  Strict fails the open; Lenient reports the error and keeps it on the row, which then cannot be opened.
 - **Structural damage fails the enumerator; a bad value fails only its cell.** Pages, cells, overflow and record headers
   belong to the first group. Invalid text belongs to the second.
 

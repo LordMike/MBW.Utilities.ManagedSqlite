@@ -445,8 +445,8 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     }
 
     /// <summary>
-    /// The checks SQLite makes on a row's statement as it parses it: Strict fails the open, and Lenient keeps the error
-    /// on the row, so only that row cannot be opened
+    /// The checks SQLite makes on a row's statement as it parses it: Strict fails the open, and Lenient reports the
+    /// error and keeps it on the row, so only that row cannot be opened
     /// </summary>
     [Theory]
     [InlineData("SCHEMA-22", "u", "sql = 'CRxATE TABLE u (b)' WHERE name = 'u'")]
@@ -464,7 +464,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         List<string> issues = new List<string>();
         using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => lenient.GetTable(name)).Check);
-        Assert.Empty(issues);
+        Assert.Equal(new[] { check }, issues);
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
     }
 
@@ -518,7 +518,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     /// <summary>
     /// SCHEMA-19: a table, view or virtual table with rootpage 1 is taken for the schema table, named sqlite_master, so
     /// its name does not match the row's. SQLite skips that check with writable_schema on, and then finds sqlite_master
-    /// exists, so in Lenient the row cannot be opened.
+    /// exists, so in Lenient both are reported and the row cannot be opened.
     /// </summary>
     [Theory]
     [InlineData("u", "rootpage = 1 WHERE name = 'u'")]
@@ -534,7 +534,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         List<string> issues = new List<string>();
         using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("DDL-08", Assert.Throws<SqliteCorruptException>(() => lenient.GetTable(name)).Check);
-        Assert.Equal(new[] { "SCHEMA-19" }, issues);
+        Assert.Equal(new[] { "SCHEMA-19", "DDL-08" }, issues);
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, lenient, "t");
     }
 

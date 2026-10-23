@@ -42,8 +42,9 @@ internal class Sqlite3MasterTable
     /// Loads a row into the schema as sqlite3InitCallback in prepare.c does, after the checks of the row by itself: a
     /// CREATE statement is parsed and checked against the rows before it, and a row without one is the index of a
     /// PRIMARY KEY or UNIQUE constraint, which a table before it must have made. SQLite fails the whole schema on the
-    /// first error, and so does <see cref="SqliteValidation.Strict"/>. <see cref="SqliteValidation.Lenient"/> keeps
-    /// the error on the row, so only that row's table cannot be opened, and loads on.
+    /// first error, and so does <see cref="SqliteValidation.Strict"/>. <see cref="SqliteValidation.Lenient"/> reports
+    /// the error to <see cref="Sqlite3Settings.OnValidationIssue"/> and keeps it on the row, so only that row's table
+    /// cannot be opened, and loads on.
     ///   rc = db->errCode;
     ///   ...
     ///   if( SQLITE_OK!=rc ){
@@ -63,6 +64,7 @@ internal class Sqlite3MasterTable
         catch (SqliteCorruptException e) when (settings.Validation == SqliteValidation.Lenient)
         {
             row.Error = e;
+            settings.OnValidationIssue?.Invoke(new SqliteValidationIssue(e.Check!, e.Message, e.Page, e.Structure));
         }
     }
 

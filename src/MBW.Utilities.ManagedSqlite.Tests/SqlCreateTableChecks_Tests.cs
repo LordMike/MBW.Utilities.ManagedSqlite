@@ -25,11 +25,14 @@ public class SqlCreateTableChecks_Tests
     private static SqliteCorruptException Open(byte[] data) =>
         Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data)));
 
-    // Lenient opens, and fails the table
+    // Lenient opens, reports the error, and fails the table
     private static SqliteCorruptException OpenLenient(byte[] data)
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient });
-        return Assert.Throws<SqliteCorruptException>(() => db.GetTable("t"));
+        List<string> issues = new List<string>();
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
+        SqliteCorruptException e = Assert.Throws<SqliteCorruptException>(() => db.GetTable("t"));
+        Assert.Equal(new[] { e.Check }, issues);
+        return e;
     }
 
     /// <summary>
