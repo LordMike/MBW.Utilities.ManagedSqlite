@@ -75,7 +75,9 @@ public sealed class Sqlite3Row
     /// does not store, and for a DEFAULT this library does not evaluate.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="column"/> is null</exception>
-    /// <exception cref="ArgumentException"><paramref name="column"/> is not a column of this row's table</exception>
+    /// <exception cref="ArgumentException"><paramref name="column"/> is not a column of this row's table definition,
+    /// from <c>row.Table.GetTableDefinition()</c> (a column read from another database object of the same file is
+    /// not)</exception>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that column</exception>
     public bool TryGetOrdinal(SqlTableColumn column, out object? value)
     {
@@ -84,7 +86,7 @@ public sealed class Sqlite3Row
 
         SqlTableDefinition tableDefinition = Table.GetTableDefinition();
         if (!tableDefinition.TryGetColumn(column.Name, out SqlTableColumn? own) || own != column)
-            throw new ArgumentException($"column '{column.Name}' is not a column of table '{tableDefinition.TableName}'", nameof(column));
+            throw new ArgumentException($"column '{column.Name}' is not a column of the definition of table '{tableDefinition.TableName}' that this row's database read", nameof(column));
 
         return TryGetColumn(tableDefinition, column, out value);
     }
@@ -206,7 +208,9 @@ public sealed class Sqlite3Row
     /// conversions of <see cref="TryGetOrdinal{T}(ushort, out T)"/>.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="column"/> is null</exception>
-    /// <exception cref="ArgumentException"><paramref name="column"/> is not a column of this row's table</exception>
+    /// <exception cref="ArgumentException"><paramref name="column"/> is not a column of this row's table definition,
+    /// from <c>row.Table.GetTableDefinition()</c> (a column read from another database object of the same file is
+    /// not)</exception>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that column</exception>
     public bool TryGetOrdinal<T>(SqlTableColumn column, out T? value)
     {
