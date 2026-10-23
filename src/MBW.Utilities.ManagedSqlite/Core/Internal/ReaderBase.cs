@@ -5,7 +5,6 @@ using System.Runtime.ExceptionServices;
 using System.Text;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;

@@ -1,7 +1,7 @@
 using System;
 using System.Globalization;
 using System.Text;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
+using MBW.Utilities.ManagedSqlite.Core;
 
 namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
