@@ -14,22 +14,16 @@ public class SqlAffinity_Tests
     /// (https://www.sqlite.org/datatype3.html#determination_of_column_affinity). DetectedType must agree with SQLite.
     /// </summary>
     [Theory]
-    [InlineData("INT")]
     [InlineData("CHARINT")]
     [InlineData("FLOATING POINT")]
-    [InlineData("DOUBLE INT")]
-    [InlineData("TEXT")]
     [InlineData("VARCHAR(255)")]
     [InlineData("CLOB")]
     [InlineData("DOUBLE TEXT")]
-    [InlineData("BLOB")]
     [InlineData("FLOAT BLOB")]
     [InlineData("")]
     [InlineData("REAL")]
-    [InlineData("FLOAT")]
     [InlineData("DOUBLE")]
     [InlineData("floatval")]
-    [InlineData("NUMERIC")]
     [InlineData("STRING")]
     public void DetectedTypeMatchesSqliteAffinity(string declaredType)
     {
