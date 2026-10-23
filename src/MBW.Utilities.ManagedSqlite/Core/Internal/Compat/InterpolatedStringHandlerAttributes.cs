@@ -1,4 +1,4 @@
-// Polyfills for the interpolated string handler attributes, which netstandard1.0 and netstandard2.0 do not have.
+// Polyfills for the interpolated string handler attributes, which netstandard2.0 does not have.
 // The compiler matches these by name, so internal copies are enough for Helpers/CheckMessage.cs.
 
 #if !NET6_0_OR_GREATER

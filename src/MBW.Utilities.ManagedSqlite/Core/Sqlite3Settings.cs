@@ -3,6 +3,10 @@ using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
+/// <summary>
+/// How a database is read. A database copies its settings when it opens, so changing them afterwards changes nothing
+/// for it.
+/// </summary>
 public sealed class Sqlite3Settings
 {
     /// <summary>
@@ -25,4 +29,14 @@ public sealed class Sqlite3Settings
     /// schema row that fails to load, it reads on without that row's table, which then throws when it is opened.
     /// </summary>
     public Action<SqliteValidationIssue>? OnValidationIssue { get; set; }
+
+    /// <summary>
+    /// A copy of these settings, which a database keeps for its lifetime
+    /// </summary>
+    internal Sqlite3Settings Clone() => new Sqlite3Settings
+    {
+        FallbackEncoding = FallbackEncoding,
+        Validation = Validation,
+        OnValidationIssue = OnValidationIssue
+    };
 }

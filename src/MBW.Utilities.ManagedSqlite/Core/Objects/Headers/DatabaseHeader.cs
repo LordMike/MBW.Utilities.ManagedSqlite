@@ -75,7 +75,7 @@ internal sealed class DatabaseHeader
         // HDR-03: the magic string. lockBtree in btree.c:
         //   if( memcmp(page1, zMagicHeader, 16)!=0 ){ goto page1_init_failed; }
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3314
-        Checks.Strict(data.Take(_expectedHeader.Length).SequenceEqual(_expectedHeader), "HDR-03",
+        Checks.Strict(HasMagic(data), "HDR-03",
             $"the magic bytes {data.Take(_expectedHeader.Length).ToArray().ToHex()} did not match {_expectedHeader.ToHex()}",
             structure: "magic bytes");
 
@@ -154,5 +154,16 @@ internal sealed class DatabaseHeader
             $"payload fractions {MaximumEmbeddedPayloadFraction}, {MinimumEmbeddedPayloadFraction}, {LeafPayloadFraction} must be 64, 32, 32",
             structure: "database header");
 
+    }
+
+    private static bool HasMagic(byte[] data)
+    {
+        for (int i = 0; i < _expectedHeader.Length; i++)
+        {
+            if (data[i] != _expectedHeader[i])
+                return false;
+        }
+
+        return true;
     }
 }

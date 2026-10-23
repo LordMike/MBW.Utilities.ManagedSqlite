@@ -303,6 +303,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
         using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), lenient))
         {
+            // The database keeps a copy of the settings it opened with, so this changes nothing for it
+            lenient.Validation = SqliteValidation.Strict;
+
             List<long> keys = db.GetTable(table).EnumerateRows().Select(row =>
             {
                 Assert.True(row.TryGetValueByName("Payload", out string payload));

@@ -34,14 +34,55 @@ internal static class SqliteTokenizer
         1, 1, 1, 1, 1, 1, 1, 1, 0, 2, 2, 28, 10, 28, 25, 28
     };
 
-    private static readonly Dictionary<string, int> Keywords = BuildKeywords();
+    /// <summary>
+    /// The keywords by length, then by their first letter folded to lower case, so a word is looked up where it is,
+    /// without cutting it out of the SQL
+    /// </summary>
+    private static readonly (string Keyword, int Token)[]?[] Keywords = BuildKeywords();
 
-    private static Dictionary<string, int> BuildKeywords()
+    private static (string Keyword, int Token)[]?[] BuildKeywords()
     {
-        Dictionary<string, int> keywords = new Dictionary<string, int>(AsciiCaseInsensitiveComparer.Instance);
+        Dictionary<int, List<(string, int)>> buckets = new Dictionary<int, List<(string, int)>>();
+        int maxLength = 0;
         foreach ((string keyword, int token) in SqliteGrammar.Keywords)
-            keywords[keyword] = token;
+        {
+            int key = KeywordBucket(keyword.Length, keyword[0]);
+            if (!buckets.TryGetValue(key, out List<(string, int)>? list))
+                buckets[key] = list = new List<(string, int)>();
+            list.Add((keyword, token));
+            maxLength = Math.Max(maxLength, keyword.Length);
+        }
+
+        (string, int)[]?[] keywords = new (string, int)[]?[KeywordBucket(maxLength + 1, 'a')];
+        foreach (KeyValuePair<int, List<(string, int)>> bucket in buckets)
+            keywords[bucket.Key] = bucket.Value.ToArray();
         return keywords;
+    }
+
+    private static int KeywordBucket(int length, char first) => length * 26 + ((first | 0x20) - 'a');
+
+    /// <summary>
+    /// The keyword token of the <paramref name="length"/> characters at <paramref name="pos"/>, compared ignoring ASCII
+    /// case, or false when they are not a keyword
+    /// </summary>
+    private static bool TryGetKeyword(string z, int pos, int length, out int token)
+    {
+        char first = z[pos];
+        int bucket = KeywordBucket(length, first);
+        if ((first | 0x20) is >= 'a' and <= 'z' && bucket < Keywords.Length && Keywords[bucket] is { } candidates)
+        {
+            foreach ((string keyword, int keywordToken) in candidates)
+            {
+                if (AsciiCaseInsensitiveComparer.Equals(z, pos, length, keyword))
+                {
+                    token = keywordToken;
+                    return true;
+                }
+            }
+        }
+
+        token = 0;
+        return false;
     }
 
     private static byte Class(string z, int i)
@@ -323,7 +364,7 @@ internal static class SqliteTokenizer
                     break;
                 }
 
-                tokenType = Keywords.TryGetValue(z.Substring(pos, i), out int keyword) ? keyword : TK.ID;
+                tokenType = TryGetKeyword(z, pos, i, out int keyword) ? keyword : TK.ID;
                 return i;
             }
             case CC_X:
