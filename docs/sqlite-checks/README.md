@@ -54,7 +54,7 @@ The code for each of these carries its ID in a comment.
 | DDL-03, DDL-65, DDL-66, DDL-68, DDL-69, DDL-71, DDL-72 | Strict: CREATE INDEX as sqlite3CreateIndex runs it at init: a table loaded before it that is not a view or virtual table, the row's name and tbl_name, terms and a partial WHERE resolved against the table, and a root page no other index of the table has |
 | DDL-36, DDL-74, DDL-75, DDL-77, DDL-79, DDL-80, DDL-81, DDL-82 | Strict: views, triggers and virtual tables are checked as SQLite checks them at init: their headers against the schema, their bodies for syntax, the trigger-step errors of the parser and cross-database references; their names are not resolved, and virtual table modules are not looked up |
 | DDL-46 | CHECK constraints are dropped, as SQLite drops them for a read-only database |
-| REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity; a DEFAULT with a CAST is not evaluated. A STORED generated column reads its expression the same way, as SQLite does (sqlite3ColumnDefault on the generation expression) |
+| REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity, a CAST included; a DEFAULT that makes a real into text is not evaluated. A STORED generated column reads its expression the same way, as SQLite does (sqlite3ColumnDefault on the generation expression) |
 
 A Strict check on a schema row's statement fails the open in Strict. In Lenient it is reported at open, and only that row's table cannot be opened.
 

@@ -33,7 +33,7 @@ public static class SqlExtensions
         // The table was parsed when the schema was loaded
         Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
         if (!definitionCache.TryGetValue(schema, out SqlTableDefinition? definition))
-            definitionCache[schema] = definition = SqlParser.Build(schema.Table!);
+            definitionCache[schema] = definition = SqlParser.Build(schema.Table!, schema.Database.TextEncoding);
 
         return definition;
     }

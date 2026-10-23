@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
@@ -15,12 +16,12 @@ namespace MBW.Utilities.ManagedSqlite.Sql;
 internal static class SqlParser
 {
     /// <summary>
-    /// Parses the CREATE TABLE statement of the schema row <paramref name="objectName"/>
+    /// Parses the CREATE TABLE statement of the schema row <paramref name="objectName"/>, as in a UTF-8 database
     /// </summary>
     /// <exception cref="SqliteCorruptException">SQLite would find the statement malformed</exception>
     public static SqlTableDefinition Parse(string sql, string objectName, Sqlite3Settings settings)
     {
-        return Build(SchemaParser.ParseCreateTable(sql, objectName, settings));
+        return Build(SchemaParser.ParseCreateTable(sql, objectName, settings), SqliteEncoding.UTF8);
     }
 
     /// <summary>
@@ -44,9 +45,9 @@ internal static class SqlParser
     }
 
     /// <summary>
-    /// Describes a table SQLite built from its CREATE TABLE
+    /// Describes a table SQLite built from its CREATE TABLE, in a database of text encoding <paramref name="encoding"/>
     /// </summary>
-    public static SqlTableDefinition Build(ParsedTable table)
+    public static SqlTableDefinition Build(ParsedTable table, SqliteEncoding encoding)
     {
         SqlTableDefinition definition = new SqlTableDefinition(table.Name);
         definition.IsWithoutRowId = table.Has(ParsedTable.TF_WithoutRowid);
@@ -74,7 +75,7 @@ internal static class SqlParser
                 virtualColumns++;
             else
             {
-                column.HasKnownDefault = ColumnDefault.TryEvaluate(parsed.Default, parsed.Affinity, out object? value);
+                column.HasKnownDefault = ColumnDefault.TryEvaluate(parsed.Default, parsed.Affinity, encoding, out object? value);
                 column.DefaultValue = value;
             }
 

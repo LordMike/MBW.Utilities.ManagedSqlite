@@ -1,5 +1,7 @@
 using System;
 using System.Globalization;
+using System.Text;
+using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
@@ -18,12 +20,12 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 internal static class ColumnDefault
 {
     /// <summary>
-    /// The value of <paramref name="expr"/>, the column's default, or null when there is none. False for a CAST, which
-    /// this library does not evaluate, and for a negation that is a real in a TEXT column, as SQLite's real formatting
-    /// is not ported.
+    /// The value of <paramref name="expr"/>, the column's default, in a database of text encoding
+    /// <paramref name="encoding"/>, or null when there is none. False when a real would be made text, as SQLite's real
+    /// formatting is not ported.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L1795 (valueFromExpr)
     /// </summary>
-    public static bool TryEvaluate(Expr? expr, char affinity, out object? value)
+    public static bool TryEvaluate(Expr? expr, char affinity, SqliteEncoding encoding, out object? value)
     {
         value = null;
         if (expr == null)
@@ -34,9 +36,35 @@ internal static class ColumnDefault
         while ((op = expr.Op) == TK.UPLUS || op == TK.SPAN)
             expr = expr.Left!;
 
-        // CAST converts with sqlite3VdbeMemCast, which this library does not port
+        // The operand evaluated with the affinity of the CAST's type, converted to that type, and then given the
+        // column's affinity
+        //   if( op==TK_CAST ){
+        //     u8 aff;
+        //     assert( !ExprHasProperty(pExpr, EP_IntValue) );
+        //     aff = sqlite3AffinityType(pExpr->u.zToken,0);
+        //     rc = valueFromExpr(db, pExpr->pLeft, enc, aff, ppVal, pCtx);
+        //     testcase( rc!=SQLITE_OK );
+        //     if( *ppVal ){
+        //       ...
+        //       sqlite3VdbeMemCast(*ppVal, aff, enc);
+        //       sqlite3ValueApplyAffinity(*ppVal, affinity, enc);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L1820 (valueFromExpr)
         if (op == TK.CAST)
-            return false;
+        {
+            char castAffinity = SchemaParser.AffinityType(expr.Text!);
+            if (!TryEvaluate(expr.Left, castAffinity, encoding, out object? operand))
+                return false;
+
+            // NULL, or no value, stays so
+            if (operand == null)
+                return true;
+
+            if (!TryCast(operand, castAffinity, encoding, out object cast) || (cast is double && affinity == ParsedColumn.AFF_TEXT))
+                return false;
+
+            value = ApplyAffinity(cast, affinity);
+            return true;
+        }
 
         // A negative number in one step, so -9223372036854775808 is an integer. Not for a hexadecimal literal, which
         // is negated as a value below.
@@ -109,7 +137,7 @@ internal static class ColumnDefault
             //       pVal->u.i = -pVal->u.i;
             //     }
             //     sqlite3ValueApplyAffinity(pVal, affinity, enc);
-            if (!TryEvaluate(expr.Left, affinity, out object? operand))
+            if (!TryEvaluate(expr.Left, affinity, encoding, out object? operand))
                 return false;
 
             // NULL, or no value, stays so
@@ -164,6 +192,102 @@ internal static class ColumnDefault
         return true;
     }
 
+    /// <summary>
+    /// sqlite3VdbeMemCast in vdbemem.c: <paramref name="value"/>, which is not NULL, converted to the affinity
+    /// <paramref name="affinity"/> even where that loses data. False when a real would be made text.
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L926 (sqlite3VdbeMemCast)
+    /// </summary>
+    private static bool TryCast(object value, char affinity, SqliteEncoding encoding, out object cast)
+    {
+        cast = value;
+        switch (affinity)
+        {
+            case ParsedColumn.AFF_BLOB:
+                // Made text, in the database's encoding, and its bytes kept as a blob
+                //   if( (pMem->flags & MEM_Blob)==0 ){
+                //     sqlite3ValueApplyAffinity(pMem, SQLITE_AFF_TEXT, encoding);
+                //     assert( pMem->flags & MEM_Str || pMem->db->mallocFailed );
+                //     if( pMem->flags & MEM_Str ) MemSetTypeFlag(pMem, MEM_Blob);
+                if (value is byte[])
+                    return true;
+                if (value is double)
+                    return false;
+                cast = TextEncoding(encoding).GetBytes(value as string ?? ((long)value).ToString(CultureInfo.InvariantCulture));
+                return true;
+            case ParsedColumn.AFF_NUMERIC:
+                cast = Numerify(value);
+                return true;
+            case ParsedColumn.AFF_INTEGER:
+                // sqlite3VdbeMemIntegerify: sqlite3VdbeIntValue, which reads text with sqlite3Atoi64 and ignores its
+                // result code
+                //   }else if( flags & MEM_Real ){
+                //     return sqlite3RealToI64(pMem->u.r);
+                //   }else if( (flags & (MEM_Str|MEM_Blob))!=0 && pMem->z!=0 ){
+                //     return memIntValue(pMem);
+                // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L641 (sqlite3VdbeIntValue)
+                if (value is double fromReal)
+                    cast = RealToI64(fromReal);
+                else if (!(value is long))
+                {
+                    Atoi64(ToText(value), out long fromText);
+                    cast = fromText;
+                }
+
+                return true;
+            case ParsedColumn.AFF_REAL:
+                // sqlite3VdbeMemRealify: sqlite3VdbeRealValue, which reads text with sqlite3AtoF and ignores its result
+                // code
+                // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L770 (sqlite3VdbeRealValue)
+                if (value is long fromInteger)
+                    cast = (double)fromInteger;
+                else if (!(value is double))
+                {
+                    AtoF(ToText(value), out double fromText);
+                    cast = fromText;
+                }
+
+                return true;
+            default:
+                // TEXT: a blob's bytes become text. A blob literal is UTF-8, so in a UTF-16 database an odd last byte is
+                // dropped and the rest translated.
+                //   pMem->flags |= (pMem->flags&MEM_Blob)>>3;
+                //   sqlite3ValueApplyAffinity(pMem, SQLITE_AFF_TEXT, encoding);
+                //   ...
+                //   if( encoding!=SQLITE_UTF8 ) pMem->n &= ~1;
+                //   rc = sqlite3VdbeChangeEncoding(pMem, encoding);
+                if (value is byte[] blob)
+                    cast = Encoding.UTF8.GetString(blob, 0, encoding == SqliteEncoding.UTF8 ? blob.Length : blob.Length & ~1);
+                else if (value is long number)
+                    cast = number.ToString(CultureInfo.InvariantCulture);
+                else if (value is double)
+                    return false;
+
+                return true;
+        }
+    }
+
+    private static Encoding TextEncoding(SqliteEncoding encoding) => encoding switch
+    {
+        SqliteEncoding.UTF16LE => Encoding.Unicode,
+        SqliteEncoding.UTF16BE => Encoding.BigEndianUnicode,
+        _ => Encoding.UTF8
+    };
+
+    /// <summary>
+    /// Text as SQLite's numeric conversions read it; a blob's bytes as the C string SQLite reads, which only matters up
+    /// to the first byte that is not part of a number
+    /// </summary>
+    private static string ToText(object value)
+    {
+        if (!(value is byte[] blob))
+            return (string)value;
+
+        char[] chars = new char[blob.Length];
+        for (int i = 0; i < blob.Length; i++)
+            chars[i] = (char)blob[i];
+        return new string(chars);
+    }
+
     private static bool IsHex(string token) => token.Length > 1 && token[0] == '0' && (token[1] | 0x20) == 'x';
 
     /// <summary>
@@ -211,7 +335,8 @@ internal static class ColumnDefault
                 break;
             case ParsedColumn.AFF_TEXT:
                 // A real is never made text here: a literal real stays the text of its token, and the one negated
-                // hexadecimal literal that is a real, -0x8000000000000000, is not evaluated for a TEXT column
+                // hexadecimal literal that is a real, -0x8000000000000000, and a CAST to a real are not evaluated for a
+                // TEXT column
                 if (value is long integer)
                     value = integer.ToString(CultureInfo.InvariantCulture);
                 break;
@@ -266,19 +391,7 @@ internal static class ColumnDefault
         if (value is long || value is double)
             return value;
 
-        string text;
-        if (value is byte[] blob)
-        {
-            // The bytes as the C string SQLite reads, which only matters up to the first byte that is not part of a
-            // number
-            char[] chars = new char[blob.Length];
-            for (int i = 0; i < blob.Length; i++)
-                chars[i] = (char)blob[i];
-            text = new string(chars);
-        }
-        else
-            text = (string)value;
-
+        string text = ToText(value);
         int rc = AtoF(text, out double real);
         if ((rc & 2) == 0 && Atoi64(text, out long ix) < 2)
             return ix;
@@ -436,8 +549,9 @@ internal static class ColumnDefault
     }
 
     /// <summary>
-    /// sqlite3Atoi64 in util.c: white space, a sign, and the digits that follow, as a 64-bit integer. 0 when that is all
-    /// the text and it fits, 1 when other text follows, 2 or 3 when it does not fit, -1 for no digits.
+    /// sqlite3Atoi64 in util.c: white space, a sign, and the digits that follow, as a 64-bit integer, or the smallest or
+    /// largest one when they do not fit. 0 when that is all the text and it fits, 1 when other text follows, 2 or 3 when
+    /// it does not fit, -1 for no digits.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/util.c#L1166 (sqlite3Atoi64)
     /// </summary>
     private static int Atoi64(string z, out long value)
@@ -482,6 +596,7 @@ internal static class ColumnDefault
         int c = digits > 19 ? 1 : string.CompareOrdinal(z.Substring(first, 19), "9223372036854775808");
         if (c < 0)
             return rc;
+        value = neg ? long.MinValue : long.MaxValue;
         if (c > 0)
             return 2;
         return neg ? rc : 3;

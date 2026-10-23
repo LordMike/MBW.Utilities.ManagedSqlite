@@ -87,10 +87,12 @@ public class SqlCreateTable_Tests
     public void Default(string columns) => AssertSameAsSqlite($"CREATE TABLE t ({columns}); INSERT INTO t DEFAULT VALUES;");
 
     /// <summary>
-    /// <c>CREATE TABLE t (a); INSERT INTO t VALUES (1)</c>, then the table's SQL is made <c>CREATE TABLE t (a, columns)</c>,
-    /// as ALTER TABLE ADD COLUMN does without rewriting the rows. A record too short for a column reads its DEFAULT as
-    /// SQLite evaluates it (sqlite3ValueFromExpr), with the column's affinity. Some of these defaults are not ones ALTER
-    /// TABLE accepts, but SQLite reads every short record this way.
+    /// <c>CREATE TABLE t (a); INSERT INTO t VALUES (1)</c> in a database of <paramref name="encoding"/>, then the table's
+    /// SQL is made <c>CREATE TABLE t (a, columns)</c>, as ALTER TABLE ADD COLUMN does without rewriting the rows. A record
+    /// too short for a column reads its DEFAULT as SQLite evaluates it (sqlite3ValueFromExpr), with the column's
+    /// affinity. Some of these defaults are not ones ALTER TABLE accepts, but SQLite reads every short record this way.
+    /// A CAST between text and blob depends on the encoding: a blob literal is UTF-8 text, and text is a blob in the
+    /// database's encoding.
     /// </summary>
     [Theory]
     [InlineData("b INTEGER DEFAULT 500, c TEXT DEFAULT 5, d REAL DEFAULT 5, e DEFAULT -5, f NUMERIC DEFAULT +5, g TEXT DEFAULT (-5)")]
@@ -102,8 +104,13 @@ public class SqlCreateTable_Tests
     [InlineData("b REAL DEFAULT 3500000000000000.2500001, c NUMERIC DEFAULT '3500000000000000.2500001', d DEFAULT 12345678901234567890123, e NUMERIC DEFAULT ' +.5e1 ', f INTEGER DEFAULT '5.', g INTEGER DEFAULT '1e'")]
     [InlineData("b DEFAULT (1 + 2), c TEXT DEFAULT CURRENT_TIMESTAMP, d DEFAULT (abs(-1)), e INTEGER DEFAULT ('5' COLLATE nocase)")]
     [InlineData("b AS (5) STORED, c TEXT AS ('x') STORED, d AS (a * 2) STORED, e AS (7)")]
-    public void DefaultOfShortRecord(string columns) => SqliteParity.AssertSameAsSqlite(
-        "CREATE TABLE t (a); INSERT INTO t VALUES (1);", $"UPDATE sqlite_schema SET sql = 'CREATE TABLE t (a, {columns.Replace("'", "''")})' WHERE name = 't'");
+    [InlineData("b DEFAULT (CAST('12abc' AS INTEGER)), c DEFAULT (CAST(1.9 AS INT)), d DEFAULT (CAST('99999999999999999999' AS INTEGER)), e DEFAULT (CAST(-'1e20' AS INTEGER)), f DEFAULT (CAST(x'3132' AS INTEGER)), g DEFAULT (CAST(NULL AS INTEGER))")]
+    [InlineData("b DEFAULT (CAST(5 AS REAL)), c DEFAULT (CAST(' 1.5x' AS DOUBLE)), d DEFAULT (CAST('1e3' AS NUMERIC)), e DEFAULT (CAST(x'2D35' AS NUMERIC)), f INTEGER DEFAULT (CAST('2.0' AS REAL)), g TEXT DEFAULT (CAST(5 AS TEXT)), h INTEGER DEFAULT (CAST(5 AS TEXT))")]
+    [InlineData("b DEFAULT (CAST('abc' AS BLOB)), c DEFAULT (CAST(5 AS BLOB)), d DEFAULT (CAST(x'616263' AS TEXT)), e TEXT DEFAULT (CAST(x'' AS VARCHAR(10))), f DEFAULT (CAST(+(CAST(5 AS TEXT)) AS BLOB))")]
+    [InlineData("b DEFAULT (CAST('abc' AS BLOB)), c DEFAULT (CAST(5 AS BLOB)), d DEFAULT (CAST(x'616263' AS TEXT)), e DEFAULT (CAST(x'61626364' AS TEXT))", "UTF-16le")]
+    [InlineData("b DEFAULT (CAST('abc' AS BLOB)), d DEFAULT (CAST(x'616263' AS TEXT))", "UTF-16be")]
+    public void DefaultOfShortRecord(string columns, string encoding = "UTF-8") => SqliteParity.AssertSameAsSqlite(
+        $"PRAGMA encoding = '{encoding}'; CREATE TABLE t (a); INSERT INTO t VALUES (1);", $"UPDATE sqlite_schema SET sql = 'CREATE TABLE t (a, {columns.Replace("'", "''")})' WHERE name = 't'");
 
     /// <summary>
     /// <c>CREATE TABLE name (a INTEGER, b TEXT); INSERT INTO name VALUES (1, 'x')</c>
