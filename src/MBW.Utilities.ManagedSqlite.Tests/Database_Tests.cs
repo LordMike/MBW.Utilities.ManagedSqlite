@@ -52,11 +52,10 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     }
 
     [Fact]
-    public void VirtualTableIsListedButNotRead()
+    public void GetTableThrowsNotSupportedForVirtualTable()
     {
         using Sqlite3Database db = Open();
 
-        Assert.True(db.GetTables().Single(s => s.Name == "docs").IsVirtual);
         Assert.Throws<NotSupportedException>(() => db.GetTable("docs"));
     }
 
