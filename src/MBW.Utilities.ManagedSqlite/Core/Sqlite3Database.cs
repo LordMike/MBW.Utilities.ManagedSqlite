@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -276,7 +277,7 @@ public sealed class Sqlite3Database : IDisposable
         const string schemaSql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);";
         schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page, schemaSql)
         {
-            IsTable = true,
+            Kind = Sqlite3SchemaKind.Table,
             Table = SchemaParser.ParseCreateTable(schemaSql, "sqlite_master", _reader.Settings)
         };
 
@@ -336,7 +337,7 @@ public sealed class Sqlite3Database : IDisposable
         // In Lenient, a row that failed to load made nothing in the schema, as with writable_schema in SQLite, so a
         // later row may still make a table of its name. The error is thrown only when no table has the name.
         SqliteCorruptException? error = null;
-        foreach (Sqlite3SchemaRow tbl in GetTables())
+        foreach (Sqlite3SchemaRow tbl in GetSchema())
         {
             // A table is known by what its statement made, as in SQLite. The type column must agree in Strict
             // (SCHEMA-26), in any case, so "TABLE" is a table too.
@@ -359,7 +360,19 @@ public sealed class Sqlite3Database : IDisposable
         return new Sqlite3Table(_reader, root, tbl);
     }
 
-    public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
+    /// <summary>
+    /// Every row of the schema table (<c>sqlite_schema</c>), in the order SQLite loads them: tables, virtual tables,
+    /// indexes, views and triggers, and in <see cref="SqliteValidation.Lenient"/> rows that failed to load. Each row's
+    /// <see cref="Sqlite3SchemaRow.Kind"/> says what its statement made. The schema table itself is not a row.
+    /// </summary>
+    public IEnumerable<Sqlite3SchemaRow> GetSchema() => _masterTable.Tables;
+
+    /// <summary>
+    /// The rows of <see cref="GetSchema"/> that made a table: ordinary tables, which include a virtual table's shadow
+    /// tables, and virtual tables, which <see cref="GetTable"/> cannot read (see <see cref="Sqlite3SchemaRow.IsVirtual"/>).
+    /// Indexes, views, triggers and rows that made nothing are left out.
+    /// </summary>
+    public IEnumerable<Sqlite3SchemaRow> GetTables() => GetSchema().Where(s => s.IsTable);
 
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
     {

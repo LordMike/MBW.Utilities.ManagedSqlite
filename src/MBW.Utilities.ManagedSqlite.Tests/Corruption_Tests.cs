@@ -75,7 +75,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
-        foreach (Sqlite3SchemaRow schema in db.GetTables().Where(s => s.Type == "table").ToList())
+        foreach (Sqlite3SchemaRow schema in db.GetTables().ToList())
             ReadTable(db, schema.Name);
     }
 

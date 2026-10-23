@@ -16,7 +16,8 @@ To migrate from `MBW.Utilities.ManagedSqlite.Core` or `MBW.Utilities.ManagedSqli
 // Opens MyDb.db, and its -wal or -journal file if one exists
 using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
 {
-    // Access all tables using db.GetTables(), or a single using db.GetTable("name")
+    // List the tables using db.GetTables(), or every schema row (indexes, views and triggers too) using
+    // db.GetSchema(), and open one using db.GetTable("name")
     Sqlite3Table tbl = db.GetTable("MyTable");
     
     // Read out the SQL schema of the table (to get column names)

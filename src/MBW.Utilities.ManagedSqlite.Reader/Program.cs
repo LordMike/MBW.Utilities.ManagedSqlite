@@ -50,7 +50,7 @@ class Program
             stream = File.OpenRead(path);
             db = Sqlite3Database.FromStreamWithNoJournal(stream);
 
-            tables = db.GetTables().ToList();
+            tables = db.GetSchema().ToList();
         }
         catch (Exception e)
         {
@@ -78,7 +78,7 @@ class Program
 
         foreach (Sqlite3SchemaRow row in tables)
         {
-            if (row.Type != "table")
+            if (row.Kind != Sqlite3SchemaKind.Table)
                 continue;
 
             Console.WriteLine($"{row.Type} {row.Name}");
@@ -100,7 +100,7 @@ class Program
                 Console.WriteLine("  Error: Unable to parse SQL");
             }
 
-            List<Sqlite3SchemaRow> indexes = tables.Where(s => s.Type == "index" && s.TableName == row.TableName).ToList();
+            List<Sqlite3SchemaRow> indexes = tables.Where(s => s.Kind == Sqlite3SchemaKind.Index && s.TableName == row.TableName).ToList();
 
             Console.WriteLine($"  Indexes ({indexes.Count})");
             foreach (Sqlite3SchemaRow index in indexes)
@@ -132,13 +132,13 @@ class Program
     //using (FileStream fs = File.OpenRead("BigBlobDb.db"))
     //using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
     //{
-    //    IEnumerable<Sqlite3SchemaRow> tables = db.GetTables();
+    //    IEnumerable<Sqlite3SchemaRow> tables = db.GetSchema();
 
     //    foreach (Sqlite3SchemaRow table in tables)
     //    {
     //        Console.WriteLine($"{table.Type} \"{table.Name}\", [{table.TableName}] (RP: {table.RootPage}): {table.Sql}; ");
 
-    //        if (table.Type == "table")
+    //        if (table.Kind == Sqlite3SchemaKind.Table)
     //        {
     //            Sqlite3Table tableData = db.GetTable(table.Name);
 
