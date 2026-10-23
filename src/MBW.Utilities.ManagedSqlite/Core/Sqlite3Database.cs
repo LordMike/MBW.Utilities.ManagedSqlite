@@ -289,7 +289,8 @@ public sealed class Sqlite3Database : IDisposable
     /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
-    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
+    /// page is malformed, or is a b-tree page of the other kind than its SQL declares (PAGE-18)</exception>
     public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -309,7 +310,8 @@ public sealed class Sqlite3Database : IDisposable
     /// </summary>
     /// <exception cref="KeyNotFoundException">No table with that name exists</exception>
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
-    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
+    /// page is malformed, or is a b-tree page of the other kind than its SQL declares (PAGE-18)</exception>
     public Sqlite3Table GetTable(string name)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -356,6 +358,22 @@ public sealed class Sqlite3Database : IDisposable
     {
         // Parsed to check it and learn its kind, in the reader's page buffer: the table reads it again when its rows are read
         BTreePage root = BTreePage.Parse(_reader, tbl.RootPage, buffer: _reader.PageBuffer);
+
+        // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
+        // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
+        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
+        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
+        // SQLite reports it on the table's first row read; here the root is read when the table is opened, as are
+        // the root page's other checks.
+        if (tbl.Table != null)
+        {
+            bool sqlWithoutRowId = tbl.Table.Has(ParsedTable.TF_WithoutRowid);
+            Checks.Strict(sqlWithoutRowId == root is BTreeIndexPage, "PAGE-18",
+                $"the SQL of table {tbl.Name} declares {(sqlWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(root is BTreeIndexPage ? "an index" : "a table")} b-tree page",
+                tbl.RootPage, "b-tree page header");
+        }
+
         return new Sqlite3Table(_reader, root, tbl);
     }
 

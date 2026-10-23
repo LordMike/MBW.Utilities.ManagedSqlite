@@ -345,7 +345,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     /// <summary>
     /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
-    /// an interior table page. The root page alone can't tell, so GetTableDefinition, which knows the SQL, checks it.
+    /// an interior table page. Opening the table compares the root page with the SQL.
     /// </summary>
     [Theory]
     [InlineData("Small", 0x0A)]
@@ -356,7 +356,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
 
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
-        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
+        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table)).Check);
     }
 
     // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold, in either mode. Their pointers would
