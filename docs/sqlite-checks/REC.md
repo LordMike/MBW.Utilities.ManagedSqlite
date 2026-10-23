@@ -22,10 +22,9 @@ generated columns as they are computed). NOT NULL, STRICT types, affinity mismat
 by `PRAGMA integrity_check`. Index-key comparison (`sqlite3VdbeRecordCompareWithSkip`) and `sqlite3VdbeIdxRowid` have their
 own corruption checks, but they run only on seeks and secondary-index lookups. Our reader does neither.
 
-Our decoder (`Core/Tables/Sqlite3Table.cs` `DecodeRecord`, lines 171-272) is **eager**: it reads the whole payload,
-parses every serial type, requires `headerSize + sum(sizes) == payloadLength` exactly, and decodes every field. That
-matches what SQLite does for `SELECT *` or `integrity_check` on a record whose field count equals the table's column count.
-It is stricter than SQLite for records with surplus fields and for header size 0, and it does not apply DEFAULT values.
+Our decoder (`Core/Tables/Sqlite3Record.cs`) is **lazy**, as OP_Column is: it parses the header only up to the field
+that is read, applies OP_Column's checks to the part parsed so far, and never looks at fields after it. A record shorter
+than the column being read gives the column's DEFAULT by name (`TryGetValueByName`), with the column's affinity.
 
 ## 2. Checks
 
@@ -84,21 +83,18 @@ It is stricter than SQLite for records with surplus fields and for header size 0
 - `assert( CORRUPT_DB )` when `sqlite3VdbeRecordUnpack` overruns, [vdbeaux.c:4274](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4274).
 - `assert( sqlite3SmallTypeSizes[t]==(t-12)/2 )` in `sqlite3VdbeSerialTypeLen`, [vdbeaux.c:3992](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L3992).
 
-## 3. Most important gaps
-
-**We reject what SQLite accepts:**
-1. **REC-10, surplus fields.** A record with more fields than the table has columns is never fully parsed by SQLite. Garbage serial types or trailing bytes after the last real column go unnoticed. We parse every field and require an exact length, so we throw. Fix: let the caller (the Sql package, or Core given a column count) stop decoding after N fields, and apply REC-08 only when the header ends within those N fields (SQLite's exact rule).
-2. **REC-04, header size 0.** SQLite treats it as a record with no fields (every column is DEFAULT/NULL). We throw at `Sqlite3Table.cs:177`.
-3. **REC-40, text-encoding field.** SQLite uses `v & 3` with 0 meaning UTF-8. We throw for 0 and for values >= 4 unless `FallbackEncoding` is set. (Shared with the header area.)
+## 3. Open gaps
 
 **We return different values without failing:**
-4. **REC-11, DEFAULT for short records.** SQLite returns the column DEFAULT (with affinity) when a record has fewer fields (ALTER TABLE ADD COLUMN). We report the column as missing. This is a value-parity gap, not a corruption check.
-5. **REC-21.** The rowid-alias column returns false instead of the rowid when the record is shorter than the alias's position (the check order in `SqlExtensions.cs:62` vs `:66`).
-6. **REC-34/36/37, text decoding.** No failures, but we lose data: invalid UTF-8 and lone surrogates become U+FFFD, and an odd trailing UTF-16 byte becomes U+FFFD where SQLite drops it.
+1. **REC-36, odd-length UTF-16 text.** SQLite drops the odd trailing byte; we decode it as U+FFFD. The fix is to decode
+   `count & ~1` bytes.
+2. **REC-11, a DEFAULT with a CAST.** A record too short for a column reads the column's DEFAULT, but a DEFAULT with a
+   `CAST` (and a negated real in a TEXT column) is not evaluated and reads as no value, where SQLite applies it. This is
+   listed under Differences from SQLite in the README.
 
 **SQLite rejects what we accept (minor):**
-7. **REC-03.** Header size > 98307 is always corrupt in SQLite; we have no cap.
-8. **REC-05.** A header size of 1 with a 1-byte payload is corrupt in SQLite when any column is read; we return an empty row.
-9. **REC-17.** A value > SQLITE_LIMIT_LENGTH (1e9) gives SQLITE_TOOBIG; we allow up to int.MaxValue.
+3. **REC-17.** A TEXT or BLOB value larger than SQLITE_LIMIT_LENGTH (1,000,000,000 bytes) gives SQLITE_TOOBIG; we read
+   it. It needs a file over 1 GB.
 
-Not gaps: the integrity_check-only checks (REC-26 to 30) are tolerated by both in normal reads; possible opt-in "extra strict" mode later.
+Not gaps: invalid UTF-8 and lone UTF-16 surrogates (REC-34, REC-37) become U+FFFD, because a .NET string cannot carry
+the raw bytes; neither side fails. The integrity_check-only checks (REC-26 to 30) are tolerated by both in normal reads.

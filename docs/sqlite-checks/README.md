@@ -16,7 +16,8 @@ a stable ID (such as `PAGE-21`) that the code, its comments, `SqliteCorruptExcep
 | WALJ | [WALJ.md](WALJ.md) | WAL and rollback journal checks, for the WAL and journal work |
 
 The tables were written against SQLite 3.53.4 and this repository at debcfb3, so their *Ours* column and the file and
-line references in it describe the reader before #58; the table below lists what changed since. The links into SQLite are pinned to the `version-3.53.4` tag so
+line references in it describe the reader before #58; the tables below list what changed since. The *Open gaps*
+section at the end of HDR.md, REC.md and SCHEMA.md lists what still differs from SQLite. The links into SQLite are pinned to the `version-3.53.4` tag so
 their line numbers stay valid.
 
 ## Implemented in #58

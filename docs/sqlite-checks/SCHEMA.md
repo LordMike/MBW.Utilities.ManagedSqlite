@@ -24,7 +24,7 @@ SQLite does not read the schema at `sqlite3_open`. The first statement that need
   - a missing automatic index, or a table with rootpage 0, is caught only when a cursor is opened on it;
   - `sqlite_stat1` problems are ignored.
 
-Our library reads every `sqlite_master` row into an `Sqlite3SchemaRow` with **no validation at all**. A row is only checked when its table is opened: root page bounds via `ReaderBase.SeekPage`, the b-tree kind against WITHOUT ROWID in the Sql package, and the SQL when `GetTableDefinition` parses it. Indexes, views and triggers are never checked.
+Our library loads the whole schema when the database is opened, in rowid order, as `sqlite3InitCallback` does: each row's values are read as text, its statement is parsed by a port of SQLite's parser, and it is checked against the rows before it. Tables, indexes, views, triggers and virtual tables are all checked. In Strict a bad row fails the open, as in SQLite; in Lenient it is reported, and only that row's table cannot be opened.
 
 ## 2. Checks
 
@@ -156,22 +156,6 @@ Legend: Strict-required = **Yes** (SQLite always fails), **Optional** (only inte
 - `!db->init.busy || CORRUPT_DB` on an IF NOT EXISTS match ([build.c:1288](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1288)).
 - `IN_SPECIAL_PARSE` is never set during init (build.c:4387).
 
-## 3. Most important gaps
+## 3. Open gaps
 
-**SQLite rejects these and we accept them**
-
-1. **No whole-schema validation.** SQLite refuses the entire database if any schema row is bad: a type/name/tbl_name mismatch (26), duplicate names (32-37), an orphan index (14), a bad CREATE INDEX, TRIGGER or VIEW (55-65), any CREATE parse or semantic error (38-51), a NULL rootpage on any row (11), or rows out of order (7). We check only the table that is opened, and indexes, views and triggers never. A Strict mode that matches SQLite needs an eager (or first-use) pass over the schema. A Lenient mode can skip that pass, which is what SQLite's own writable_schema does.
-2. **Schema format number > 4 is not refused** (02). SQLite reports "unsupported file format".
-3. **Table rootpage 1** (19): we return sqlite_master's rows as the user table's data. **Rootpage > 2^32 wraps** with `(uint)` and a REAL rootpage is rounded (17), so we can silently read the wrong b-tree.
-4. **A virtual table with a non-zero rootpage** is read as an ordinary b-tree (58). The vtab test is also stricter than SQLite's parse about the exact text.
-5. **Leading whitespace or a comment before `CREATE`** is accepted (13); SQLite reports malformed.
-6. CREATE TABLE semantics we never check: multiple PKs, STRICT types, unknown table options (`FOOBAR`), more than 2000 columns, AUTOINCREMENT misuse, WITHOUT ROWID with no PK, CHECK/FK errors (40-49).
-7. When we do reject SQL, `GetTableDefinition` throws `InvalidOperationException`, not `SqliteCorruptException` (22).
-
-**We reject these and SQLite accepts them**
-
-1. **Text encoding values other than 1..3** (0, 4, 5, 0x101, …): SQLite uses `&3`, and 0 means UTF-8. We fail the whole open unless `FallbackEncoding` is set (01).
-2. **BLOB values in type/name/sql/rootpage**: SQLite reads them as text, while we fail the whole open with an InvalidCastException wrapped as corruption (08).
-3. **`type='TABLE'`** (any case other than lower-case): SQLite accepts it, but our `FindTable` cannot see the table (26).
-4. **Stored SQL that SQLite's re-parse accepts but our parser does not**: `IF NOT EXISTS` (30), `TEMP` (29), trailing text after the first `;` (24), text after an embedded NUL (09). Each makes `GetTableDefinition` fail.
-5. Minor: Unicode case folding in name lookup matches names that SQLite keeps distinct (31). This is looser, not stricter.
+None. Every gap the survey listed is closed; the README lists the checks and what the reader does for each.
