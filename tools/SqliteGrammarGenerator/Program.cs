@@ -7,7 +7,7 @@
 //
 // parse.c comes from a SQLite amalgamation or a built source tree (it is generated, so it is not in the repository at
 // github.com/sqlite/sqlite). mkkeywordhash.c is tool/mkkeywordhash.c in that repository. Write the output over
-// src/MBW.Utilities.ManagedSqlite.Sql/Internal/Grammar/SqliteGrammar.g.cs; it defaults to SqliteGrammar.g.cs in the
+// src/MBW.Utilities.ManagedSqlite/Sql/Internal/Grammar/SqliteGrammar.g.cs; it defaults to SqliteGrammar.g.cs in the
 // current directory.
 
 using System.Globalization;
