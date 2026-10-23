@@ -166,7 +166,7 @@ internal sealed class ReaderBase : IDisposable
 
         try
         {
-            return Open(main, journal, wal, owned, settings, superJournalExists);
+            return OpenCore(main, journal, wal, owned, settings, superJournalExists);
         }
         catch
         {
@@ -176,7 +176,7 @@ internal sealed class ReaderBase : IDisposable
         }
     }
 
-    private static ReaderBase Open(IFileView main, IFileView? journal, IFileView? walFile, List<IDisposable> owned, Sqlite3Settings settings, Func<string, bool>? superJournalExists)
+    private static ReaderBase OpenCore(IFileView main, IFileView? journal, IFileView? walFile, List<IDisposable> owned, Sqlite3Settings settings, Func<string, bool>? superJournalExists)
     {
         // A caller error, so it fails for every file, not only for those whose encoding field is 0
         if (settings.FallbackEncoding is { } fallback && fallback is not (SqliteEncoding.UTF8 or SqliteEncoding.UTF16LE or SqliteEncoding.UTF16BE))
