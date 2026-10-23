@@ -139,7 +139,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <param name="leaveOpen">True to leave both streams open when the database is disposed, or when opening it fails</param>
     /// <exception cref="ArgumentNullException">A stream is null</exception>
     /// <exception cref="ArgumentException">A stream is not readable, or is not seekable</exception>
-    /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
+    /// <exception cref="SqliteCorruptException">The database is corrupt, or (in Strict) the journal names a super-journal, which a stream cannot look up</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
     public static Sqlite3Database FromStreamWithJournal(Stream database, Stream journal, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
