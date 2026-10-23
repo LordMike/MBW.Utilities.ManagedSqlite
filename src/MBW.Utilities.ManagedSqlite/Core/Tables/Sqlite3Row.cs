@@ -180,9 +180,12 @@ public sealed class Sqlite3Row
     /// <item>An INTEGER converts to <see cref="double"/>, <see cref="float"/> or <see cref="decimal"/>, to
     /// <see cref="bool"/> (true when not 0), and to a narrower integer type when it fits.</item>
     /// <item>A REAL converts to an integer type or <see cref="bool"/> as SQLite does, truncated toward zero
-    /// (3.5 is 3, -3.5 is -3), when the result fits; to <see cref="float"/> and <see cref="decimal"/> when it fits.</item>
+    /// (3.5 is 3, -3.5 is -3), when the result fits; to <see cref="float"/> and <see cref="decimal"/> when it fits.
+    /// A REAL converts to <see cref="decimal"/> as .NET does, rounded to 15 significant digits.</item>
     /// <item>TEXT and BLOB convert to nothing else, and nothing converts to them: text is not parsed as a number, in
     /// any culture, and numbers are not formatted.</item>
+    /// <item>Other types, such as enums, <see cref="char"/> or <see cref="ReadOnlyMemory{T}"/>, are not converted
+    /// to; read a blob without a copy with <see cref="TryGetBlob"/>.</item>
     /// </list>
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>

@@ -79,8 +79,13 @@ internal static class ValueConverter
 
     private static object? FromReal(double real, Type target)
     {
+        // A double just past float.MaxValue still rounds to it, as the C cast does; only one that rounds to an infinity
+        // doesn't fit
         if (target == typeof(float))
-            return (real >= float.MinValue && real <= float.MaxValue) || double.IsInfinity(real) ? (float)real : null;
+        {
+            float single = (float)real;
+            return !float.IsInfinity(single) || double.IsInfinity(real) ? single : null;
+        }
 
         // (decimal) throws past its range, and for an infinity; (double)decimal.MaxValue rounds up, so less than it fits
         if (target == typeof(decimal))
