@@ -31,7 +31,7 @@ public class SqlTableDefinition_Tests
     [Fact]
     public void VirtualGeneratedColumnHasNoValueByName()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(
             "CREATE TABLE t(a TEXT, b AS (a || '!'), c TEXT); INSERT INTO t (a, c) VALUES ('x', 'third');")));
 
         Sqlite3Row row = db.GetTable("t").EnumerateRows().Single();
@@ -63,7 +63,7 @@ public class SqlTableDefinition_Tests
     [Fact]
     public void GetTableDefinitionOfNonTableThrows()
     {
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(
             "CREATE TABLE t(a); CREATE VIEW v AS SELECT a FROM t; CREATE VIRTUAL TABLE f USING fts5(a);")));
 
         Assert.Throws<InvalidOperationException>(() => db.GetTables().Single(s => s.Name == "v").GetTableDefinition());
@@ -78,7 +78,7 @@ public class SqlTableDefinition_Tests
         byte[] data = SqliteParity.Build("CREATE TABLE t(a);", "INSERT INTO sqlite_schema VALUES ('table', 't', 't', 0, 'CREATE TABLE IF NOT EXISTS t (b)')", 1);
         SqliteParity.AssertSqliteReads(data, "t");
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
         Assert.Throws<InvalidOperationException>(() => db.GetTables().Last().GetTableDefinition());
         Assert.Equal("a", db.GetTable("t").GetTableDefinition().Columns.Single().Name);

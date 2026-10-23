@@ -17,7 +17,8 @@ namespace MBW.Utilities.ManagedSqlite.Tests.Helpers;
 
 /// <summary>
 /// Builds an in-memory database with real SQLite from a SQL script, reads it both with SQLite and with this library,
-/// and asserts the two dumps are equal.
+/// and asserts the two dumps are equal. <see cref="Snapshot"/> does the same for a database file and its <c>-wal</c>
+/// or <c>-journal</c> file, as a crash would leave them.
 /// <para>
 /// The dump starts with the schema: the text encoding, the page size, every sqlite_master entry in file order, and per
 /// table its rowid alias and per column its name, declared type (without its size, in upper case), primary key
@@ -66,26 +67,148 @@ internal static class SqliteParity
     {
         string expected;
         using (SqliteConnection connection = Open(data))
-        {
-            // The schema as SQLite's schema loader sees it: every value as text, ending at a NUL (SCHEMA-08, SCHEMA-09)
-            List<object[]> schema = Query(connection, "SELECT CAST(type AS TEXT), CAST(name AS TEXT), CAST(tbl_name AS TEXT), CAST(sql AS TEXT) FROM sqlite_master ORDER BY rowid")
-                .Select(r => r.Select(v => v is string text && text.IndexOf('\0') >= 0 ? text.Substring(0, text.IndexOf('\0')) : v).ToArray()).ToList();
-            expected = Dump(Query(connection, "PRAGMA encoding")[0][0].ToString().Replace("-", "").ToUpperInvariant(),
-                Query(connection, "PRAGMA page_size")[0][0].ToString(),
-                schema.Select(s => ((string)s[0], (string)s[1], (string)s[2], s[3] as string)),
-                schema.Where(s => IsReadableTable((string)s[0], s[3] as string)).Select(s => ReadWithSqlite(connection, (string)s[1])));
-        }
+            expected = DumpWithSqlite(connection);
 
         string actual;
-        using (Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), settings))
+        using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), settings))
+            actual = DumpWithLibrary(db);
+
+        Assert.Equal(expected, actual);
+    }
+
+    private static string DumpWithSqlite(SqliteConnection connection)
+    {
+        // The schema as SQLite's schema loader sees it: every value as text, ending at a NUL (SCHEMA-08, SCHEMA-09)
+        List<object[]> schema = Query(connection, "SELECT CAST(type AS TEXT), CAST(name AS TEXT), CAST(tbl_name AS TEXT), CAST(sql AS TEXT) FROM sqlite_master ORDER BY rowid")
+            .Select(r => r.Select(v => v is string text && text.IndexOf('\0') >= 0 ? text.Substring(0, text.IndexOf('\0')) : v).ToArray()).ToList();
+        return Dump(Query(connection, "PRAGMA encoding")[0][0].ToString().Replace("-", "").ToUpperInvariant(),
+            Query(connection, "PRAGMA page_size")[0][0].ToString(),
+            schema.Select(s => ((string)s[0], (string)s[1], (string)s[2], s[3] as string)),
+            schema.Where(s => IsReadableTable((string)s[0], s[3] as string)).Select(s => ReadWithSqlite(connection, (string)s[1])));
+    }
+
+    private static string DumpWithLibrary(Sqlite3Database db)
+    {
+        List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
+        return Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
+            schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
+            schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
+    }
+
+    /// <summary>
+    /// Runs <paramref name="script"/> against a database file, "db", in a new directory, and copies the database with
+    /// its <c>-wal</c> and <c>-journal</c> files to another new directory while the connection is still open, as a crash
+    /// at that point would leave them. A script that ends inside a transaction leaves it uncommitted, and a WAL is not
+    /// checkpointed (wal_autocheckpoint is 0). The <c>-shm</c> file is not copied, as the library never reads it.
+    /// Returns the copy's directory; dispose it to delete both.
+    /// </summary>
+    public static SnapshotDirectory Snapshot(string script)
+    {
+        using SnapshotDirectory source = new SnapshotDirectory();
+        using SqliteConnection connection = new SqliteConnection($"Data Source={source.Database};Pooling=False");
+        connection.Open();
+
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = "PRAGMA wal_autocheckpoint = 0;" + script;
+        command.ExecuteNonQuery();
+
+        return source.Copy();
+    }
+
+    /// <summary>
+    /// Asserts that <see cref="Sqlite3Database.FromPath"/> reads the database in <paramref name="snapshot"/> as SQLite
+    /// reads it, opened read-write so that it plays a hot journal back and recovers a WAL without its -shm file.
+    /// SQLite reads a copy, as it changes the files. With <paramref name="sideFilesMatter"/>, also asserts that
+    /// the main file alone reads differently, so the case does exercise the side files.
+    /// </summary>
+    public static void AssertSameAsSqlite(SnapshotDirectory snapshot, bool sideFilesMatter)
+    {
+        string actual;
+        using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database))
+            actual = DumpWithLibrary(db);
+
+        if (sideFilesMatter)
         {
-            List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
-            actual = Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
-                schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
-                schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
+            string mainOnly;
+            try
+            {
+                using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(File.OpenRead(snapshot.Database));
+                mainOnly = DumpWithLibrary(db);
+            }
+            catch (Exception e)
+            {
+                mainOnly = e.ToString();
+            }
+
+            Assert.NotEqual(actual, mainOnly);
+        }
+
+        using SnapshotDirectory copy = snapshot.Copy();
+
+        string expected;
+        using (SqliteConnection connection = new SqliteConnection($"Data Source={copy.Database};Pooling=False"))
+        {
+            connection.Open();
+            expected = DumpWithSqlite(connection);
         }
 
         Assert.Equal(expected, actual);
+    }
+
+    /// <summary>
+    /// Asserts that SQLite fails with <paramref name="errorCode"/> when it reads the database in
+    /// <paramref name="snapshot"/>
+    /// </summary>
+    public static void AssertSqliteFails(SnapshotDirectory snapshot, int errorCode)
+    {
+        using SnapshotDirectory copy = snapshot.Copy();
+
+        using SqliteConnection connection = new SqliteConnection($"Data Source={copy.Database};Pooling=False");
+        connection.Open();
+        SqliteException ex = Assert.Throws<SqliteException>(() => Query(connection, "SELECT * FROM sqlite_master"));
+        Assert.Equal(errorCode, ex.SqliteErrorCode);
+    }
+
+    /// <summary>
+    /// A new temporary directory, deleted on dispose. <see cref="Database"/> is the path of the database file in it.
+    /// </summary>
+    public sealed class SnapshotDirectory : IDisposable
+    {
+        private readonly string _directory = Path.Combine(Path.GetTempPath(), "managedsqlite-" + Guid.NewGuid().ToString("N"));
+
+        public string Database { get; }
+
+        public SnapshotDirectory()
+        {
+            Directory.CreateDirectory(_directory);
+            Database = Path.Combine(_directory, "db");
+        }
+
+        /// <summary>
+        /// Copies the database and its -wal and -journal files, not -shm, to a new directory
+        /// </summary>
+        public SnapshotDirectory Copy()
+        {
+            SnapshotDirectory copy = new SnapshotDirectory();
+            try
+            {
+                foreach (string suffix in new[] { "", "-wal", "-journal" })
+                    if (File.Exists(Database + suffix))
+                        File.Copy(Database + suffix, copy.Database + suffix);
+
+                return copy;
+            }
+            catch
+            {
+                copy.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            Directory.Delete(_directory, true);
+        }
     }
 
     /// <summary>

@@ -15,7 +15,7 @@ namespace MBW.Utilities.ManagedSqlite.Tests;
 /// </summary>
 public class Database_Tests
 {
-    private static Sqlite3Database Open() => new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+    private static Sqlite3Database Open() => Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
 CREATE TABLE MixedCaseTable (Id INTEGER PRIMARY KEY, Value TEXT);
 CREATE INDEX MixedCaseIndex ON MixedCaseTable (Value);
 CREATE VIEW MixedCaseView AS SELECT Value FROM MixedCaseTable;
@@ -88,7 +88,7 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
         Assert.Equal(new byte[] { 0, 0, 0, 2 }, data.AsSpan(56, 4).ToArray());
         data[56] = data[57] = data[58] = data[59] = 0;
 
-        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { FallbackEncoding = SqliteEncoding.UTF16LE });
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { FallbackEncoding = SqliteEncoding.UTF16LE });
 
         Assert.Equal(SqliteEncoding.UTF16LE, db.TextEncoding);
         SqliteParity.AssertTablesSameAsSqlite(script, db, "t");
@@ -99,6 +99,58 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     public void TextEncoding_InvalidFallbackFails()
     {
         using Stream _stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
-        Assert.Throws<SqliteInvalidEncodingException>(() => new Sqlite3Database(_stream, new Sqlite3Settings { FallbackEncoding = (SqliteEncoding)7 }));
+        Assert.Throws<SqliteInvalidEncodingException>(() => Sqlite3Database.FromStreamWithNoJournal(_stream, new Sqlite3Settings { FallbackEncoding = (SqliteEncoding)7 }));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void DisposeClosesTheStreamUnlessLeftOpen(bool leaveOpen)
+    {
+        MemoryStream stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
+
+        Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen).Dispose();
+
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    /// <summary>
+    /// A stream the reader rejects, and a file too short for its header, are both closed unless left open
+    /// </summary>
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    [InlineData(true, true)]
+    public void FailedOpenClosesTheStreamUnlessLeftOpen(bool seekable, bool leaveOpen)
+    {
+        byte[] bytes = SqliteParity.Build("CREATE TABLE t (a INTEGER);");
+        MemoryStream stream = seekable ? new MemoryStream(bytes.Take(50).ToArray()) : new UnseekableStream(bytes);
+
+        Exception e = Assert.ThrowsAny<Exception>(() => Sqlite3Database.FromStreamWithNoJournal(stream, leaveOpen: leaveOpen));
+
+        Assert.IsType(seekable ? typeof(SqliteCorruptException) : typeof(ArgumentException), e);
+        Assert.Equal(leaveOpen, stream.CanRead);
+    }
+
+    private sealed class UnseekableStream(byte[] bytes) : MemoryStream(bytes)
+    {
+        public override bool CanSeek => false;
+    }
+
+    /// <summary>
+    /// The WAL flag is the file format read version, header byte 19; SQLite sets byte 18 (the write version) along with it
+    /// </summary>
+    [Theory]
+    [InlineData(1, false)]
+    [InlineData(2, true)]
+    public void IsWalModeFollowsTheReadVersion(byte version, bool expected)
+    {
+        byte[] bytes = SqliteParity.Build("CREATE TABLE t (a INTEGER);");
+        bytes[18] = bytes[19] = version;
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(bytes));
+
+        Assert.Equal(expected, db.IsWalMode);
     }
 }
