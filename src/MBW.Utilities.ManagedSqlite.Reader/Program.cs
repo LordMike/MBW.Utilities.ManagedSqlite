@@ -22,20 +22,13 @@ class DescribeCommand : CommandBase
     public bool DoSizeStatistics { get; set; }
 }
 
-[Verb("dump", HelpText = "Dumps the contents of an Sqlite3 database file.")]
-class DumpCommand : CommandBase
-{
-
-}
-
 class Program
 {
     static int Main(string[] args)
     {
-        return Parser.Default.ParseArguments<DescribeCommand, DumpCommand>(args)
+        return Parser.Default.ParseArguments(args, typeof(DescribeCommand))
             .MapResult(
                 (DescribeCommand opts) => RunDescribe(opts),
-                (DumpCommand opts) => RunDump(opts),
                 errs => 1);
     }
 
@@ -119,47 +112,4 @@ class Program
 
         return 0;
     }
-
-    private static int RunDump(DumpCommand opts)
-    {
-        if (!TryReadFile(opts.DatabaseFile, out Stream stream, out Sqlite3Database db,
-                out List<Sqlite3SchemaRow> tables))
-            return 1;
-
-        throw new System.NotImplementedException();
-    }
-
-    //using (FileStream fs = File.OpenRead("BigBlobDb.db"))
-    //using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
-    //{
-    //    IEnumerable<Sqlite3SchemaRow> tables = db.GetTables();
-
-    //    foreach (Sqlite3SchemaRow table in tables)
-    //    {
-    //        Console.WriteLine($"{table.Type} \"{table.Name}\", [{table.TableName}] (RP: {table.RootPage}): {table.Sql}; ");
-
-    //        if (table.Type == "table")
-    //        {
-    //            Sqlite3Table tableData = db.GetTable(table.Name);
-
-    //            foreach (Sqlite3Row row in tableData.EnumerateRows())
-    //            {
-    //                Console.Write(row.RowId);
-
-    //                foreach (object obj in row.ColumnData)
-    //                {
-    //                    Console.Write(" | ");
-
-    //                    if (obj == null)
-    //                        Console.Write(" <null> ");
-    //                    else
-    //                        Console.Write(obj);
-    //                }
-
-    //                Console.WriteLine();
-    //            }
-    //        }
-    //    }
-    //}
-
 }
