@@ -77,6 +77,45 @@ INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
     }
 
     /// <summary>
+    /// Read through its <see cref="SqlTableColumn"/>, each stored column has SQLite's value, though its
+    /// <see cref="SqlTableColumn.Ordinal"/> is not its place in the record: a WITHOUT ROWID table's record starts with
+    /// its key, and a VIRTUAL generated column, which has no value, takes no place in it
+    /// </summary>
+    [Theory]
+    [InlineData("a, b, c, PRIMARY KEY (c)", "WITHOUT ROWID")]
+    [InlineData("a, b AS (a || 'b') VIRTUAL, c", "")]
+    public void ColumnsReadAsSqlite(string columns, string options)
+    {
+        byte[] data = SqliteParity.Build($"CREATE TABLE tbl ({columns}) {options}; INSERT INTO tbl (a, c) VALUES ('a', 'c');");
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+        Sqlite3Table table = db.GetTable("tbl");
+        Sqlite3Row row = table.EnumerateRows().Single();
+
+        foreach (SqlTableColumn column in table.GetTableDefinition().Columns)
+        {
+            object expected = column.IsVirtualGenerated ? "no value" : SqliteParity.ReadWithSqlite<object>(data, $"SELECT {column.Name} FROM tbl");
+            Assert.Equal(expected, row.TryGetOrdinal(column, out object value) ? value : "no value");
+        }
+    }
+
+    /// <summary>
+    /// A column of another table's definition is the caller's error, even with the same name and position
+    /// </summary>
+    [Fact]
+    public void ColumnOfAnotherTableThrows()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+CREATE TABLE tbl (a);
+CREATE TABLE other (a);
+INSERT INTO tbl VALUES (1);")));
+
+        Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
+        SqlTableColumn column = db.GetTable("other").GetTableDefinition().Columns.Single();
+
+        Assert.Throws<ArgumentException>(() => row.TryGetOrdinal(column, out object _));
+    }
+
+    /// <summary>
     /// The generic accessors convert as SQLite's typed reads do: NULL is the type's default (null for int?), a REAL read
     /// as an integer is truncated toward zero, and an INTEGER reads as int? or double. Where SQLite would wrap or
     /// saturate a number, or parse text, they return false.
@@ -105,7 +144,7 @@ INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
         Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
 
         Assert.Equal(converts, row.TryGetValueByName("v", out T value));
-        Assert.Equal(converts ? SqliteParity.ReadWithSqlite<T>(data, "tbl") : default, value);
+        Assert.Equal(converts ? SqliteParity.ReadWithSqlite<T>(data, "SELECT v FROM tbl") : default, value);
     }
 
     /// <summary>

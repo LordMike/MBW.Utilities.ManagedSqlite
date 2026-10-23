@@ -1,11 +1,15 @@
 ﻿using System;
+using MBW.Utilities.ManagedSqlite.Core.Tables;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
 public sealed class SqlTableColumn
 {
     /// <summary>
-    /// The column's position in the declared column list, as in <c>SELECT *</c>
+    /// The column's position in the declared column list, as in <c>SELECT *</c>. This is not the index that
+    /// <see cref="Sqlite3Row.TryGetOrdinal(ushort, out object?)"/> and <see cref="Sqlite3Row.ColumnData"/> take, which
+    /// is the position in the stored record; read the column with
+    /// <see cref="Sqlite3Row.TryGetOrdinal(SqlTableColumn, out object?)"/>.
     /// </summary>
     public int Ordinal { get; }
 
@@ -26,7 +30,7 @@ public sealed class SqlTableColumn
     public bool IsVirtualGenerated { get; internal set; }
 
     /// <summary>
-    /// The column's position in the stored record, <see cref="MBW.Utilities.ManagedSqlite.Core.Tables.Sqlite3Row.ColumnData"/>.
+    /// The column's position in the stored record, <see cref="Sqlite3Row.ColumnData"/>.
     /// In a rowid table it is <see cref="Ordinal"/>, minus the VIRTUAL generated columns before it. A WITHOUT ROWID
     /// table's record holds the primary key columns first, in key order, then the other stored columns in declared order.
     /// </summary>

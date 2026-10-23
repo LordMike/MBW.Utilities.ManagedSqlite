@@ -60,49 +60,22 @@ public static class SqlExtensions
         return definition;
     }
 
+    /// <summary>
+    /// The value of the column named <paramref name="columnName"/>, read as
+    /// <see cref="Sqlite3Row.TryGetOrdinal(SqlTableColumn, out object?)"/> reads it. False when the table has no such
+    /// column, or the column has no value.
+    /// </summary>
+    /// <exception cref="SqliteCorruptException">The record is malformed up to that column</exception>
     public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
     {
-        value = null;
-
         SqlTableDefinition tableDefinition = row.Table.GetTableDefinition();
-
         if (!tableDefinition.TryGetColumn(columnName, out SqlTableColumn? column))
-            return false;
-
-        // SQLite computes a VIRTUAL generated column when it is read, nothing is stored for it
-        if (column.IsVirtualGenerated)
-            return false;
-
-        // A rowid alias column reads the rowid, which SQLite takes from the cell, not the record, so it reads even when
-        // the record is shorter (REC-21)
-        if (column == tableDefinition.RowIdColumn)
         {
-            value = row.RowId;
-            return true;
+            value = null;
+            return false;
         }
 
-        // Like SQLite, the record is decoded only up to this column. A record too short to hold it, such as one written
-        // before ALTER TABLE ADD COLUMN, reads the column's default (REC-11). OP_Column in vdbe.c:
-        //       if( pOp->p4type==P4_MEM ){
-        //         sqlite3VdbeMemShallowCopy(pDest, pOp->p4.pMem, MEM_Static);
-        //       }else{
-        //         sqlite3VdbeMemSetNull(pDest);
-        //       }
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3165 (OP_Column)
-        if (!row.TryGetField(column.RecordIndex, out value))
-        {
-            if (!column.HasKnownDefault)
-                return false;
-
-            value = column.DefaultValue is byte[] blob ? blob.Clone() : column.DefaultValue;
-        }
-
-        // SQLite writes REAL values without a fractional part as integers, and turns them back into REAL when read
-        // through a column with REAL affinity
-        if (value is long integer && column.DetectedType == typeof(double))
-            value = (double)integer;
-
-        return true;
+        return row.TryGetColumn(tableDefinition, column, out value);
     }
 
     /// <summary>
