@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.IO;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
@@ -177,8 +178,10 @@ internal sealed class WalIndex
         if (!_frames.TryGetValue(page, out long offset))
             return false;
 
+        // The frame was read whole when the log was indexed, so a short read now means the file shrank under us: an I/O
+        // error, as SQLite's SQLITE_IOERR_SHORT_READ, not damage in the bytes
         if (_file.Read(offset, buffer, 0, count) != count)
-            throw new SqliteCorruptException($"the WAL frame of page {page} is cut short", page, "WAL frame");
+            throw new IOException($"The WAL frame of page {page} was cut short after the log was read");
 
         return true;
     }
