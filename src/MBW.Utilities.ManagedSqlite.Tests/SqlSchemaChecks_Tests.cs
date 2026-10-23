@@ -45,7 +45,7 @@ public class SqlSchemaChecks_Tests
         List<string> issues = new List<string>();
         using Sqlite3Database lenient = new Sqlite3Database(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("b", lenient.GetTable("u").GetTableDefinition().Columns.Single().Name);
-        Assert.Contains(check, issues);
+        Assert.Equal(new[] { check }, issues);
     }
 
     private static void AssertAccepted(byte[] data)
