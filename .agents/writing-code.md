@@ -15,7 +15,8 @@ running SQLite, not from intuition.
 - A file SQLite reads must read here with the same values. A file SQLite rejects must be rejected here, at the same point
   (database open, table open, or the row), unless the next section says otherwise.
 - Out of scope: writing, running SQL (including views), and indexes as a lookup structure. WAL and rollback journals are
-  added by separate work, against the check list in `docs/sqlite-checks/WALJ.md`.
+  read (`FromStreamWithWal`, `FromStreamWithJournal`, and `FromPath`, which picks up a `-wal` or `-journal` file next to
+  the database); their checks are listed in `docs/sqlite-checks/WALJ.md`.
 - Virtual tables are listed, but reading one throws `NotSupportedException`.
 - When behaviour is unclear, write a parity test first (see "Tests") and let SQLite decide.
 
@@ -39,8 +40,9 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
 
 - **Comment density follows the surrounding code.** Code that mirrors SQLite is the exception: it gets the plentiful
   comments described above.
-- **Construction:** prefer static factories (e.g. `ReaderBase.Open`) over public constructors. The WAL work replaces
-  `Sqlite3Database`'s public constructor with factories. Keep parsed state `readonly`.
+- **Construction:** prefer static factories (e.g. `ReaderBase.Open`) over public constructors. `Sqlite3Database` is
+  opened through `FromPath`, `FromStreamWithNoJournal`, `FromStreamWithWal` and `FromStreamWithJournal`; its constructor
+  is internal. Keep parsed state `readonly`.
 - **Nullable annotations:** the libraries are annotated. Where the compiler cannot see that a value is non-null, use
   `!` alone. Don't add a `Debug.Assert` next to it or custom guard helpers.
 - **Enum widths:** make enums as small as possible (`BTreeKind : byte`). An enum that mirrors an on-disk field keeps that
