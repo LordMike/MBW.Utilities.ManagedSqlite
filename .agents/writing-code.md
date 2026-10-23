@@ -49,10 +49,12 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
   (such as interpolated string handlers) need their attributes polyfilled under `Internal/Compat/`, next to
   `NullableAttributes.cs`.
 - **Errors:** damaged files surface as `SqliteCorruptException`, raised through `Checks` (next section). Damage to the
-  tree (pages, cells, payloads, overflow chains) fails the row enumerator. A record is decoded lazily, as SQLite's
-  OP_Column does: damage in its header or values fails the accessor that reads that field (`TryGetOrdinal`,
-  `TryGetValueByName`, `ColumnData`), and only once the header is parsed that far. A caller bug (`null` argument, an
-  invalid `FallbackEncoding`) is not corruption and is never converted.
+  tree (pages, cells, a payload's size and local bytes) fails the row enumerator. A record is decoded lazily, as
+  SQLite's OP_Column does: damage in its header or values fails the accessor that reads that field (`TryGetOrdinal`,
+  `TryGetBlob`, `TryGetValueByName`, `ColumnData`), and only once the header is parsed that far. Overflow pages are
+  read the same way, only for the header or a value past the cell's local bytes, so damage to an overflow chain fails
+  the accessor that needs the page, as SQLite fails the column read. A caller bug (`null` argument, an invalid
+  `FallbackEncoding`) is not corruption and is never converted.
 - **Hot paths** (per page, per cell, per row) must not allocate on the success path. Verify that with a throwaway
   BenchmarkDotNet run and report the numbers in the PR; don't commit one-off benchmarks.
 
@@ -129,7 +131,7 @@ Rules:
 - **Pass the message as an interpolated string straight into the call.** The `CheckMessage` handler builds it only when
   the check fails, so a passing check allocates nothing. Don't build the message first.
 - **The check ID is the survey ID.** A check with no ID gets a new row in the right area table, with the next free
-  number, in the same PR (CELL-38 is an example: the reader's own bound on a payload's size, which it needs because it allocates the payload
+  number, in the same PR (CELL-38 is an example: the reader's own bound on a payload's size, which it needs because it allocates a value
   before SQLite would find the damage). An ID means one
   check: don't reuse SQLite's ID for a different bound.
 - **A Relaxable check that can fire repeatedly** (on every read of the same page) should report once; see HDR-17 in
@@ -137,8 +139,8 @@ Rules:
 - **Comment and link format:** follow "Citing SQLite source" above, and start the comment with the check ID.
 - **Schema checks fail at open.** Every sqlite_schema row is parsed when the database is opened, as SQLite loads it, so
   Strict fails the open; Lenient reports the error and keeps it on the row, which then cannot be opened.
-- **Structural damage fails the enumerator; a bad value fails only its cell.** Pages, cells, overflow and record headers
-  belong to the first group. Invalid text belongs to the second.
+- **Damage to the tree fails the enumerator; damage to a record fails only the reads that reach it.** Pages and cells
+  belong to the first group. Record headers, values and overflow chains belong to the second.
 
 ### Test it
 

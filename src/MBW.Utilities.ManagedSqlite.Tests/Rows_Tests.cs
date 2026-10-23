@@ -106,4 +106,25 @@ INSERT INTO b SELECT x, 'b' || x FROM seq;")));
         Assert.Equal(Enumerable.Range(1, 300).Select(x => "a" + x), interleavedA);
         Assert.Equal(Enumerable.Range(1, 300).Select(x => "b" + x), interleavedB);
     }
+
+    /// <summary>
+    /// A row reads its overflow pages only when a value on them is read, through the reader's shared page buffer, so a
+    /// row kept after the enumeration moved on still reads its own values, after other rows read theirs. The text ends,
+    /// and the number after it is, on the last overflow page, which ColumnData reads for both.
+    /// </summary>
+    [Fact]
+    public void KeptRowsReadTheirOwnOverflowPages()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+PRAGMA page_size = 512;
+CREATE TABLE tbl (Id INTEGER PRIMARY KEY, Value TEXT, Number INTEGER);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 20)
+INSERT INTO tbl SELECT x, printf('%.*c%d', 1500, 'v', x), 1000 + x FROM seq;")));
+
+        List<Sqlite3Row> rows = db.GetTable("tbl").EnumerateRows().ToList();
+        rows.Reverse();
+
+        Assert.Equal(Enumerable.Range(1, 20).Reverse().Select(x => new object[] { null, new string('v', 1500) + x, 1000L + x }),
+            rows.Select(row => row.ColumnData));
+    }
 }

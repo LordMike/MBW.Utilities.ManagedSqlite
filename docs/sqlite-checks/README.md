@@ -38,7 +38,7 @@ The code for each of these carries its ID in a comment.
 | PAGE-19, PAGE-21 | Empty interior roots and empty child pages are corrupt; Lenient reports and walks on |
 | CELL-01, CELL-02 | Payload sizes keep their low 32 bits |
 | CELL-10, CELL-11 | A payload must stay in its page's usable area when read through accessPayload; one that is all on its page may run into the reserved bytes |
-| CELL-13, CELL-16 | An overflow chain that ends early is corrupt; the last overflow page's next pointer is never read |
+| CELL-13, CELL-16 | An overflow chain that ends early is corrupt, for the reads that need the missing pages; the last overflow page's next pointer is never read |
 | REC-03, REC-04, REC-05, REC-10, CELL-21, CELL-22, CELL-23 | Records are decoded lazily, up to the field read, with OP_Column's checks |
 | REC-21 | A rowid alias column reads the rowid even when the record is short |
 | CELL-38 | The reader's own bound: a payload no larger than the database's pages could hold |

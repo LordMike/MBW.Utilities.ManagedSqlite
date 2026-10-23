@@ -30,9 +30,11 @@ public sealed class Sqlite3Row
     /// same values.
     ///
     /// The row reads its record from its b-tree page's bytes, so a row that is kept keeps its page in memory until
-    /// this is read. Then the row has every value, and lets go of the page.
+    /// this is read. Then the row has every value, and lets go of the page. A record too large for its page continues
+    /// on overflow pages, which are read from the database only when a value on them is read, so the database must
+    /// still be open then.
     /// </summary>
-    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed</exception>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed, or its overflow chain is</exception>
     public object?[] ColumnData
     {
         get
@@ -84,8 +86,9 @@ public sealed class Sqlite3Row
     }
 
     /// <summary>
-    /// The bytes of field <paramref name="index"/> of the record when it holds a BLOB, without copying them: the memory
-    /// is a slice of the page or payload the row was read from, which it keeps alive. Once <see cref="ColumnData"/> is
+    /// The bytes of field <paramref name="index"/> of the record when it holds a BLOB, without copying them when they
+    /// are on the row's b-tree page: the memory is then a slice of the page, which the row keeps alive. A BLOB that
+    /// reaches onto overflow pages is read from them into a new array on each call. Once <see cref="ColumnData"/> is
     /// read, it is that value's array instead. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the
     /// record only up to that field. False when the record has fewer fields, or the field holds another type.
     /// </summary>
