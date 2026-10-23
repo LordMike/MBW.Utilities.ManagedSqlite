@@ -14,26 +14,38 @@ internal abstract class BTreePage
     protected internal ReaderBase Reader { get; }
     protected internal BTreeHeader Header { get; }
 
-    protected internal ushort[] CellOffsets { get; }
+    /// <summary>
+    /// The page's bytes. The page owns them: the cells, and the records of rows read from them, are read in place, so
+    /// a row that is kept keeps its page's array alive.
+    /// </summary>
+    protected internal byte[] Data { get; }
 
-    protected BTreePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
+    /// <summary>
+    /// Where the cell pointer array starts, right after the page header
+    /// </summary>
+    private readonly int _cellPointers;
+
+    protected BTreePage(ReaderBase reader, uint page, BTreeHeader header, byte[] data, int cellPointers)
     {
         Reader = reader;
         Page = page;
         Header = header;
-        CellOffsets = cellOffsets;
+        Data = data;
+        _cellPointers = cellPointers;
     }
 
     /// <param name="reader"></param>
     /// <param name="page"></param>
     /// <param name="parent">The kind of b-tree the page is a child in, so a page of the other kind is corruption. Null for a root page.</param>
-    internal static BTreePage Parse(ReaderBase reader, uint page, BTreeKind? parent = null)
+    /// <param name="buffer">The array to read the page into, which the page then owns; a new one when null</param>
+    internal static BTreePage Parse(ReaderBase reader, uint page, BTreeKind? parent = null, byte[]? buffer = null)
     {
         if (parent == BTreeKind.Unknown)
             throw new ArgumentOutOfRangeException(nameof(parent), parent, "Pass Table or Index for a child page, or null for a root page");
 
         // Read the page once, and parse it from memory
-        byte[] data = reader.ReadPage(page);
+        byte[] data = buffer ?? new byte[reader.PageSize];
+        reader.ReadPage(page, data);
         int length = (int)reader.PageSize;
 
         // Page 1 begins with the 100 byte database header
@@ -54,13 +66,9 @@ internal abstract class BTreePage
         Checks.Strict(header.CellCount <= maxCells, "PAGE-03",
             $"cell count {header.CellCount} is more than a page can hold ({maxCells})", page, "b-tree page header");
 
-        // Read cells. The cell pointer array is in key order, so it must not be re-ordered.
-        ushort[] cellOffsets = new ushort[header.CellCount];
-
-        for (ushort i = 0; i < header.CellCount; i++)
-        {
-            cellOffsets[i] = ByteArrayReader.ReadUInt16(data, length, ref pos);
-        }
+        // The cell pointer array follows the header, in key order, and is read in place (GetCellOffset). MX_CELL above
+        // keeps it inside the page.
+        int cellPointers = pos;
 
         // PAGE-01: the page type must be one of the four b-tree page types. decodeFlags in btree.c:
         //     }else{
@@ -99,15 +107,15 @@ internal abstract class BTreePage
         {
             case BTreeType.InteriorIndexBtreePage:
             case BTreeType.LeafIndexBtreePage:
-                return new BTreeIndexPage(reader, page, header, cellOffsets, data);
+                return new BTreeIndexPage(reader, page, header, data, cellPointers);
             case BTreeType.InteriorTableBtreePage:
-                return new BTreeInteriorTablePage(reader, page, header, cellOffsets, data);
+                return new BTreeInteriorTablePage(reader, page, header, data, cellPointers);
             default:
-                return new BTreeLeafTablePage(reader, page, header, cellOffsets);
+                return new BTreeLeafTablePage(reader, page, header, data, cellPointers);
         }
     }
 
-    public int CellCount => CellOffsets.Length;
+    public int CellCount => Header.CellCount;
 
     /// <summary>
     /// Where a cell's payload is and how large it is, see <see cref="PayloadSizeOnPage"/>
@@ -138,39 +146,22 @@ internal abstract class BTreePage
     ///   ((P)->aData + ((P)->maskPage &amp; get2byteAligned(&amp;(P)->aCellIdx[2*(I)])))
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L1166 (findCell)
     /// </summary>
-    protected int GetCellOffset(int index) => CellOffsets[index] & (int)(Reader.PageSize - 1);
-
-    /// <summary>
-    /// The page's bytes, read through the reader's page buffer
-    /// </summary>
-    protected byte[] GetData() => Reader.GetPage(Page);
-
-    /// <summary>
-    /// The left child pointers of an interior page's cells, read once when the page loads, so the walk does not read
-    /// the page again for each child. A pointer that would run past the page reads as 0 here and fails in
-    /// <see cref="GetChildPointer"/>, when the walk reaches it, as SQLite fails only when it reads it.
-    /// </summary>
-    protected uint[] ReadChildPointers(byte[] data)
+    protected int GetCellOffset(int index)
     {
-        uint[] pointers = new uint[CellOffsets.Length];
-        for (int i = 0; i < pointers.Length; i++)
-        {
-            int pos = GetCellOffset(i);
-            if (pos + 4L <= Reader.PageSize)
-                pointers[i] = (uint)(data[pos] << 24 | data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3]);
-        }
-
-        return pointers;
+        int pos = _cellPointers + 2 * index;
+        return ((Data[pos] << 8) | Data[pos + 1]) & (int)(Reader.PageSize - 1);
     }
 
     /// <summary>
-    /// The left child pointer of cell <paramref name="index"/> of an interior page, from <see cref="ReadChildPointers"/>
+    /// The left child pointer of cell <paramref name="index"/> of an interior page, read when the walk reaches it, as
+    /// SQLite reads it (moveToLeftmost: get4byte(findCell(pPage, pCur->ix))). A pointer that would run past the page
+    /// fails then, and not before.
     /// </summary>
-    protected uint GetChildPointer(uint[] pointers, int index)
+    protected uint ReadChildPointer(int index)
     {
         int pos = GetCellOffset(index);
         CheckInPage(pos + 4L, pos);
-        return pointers[index];
+        return (uint)(Data[pos] << 24 | Data[pos + 1] << 16 | Data[pos + 2] << 8 | Data[pos + 3]);
     }
 
     /// <summary>

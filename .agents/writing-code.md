@@ -45,7 +45,7 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
   `!` alone. Don't add a `Debug.Assert` next to it or custom guard helpers.
 - **Enum widths:** make enums as small as possible (`BTreeKind : byte`). An enum that mirrors an on-disk field keeps that
   field's width (`SqliteEncoding : uint` mirrors the 4-byte header field).
-- **Targets:** the libraries target netstandard1.0 and netstandard2.0 with `LangVersion latest`. Newer compiler features
+- **Targets:** the libraries target netstandard2.0 with `LangVersion latest`. Newer compiler features
   (such as interpolated string handlers) need their attributes polyfilled under `Internal/Compat/`, next to
   `NullableAttributes.cs`.
 - **Errors:** damaged files surface as `SqliteCorruptException`, raised through `Checks` (next section). Damage to the

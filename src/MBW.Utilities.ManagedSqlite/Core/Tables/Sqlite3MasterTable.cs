@@ -25,11 +25,13 @@ internal class Sqlite3MasterTable
 
             string? type = Field(0);
             string? name = Field(1);
-            string? tableName = Field(2);
-            string? rootPageText = Field(3);
+            // A table's tbl_name is its own name, so it shares the name's string when the two are stored alike
+            string? tableName = row.FieldsEqual(2, 1) ? name : Field(2);
+            // The rootpage is an integer, which is checked without making its text
+            row.TryGetField(3, out object? rootPageValue);
             string? sql = Field(4);
 
-            uint rootPage = CheckRow(reader, type, name, tableName, rootPageText, sql);
+            uint rootPage = CheckRow(reader, type, name, tableName, rootPageValue, sql);
 
             // CheckRow fails a row without a name
             Sqlite3SchemaRow schemaRow = new Sqlite3SchemaRow(db, type, name!, tableName, rootPage, sql);
@@ -74,13 +76,13 @@ internal class Sqlite3MasterTable
     /// the database open, whatever its type, in either mode. Returns the root page.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L96 (sqlite3InitCallback)
     /// </summary>
-    private static uint CheckRow(ReaderBase reader, string? type, string? name, string? tableName, string? rootPageText, string? sql)
+    private static uint CheckRow(ReaderBase reader, string? type, string? name, string? tableName, object? rootPageValue, string? sql)
     {
         // SCHEMA-11: a NULL rootpage is corrupt, for every kind of row:
         //   if( argv[3]==0 ){
         //     corruptSchema(pData, argv, 0);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L113 (sqlite3InitCallback)
-        Checks.Strict(rootPageText != null, "SCHEMA-11", $"malformed database schema ({name ?? "?"}): its rootpage is NULL", 1, "sqlite_schema");
+        Checks.Strict(rootPageValue != null, "SCHEMA-11", $"malformed database schema ({name ?? "?"}): its rootpage is NULL", 1, "sqlite_schema");
 
         if (!StartsWithCr(sql))
         {
@@ -101,8 +103,8 @@ internal class Sqlite3MasterTable
             // SQLite first looks the index up among those the tables' CREATE statements made ("orphan index"), and
             // checks that no sibling index shares its root page. LoadRow checks that after this range check: an orphan
             // row with a bad rootpage fails here as SCHEMA-15, where SQLite reports it as an orphan index.
-            bool rootOk = TryGetUInt32(rootPageText!, out uint indexRoot) && indexRoot >= 2 && indexRoot <= reader.PageCount;
-            Checks.Strict(rootOk, "SCHEMA-15", $"malformed database schema ({name ?? "?"}): invalid rootpage {rootPageText}", 1, "sqlite_schema");
+            bool rootOk = TryGetUInt32(reader, rootPageValue!, out uint indexRoot) && indexRoot >= 2 && indexRoot <= reader.PageCount;
+            Checks.Strict(rootOk, "SCHEMA-15", $"malformed database schema ({name ?? "?"}): invalid rootpage {ToText(reader, rootPageValue)}", 1, "sqlite_schema");
             return indexRoot;
         }
 
@@ -114,8 +116,8 @@ internal class Sqlite3MasterTable
         //     if( sqlite3Config.bExtraSchemaChecks ){
         //       corruptSchema(pData, argv, "invalid rootpage");
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L135 (sqlite3InitCallback)
-        bool ok = TryGetUInt32(rootPageText!, out uint rootPage) && (rootPage <= reader.PageCount || reader.PageCount == 0);
-        Checks.Strict(ok, "SCHEMA-17", $"malformed database schema ({name ?? "?"}): invalid rootpage {rootPageText}", 1, "sqlite_schema");
+        bool ok = TryGetUInt32(reader, rootPageValue!, out uint rootPage) && (rootPage <= reader.PageCount || reader.PageCount == 0);
+        Checks.Strict(ok, "SCHEMA-17", $"malformed database schema ({name ?? "?"}): invalid rootpage {ToText(reader, rootPageValue)}", 1, "sqlite_schema");
 
         // SCHEMA-26: a CREATE row's name must match the name in its SQL, and SQLite's comparison never matches NULL
         // (sqlite3_stricmp). sqlite3CheckObjectName in build.c:
@@ -162,6 +164,23 @@ internal class Sqlite3MasterTable
         if (text.IndexOf('.') < 0 && text.IndexOf('E') < 0 && !double.IsInfinity(value))
             text += ".0";
         return text;
+    }
+
+    /// <summary>
+    /// <see cref="TryGetUInt32(string, out uint)"/> of the text of <paramref name="value"/>, as <see cref="ToText"/>
+    /// makes it. An integer, which is how SQLite stores a rootpage, is checked without making its text: its decimal
+    /// digits pass when it is 0 to 2^32, and a negative one fails at its '-'.
+    /// </summary>
+    private static bool TryGetUInt32(ReaderBase reader, object value, out uint result)
+    {
+        if (value is long integer)
+        {
+            bool ok = integer is >= 0 and <= 4294967296L;
+            result = ok ? unchecked((uint)integer) : 0;
+            return ok;
+        }
+
+        return TryGetUInt32(ToText(reader, value)!, out result);
     }
 
     /// <summary>

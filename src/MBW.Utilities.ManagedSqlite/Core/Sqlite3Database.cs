@@ -16,7 +16,7 @@ namespace MBW.Utilities.ManagedSqlite.Core;
 public sealed class Sqlite3Database : IDisposable
 {
     private readonly ReaderBase _reader;
-    private readonly Dictionary<string, object> _propertyStore;
+    private Dictionary<string, object>? _propertyStore;
 
     private readonly Sqlite3MasterTable _masterTable;
     private readonly Sqlite3SchemaRow _masterSchemaRow;
@@ -32,11 +32,10 @@ public sealed class Sqlite3Database : IDisposable
         if (file == null)
             throw new ArgumentNullException(nameof(file));
 
-        _propertyStore = new Dictionary<string, object>();
-
         try
         {
-            _reader = ReaderBase.Open(file, settings ?? new Sqlite3Settings());
+            // A copy, so the caller changing the settings later can't change how this database reads
+            _reader = ReaderBase.Open(file, settings?.Clone() ?? new Sqlite3Settings());
             _masterTable = OpenMasterTable(out _masterSchemaRow);
         }
         catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
@@ -140,7 +139,8 @@ public sealed class Sqlite3Database : IDisposable
 
     private Sqlite3Table OpenTable(Sqlite3SchemaRow tbl)
     {
-        BTreePage root = BTreePage.Parse(_reader, tbl.RootPage);
+        // Parsed to check it and learn its kind, in the reader's page buffer: the table reads it again when its rows are read
+        BTreePage root = BTreePage.Parse(_reader, tbl.RootPage, buffer: _reader.PageBuffer);
         return new Sqlite3Table(_reader, root, tbl);
     }
 
@@ -148,6 +148,7 @@ public sealed class Sqlite3Database : IDisposable
 
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
     {
+        _propertyStore ??= new Dictionary<string, object>();
         if (!_propertyStore.TryGetValue(key, out var val))
             _propertyStore[key] = val = creator();
 

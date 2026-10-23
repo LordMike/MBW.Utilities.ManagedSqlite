@@ -30,6 +30,24 @@ internal sealed class AsciiCaseInsensitiveComparer : IEqualityComparer<string>
         return true;
     }
 
+    /// <summary>
+    /// <see cref="Equals(string?, string?)"/> of the <paramref name="length"/> characters of <paramref name="x"/> at
+    /// <paramref name="start"/> and <paramref name="y"/>, without cutting them out
+    /// </summary>
+    public static bool Equals(string x, int start, int length, string y)
+    {
+        if (length != y.Length)
+            return false;
+
+        for (int i = 0; i < length; i++)
+        {
+            if (Fold(x[start + i]) != Fold(y[i]))
+                return false;
+        }
+
+        return true;
+    }
+
     public int GetHashCode(string obj)
     {
         int hash = 17;

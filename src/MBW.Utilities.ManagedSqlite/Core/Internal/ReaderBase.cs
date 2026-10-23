@@ -25,14 +25,11 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     private readonly Stream? _source;
     private readonly Encoding _encoding;
-    private readonly byte[] _uint32Buffer = new byte[4];
-
-    private byte[]? _pageBuffer;
 
     /// <summary>
-    /// The page <see cref="_pageBuffer"/> holds, 0 while it holds none
+    /// The buffer <see cref="ReadPage(uint)"/> reads into, for pages that are done with before the next is read
     /// </summary>
-    private uint _pageBufferPage;
+    private byte[]? _pageBuffer;
 
     /// <summary>
     /// Set once Lenient has reported the partial last page (HDR-17), so it is reported once, not on every read of it
@@ -299,13 +296,29 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     internal byte[] ReadPage(uint page)
     {
+        ReadPage(page, PageBuffer);
+        return PageBuffer;
+    }
+
+    /// <summary>
+    /// The buffer <see cref="ReadPage(uint)"/> reads into. Other readers of short-lived pages may read into it too, on
+    /// the same terms.
+    /// </summary>
+    internal byte[] PageBuffer => _pageBuffer ??= new byte[PageSize];
+
+    /// <summary>
+    /// True when <paramref name="data"/> is <see cref="PageBuffer"/>, which is then overwritten by the next page read
+    /// </summary>
+    internal bool IsPageBuffer(byte[] data) => data == _pageBuffer;
+
+    /// <summary>
+    /// Reads a whole page into <paramref name="buffer"/>, which holds at least <see cref="PageSize"/> bytes
+    /// </summary>
+    internal void ReadPage(uint page, byte[] buffer)
+    {
         SeekPage(page, checkSize: false);
 
-        if (_pageBuffer == null || _pageBuffer.Length != PageSize)
-            _pageBuffer = new byte[PageSize];
-
-        _pageBufferPage = 0;
-        int read = Read(_pageBuffer, 0, (int)PageSize);
+        int read = Read(buffer, 0, (int)PageSize);
         if (read != PageSize)
         {
             // HDR-17: the file ends inside its last page. SQLite counts that page (pagerPagecount rounds up) and reads the
@@ -324,61 +337,8 @@ internal sealed class ReaderBase : IDisposable
                 _partialPageReported = true;
             }
 
-            Array.Clear(_pageBuffer, read, (int)PageSize - read);
+            Array.Clear(buffer, read, (int)PageSize - read);
         }
-
-        _pageBufferPage = page;
-        return _pageBuffer;
-    }
-
-    /// <summary>
-    /// The bytes of <paramref name="page"/>, from the page buffer when it holds that page. Like <see cref="ReadPage"/>,
-    /// the buffer is overwritten when another page is read.
-    /// </summary>
-    internal byte[] GetPage(uint page) => page == _pageBufferPage && _pageBuffer != null ? _pageBuffer : ReadPage(page);
-
-    /// <summary>
-    /// Copies <paramref name="count"/> bytes from <paramref name="offset"/> on <paramref name="page"/> into
-    /// <paramref name="buffer"/>. The bytes come from the page buffer, which is filled when it holds another page, so
-    /// the rows of a leaf page cost one read of the page and no seek and read of the stream per row.
-    /// </summary>
-    /// <remarks>
-    /// This is a one-page version of what SQLite's pager does: the b-tree layer never reads cell content from the file,
-    /// it gets the whole page from the page cache (btreeGetPage / sqlite3PagerGet in btree.c and pager.c) and
-    /// accessPayload copies the local part of a payload out of that page before walking the overflow chain, each
-    /// overflow page again fetched whole through the cache.
-    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5125 (accessPayload), https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L5772
-    /// </remarks>
-    internal void ReadFromPage(uint page, uint offset, byte[] buffer, int bufferOffset, int count)
-    {
-        if (offset + (ulong)count > PageSize)
-        {
-            SeekPage(page, offset);
-            if (Read(buffer, bufferOffset, count) != count)
-                throw new EndOfStreamException();
-            return;
-        }
-
-        Buffer.BlockCopy(GetPage(page), (int)offset, buffer, bufferOffset, count);
-    }
-
-    /// <summary>
-    /// Reads a big-endian 32-bit integer from <paramref name="page"/>, through the page buffer.
-    /// </summary>
-    internal uint ReadUInt32FromPage(uint page, uint offset)
-    {
-        ReadFromPage(page, offset, _uint32Buffer, 0, 4);
-
-        int pos = 0;
-        return ByteArrayReader.ReadUInt32(_uint32Buffer, 4, ref pos);
-    }
-
-    public uint ReadUInt32()
-    {
-        int read = _stream.ReadFully(_uint32Buffer, 0, 4);
-
-        int pos = 0;
-        return ByteArrayReader.ReadUInt32(_uint32Buffer, read, ref pos);
     }
 
     public int Read(byte[] buffer, int offset, int count)

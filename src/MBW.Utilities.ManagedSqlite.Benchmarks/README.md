@@ -18,6 +18,8 @@ Filter to one area with e.g. `--filter '*EnumerateRows*'`, or `--anyCategories L
 | ListTables    | open + `GetTables()`                      | open + `SELECT ... FROM sqlite_master`, read all       |
 | OpenTable     | `GetTable("tbl")`                         | prepared `SELECT ... FROM tbl`, positioned on row 1    |
 | EnumerateRows | `EnumerateRows()` over 0/1/1000/100k rows | prepared `SELECT ... FROM tbl`, every column read      |
+| EnumerateRows | `ManagedByName`: every column by name through the Sql package's `TryGetValueByName` | as above |
+| TableDefinition | open + `GetTable("tbl").GetTableDefinition()`, which loads and checks the whole schema (managed only) | |
 
 Notes:
 

@@ -35,6 +35,11 @@ internal static class BTreeTools
         Stack<KeyValuePair<BTreeInteriorTablePage, int>> stack = new Stack<KeyValuePair<BTreeInteriorTablePage, int>>();
         stack.Push(new KeyValuePair<BTreeInteriorTablePage, int>((BTreeInteriorTablePage)node, 0));
 
+        // The arrays of interior pages the walk is done with. No row refers to an interior page of a table b-tree, so
+        // the next page read reuses one; a leaf's array is never reused, as its rows read from it. The root's array
+        // belongs to the table, which reads it again on the next walk.
+        byte[]? spare = null;
+
         while (stack.Count > 0)
         {
             KeyValuePair<BTreeInteriorTablePage, int> top = stack.Pop();
@@ -55,12 +60,17 @@ internal static class BTreeTools
                 structure = "right-most pointer";
             }
             else
+            {
+                if (interior != node)
+                    spare = interior.Data;
                 continue;
+            }
 
             // Come back for the next child after this one. The stack now holds this page and its ancestors.
             stack.Push(new KeyValuePair<BTreeInteriorTablePage, int>(interior, child + 1));
 
-            BTreePage subPage = ParseChild(interior, childPage, structure, stack.Count - 1, BTreeKind.Table);
+            BTreePage subPage = ParseChild(interior, childPage, structure, stack.Count - 1, BTreeKind.Table, spare);
+            spare = null;
             if (subPage is BTreeLeafTablePage leaf)
                 yield return leaf;
             else if (subPage is BTreeInteriorTablePage subInterior)
@@ -140,7 +150,7 @@ internal static class BTreeTools
         Checks.Relaxable(root.CellCount > 0 || root.Page == 1, root.Reader.Settings, "PAGE-19",
             $"interior root page {root.Page} has no cells", root.Page, "b-tree page header");
 
-    private static BTreePage ParseChild(BTreePage parent, uint childPage, string structure, int depth, BTreeKind kind)
+    private static BTreePage ParseChild(BTreePage parent, uint childPage, string structure, int depth, BTreeKind kind, byte[]? buffer = null)
     {
         uint pageCount = parent.Reader.PageCount;
 
@@ -164,7 +174,7 @@ internal static class BTreeTools
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5460 (moveToChild)
         Checks.Strict(depth + 1 < MaxDepth, "PAGE-24", $"the b-tree is deeper than {MaxDepth} levels", parent.Page, structure);
 
-        BTreePage child = BTreePage.Parse(parent.Reader, childPage, kind);
+        BTreePage child = BTreePage.Parse(parent.Reader, childPage, kind, buffer);
 
         // PAGE-21: a page reached through a child pointer must hold at least one cell. moveToChild in btree.c:
         //   if( rc==SQLITE_OK

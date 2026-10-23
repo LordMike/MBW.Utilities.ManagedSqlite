@@ -2,13 +2,13 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <TargetFrameworks>netstandard1.0;netstandard2.0</TargetFrameworks>
+    <TargetFrameworks>netstandard2.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <Description>SQLite3 library in managed C# that can read sqlite db files: the binary database, its tables and rows, and the table definitions from the schema's CREATE statements.</Description>
   </PropertyGroup>
 
-  <ItemGroup Condition="'$(TargetFramework)'=='netstandard1.0'">
-    <PackageReference Include="System.ValueTuple" Version="4.5.0" />
+  <ItemGroup>
+    <PackageReference Include="System.Memory" Version="4.6.3" />
   </ItemGroup>
 
   <ItemGroup>
