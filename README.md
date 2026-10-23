@@ -26,7 +26,7 @@ using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
     // Note that this library does not do SQL selects, it's a raw parser
     IEnumerable<Sqlite3Row> rows = tbl.EnumerateRows();
     
-    // Get the data of column 1 on the first row, as it is stored in the record
+    // Get the data of column 1 (the second column, Name) on the first row, as it is stored in the record
     Sqlite3Row row = rows.First();
     object? data = row.ColumnData[1];
 
@@ -79,7 +79,7 @@ All of the library's own exceptions derive from `SqliteException`:
 * **`SqliteCorruptException`**: the file is malformed. `Check` names the consistency check that failed (the IDs are listed in [docs/sqlite-checks](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md)), and `Page` and `Structure` say where, when known. Damage is reported where SQLite reports it: a malformed header or schema fails the open (in Lenient, a schema row that fails to load fails only the open of its table), a damaged b-tree fails the table's open or its row enumeration, and a bad value fails only the read of that value.
 * **`SqliteInvalidEncodingException`**: the settings' `FallbackEncoding` is not a text encoding. This fails the open.
 
-Lookups throw the usual .NET exceptions: `GetTable` throws `KeyNotFoundException` for a name that is no table, and `NotSupportedException` for a virtual table.
+Lookups throw the usual .NET exceptions: `GetTable` throws `KeyNotFoundException` for a name that is no table, and `NotSupportedException` for a virtual table. `GetTableDefinition()` on a schema row of a view, index or trigger throws `InvalidOperationException`.
 
 ### Journal modes
 
