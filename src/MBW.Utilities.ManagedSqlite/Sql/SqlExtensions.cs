@@ -42,6 +42,10 @@ public static class SqlExtensions
     /// b-tree page, or the other way around</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
+        // A definition that was read without error reads the same again: the schema and the checks below don't change
+        if (table.SqlDefinition != null)
+            return table.SqlDefinition;
+
         SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
 
         // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
@@ -53,6 +57,7 @@ public static class SqlExtensions
             $"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
             table.SchemaDefinition.RootPage, "b-tree page header");
 
+        table.SqlDefinition = definition;
         return definition;
     }
 

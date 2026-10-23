@@ -8,12 +8,9 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects;
 /// </summary>
 internal class BTreeInteriorTablePage : BTreePage
 {
-    private readonly uint[] _childPointers;
-
-    public BTreeInteriorTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets, byte[] data)
-        : base(reader, page, header, cellOffsets)
+    public BTreeInteriorTablePage(ReaderBase reader, uint page, BTreeHeader header, byte[] data, int cellPointers)
+        : base(reader, page, header, data, cellPointers)
     {
-        _childPointers = ReadChildPointers(data);
     }
 
     /// <summary>
@@ -21,5 +18,5 @@ internal class BTreeInteriorTablePage : BTreePage
     /// as a scan in SQLite never reads it (moveToLeftmost only does get4byte(findCell(pPage, pCur->ix))).
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5649 (moveToLeftmost)
     /// </summary>
-    public uint GetChildPointer(int index) => GetChildPointer(_childPointers, index);
+    public uint GetChildPointer(int index) => ReadChildPointer(index);
 }

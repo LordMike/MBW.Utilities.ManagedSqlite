@@ -8,8 +8,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Objects;
 /// </summary>
 internal class BTreeLeafTablePage : BTreePage
 {
-    public BTreeLeafTablePage(ReaderBase reader, uint page, BTreeHeader header, ushort[] cellOffsets)
-        : base(reader, page, header, cellOffsets)
+    public BTreeLeafTablePage(ReaderBase reader, uint page, BTreeHeader header, byte[] data, int cellPointers)
+        : base(reader, page, header, data, cellPointers)
     {
     }
 
@@ -18,7 +18,7 @@ internal class BTreeLeafTablePage : BTreePage
     /// </summary>
     public PayloadCell GetCell(int index, out long rowId)
     {
-        byte[] data = GetData();
+        byte[] data = Data;
         int start = GetCellOffset(index);
         int pos = start;
 

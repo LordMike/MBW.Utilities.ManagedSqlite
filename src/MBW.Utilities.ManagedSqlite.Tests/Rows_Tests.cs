@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -48,6 +49,29 @@ INSERT INTO tbl VALUES ('second', 'b'), ('first', 'a');")));
 
         Assert.All(rows, row => Assert.Equal(0, row.RowId));
         Assert.Equal(new[] { new object[] { "a", "first" }, new object[] { "b", "second" } }, rows.Select(row => row.ColumnData));
+    }
+
+    /// <summary>
+    /// Once ColumnData is read, the row lets go of its page and reads every field from those values: TryGetOrdinal and
+    /// TryGetBlob return the same values as before, and a blob as the same bytes
+    /// </summary>
+    [Fact]
+    public void FieldsReadTheSameAfterColumnData()
+    {
+        using Sqlite3Database db = new Sqlite3Database(new MemoryStream(SqliteParity.Build(@"
+CREATE TABLE tbl (i INTEGER, t TEXT, b BLOB);
+INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
+
+        Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
+        object[] before = Enumerable.Range(0, 4).Select(i => row.TryGetOrdinal((ushort)i, out object value) ? value : "missing").ToArray();
+
+        Assert.Equal(new object[] { 7L, "seven", new byte[] { 1, 2, 255 } }, row.ColumnData);
+
+        Assert.Equal(before, Enumerable.Range(0, 4).Select(i => row.TryGetOrdinal((ushort)i, out object value) ? value : "missing"));
+        Assert.True(row.TryGetBlob(2, out ReadOnlyMemory<byte> blob));
+        Assert.Equal(new byte[] { 1, 2, 255 }, blob.ToArray());
+        Assert.False(row.TryGetBlob(1, out _));
+        Assert.False(row.TryGetBlob(3, out _));
     }
 
     /// <summary>

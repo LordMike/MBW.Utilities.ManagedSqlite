@@ -281,10 +281,35 @@ internal static class SqliteParity
         // ALTER TABLE after the row was written) reads as NULL.
         List<string> stored = columns.Where(c => !c.Virtual).Select(c => c.Name).ToList();
         List<(long?, object[])> rows = table.EnumerateRows()
-            .Select(row => (table.IsWithoutRowId ? null : (long?)row.RowId, stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray()))
+            .Select(row =>
+            {
+                object[] values = stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray();
+                AssertBlobsSameAsValues(row, stored, definition.RowIdColumn?.Name);
+                return (table.IsWithoutRowId ? null : (long?)row.RowId, values);
+            })
             .ToList();
 
         return new Table(name, definition.RowIdColumn?.Name, columns, rows);
+    }
+
+    /// <summary>
+    /// <see cref="Sqlite3Row.TryGetBlob"/> returns the bytes <see cref="Sqlite3Row.TryGetOrdinal(ushort, out object)"/>
+    /// returns for each BLOB field of the <paramref name="stored"/> columns, and false for every other field. The rowid
+    /// alias is skipped: it reads the rowid, so its field is never decoded, as in SQLite.
+    /// </summary>
+    private static void AssertBlobsSameAsValues(Sqlite3Row row, List<string> stored, string rowIdAlias)
+    {
+        for (ushort i = 0; i < stored.Count; i++)
+        {
+            if (stored[i] == rowIdAlias)
+                continue;
+
+            bool exists = row.TryGetOrdinal(i, out object value);
+            bool isBlob = row.TryGetBlob(i, out ReadOnlyMemory<byte> blob);
+            Assert.Equal(exists && value is byte[], isBlob);
+            if (isBlob)
+                Assert.Equal((byte[])value, blob.ToArray());
+        }
     }
 
     private static bool IsReadableTable(string type, string sql)
