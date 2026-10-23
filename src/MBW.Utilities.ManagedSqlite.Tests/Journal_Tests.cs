@@ -115,7 +115,7 @@ public class Journal_Tests
         RewriteWalChecksums(wal, bigEndian: false);
 
         SqliteParity.AssertSqliteFails(snapshot, raw.SQLITE_CANTOPEN);
-        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database));
+        Assert.Equal("WALJ-11", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database)).Check);
     }
 
     /// <summary>
@@ -163,7 +163,7 @@ public class Journal_Tests
         RewriteWalChecksums(wal, bigEndian: false);
 
         SqliteParity.AssertSqliteFails(snapshot, raw.SQLITE_CORRUPT);
-        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database));
+        Assert.Equal("WALJ-26", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromPath(snapshot.Database)).Check);
 
         List<string> issues = new List<string>();
         Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
@@ -201,7 +201,7 @@ public class Journal_Tests
         string superJournal = snapshot.Database + "-mjæ0123";
         AppendSuperJournal(snapshot.Database + "-journal", superJournal);
 
-        Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithJournal(File.OpenRead(snapshot.Database), File.OpenRead(snapshot.Database + "-journal")));
+        Assert.Equal("WALJ-45", Assert.Throws<SqliteCorruptException>(() => Sqlite3Database.FromStreamWithJournal(File.OpenRead(snapshot.Database), File.OpenRead(snapshot.Database + "-journal"))).Check);
 
         // Played back, so the crashed update is undone and no row reads "changed"
         List<string> issues = new List<string>();
