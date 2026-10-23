@@ -146,19 +146,6 @@ public sealed class Sqlite3Database : IDisposable
 
     public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
 
-    /// <summary>
-    /// <see cref="GetProperty{T}(string, Func{T})"/> with a creator that takes the database, so a static method or
-    /// lambda serves and no closure is allocated on each call
-    /// </summary>
-    internal T GetProperty<T>(string key, Func<Sqlite3Database, T> creator) where T : class
-    {
-        _propertyStore ??= new Dictionary<string, object>();
-        if (!_propertyStore.TryGetValue(key, out var val))
-            _propertyStore[key] = val = creator(this);
-
-        return (T)val;
-    }
-
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
     {
         _propertyStore ??= new Dictionary<string, object>();
