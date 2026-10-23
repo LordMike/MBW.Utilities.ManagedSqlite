@@ -328,7 +328,7 @@ internal sealed class RollbackJournalView : IFileView
         if (checksum != 0 || name[0] == 0)
             return null;
 
-        // The name is NUL-terminated within its length when SQLite pads it
+        // SQLite writes the name without a terminator, but looks it up as a C string, so a NUL within it ends it
         int end = Array.IndexOf(name, (byte)0);
         return Encoding.UTF8.GetString(name, 0, end < 0 ? name.Length : end);
     }
