@@ -136,17 +136,37 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     // Database header
 
-    [Fact]
-    public void Header_BadMagic() => AssertCorrupt("magic bytes", p => p.WriteByte(0, (byte)'S', (byte)'X'));
-
-    // A page size is a power of two from 512 to 65536. The stored value 1 means 65536, read by Structure_Tests.
+    /// <summary>
+    /// Header damage SQLite rejects whatever follows it: a bad magic string, a page size that is not a power of two from
+    /// 512 to 65536 (the stored value 1 means 65536, read by Structure_Tests), and a usable size below 480. These checks
+    /// hold in Lenient too: the open fails with the check's ID in either mode, and nothing is reported.
+    /// </summary>
     [Theory]
-    [InlineData(0)]
-    [InlineData(1000)]
-    public void Header_InvalidPageSize(ushort pageSize) => AssertCorrupt("database header", p => p.SetPageSizeField(pageSize));
+    [InlineData("HDR-03", "magic")]
+    [InlineData("HDR-09", "page size 0")]
+    [InlineData("HDR-09", "page size 1000")]
+    [InlineData("HDR-11", "reserved 255")]
+    public void Header_Strict(string check, string variant)
+    {
+        DbPatcher patcher = new DbPatcher(Base);
+        byte[] data = (variant switch
+        {
+            "magic" => patcher.WriteByte(0, (byte)'S', (byte)'X'),
+            "page size 0" => patcher.SetPageSizeField(0),
+            "page size 1000" => patcher.SetPageSizeField(1000),
+            _ => patcher.SetReservedSpace(255)
+        }).Data;
+        SqliteParity.AssertSqliteFails(data, "Small");
 
-    [Fact]
-    public void Header_UsableSizeBelow480() => AssertCorrupt("database header", p => p.SetReservedSpace(255));
+        List<string> issues = new List<string>();
+        foreach (SqliteValidation validation in new[] { SqliteValidation.Strict, SqliteValidation.Lenient })
+        {
+            Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
+            Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), settings)).Check);
+        }
+
+        Assert.Empty(issues);
+    }
 
     /// <summary>
     /// Header checks SQLite makes although the data is intact: a read version above 2 (a format newer than it knows),
@@ -181,24 +201,6 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal(new[] { check }, issues);
     }
 
-    /// <summary>
-    /// Strict checks hold in Lenient too: the open fails with the check's ID, and nothing is reported.
-    /// </summary>
-    [Theory]
-    [InlineData("HDR-03")]
-    [InlineData("HDR-09")]
-    public void Header_StrictInLenient(string check)
-    {
-        DbPatcher patcher = new DbPatcher(Base);
-        byte[] data = (check == "HDR-03" ? patcher.WriteByte(0, (byte)'S', (byte)'X') : patcher.SetPageSizeField(1000)).Data;
-
-        List<string> issues = new List<string>();
-        Sqlite3Settings lenient = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
-
-        Assert.Equal(check, Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(new MemoryStream(data), lenient)).Check);
-        Assert.Empty(issues);
-    }
-
     // HDR-24: SQLite reads only the schema format's low byte, so 0x104 is format 4
     [Fact]
     public void Header_SchemaFormatLowByteOnly() => SqliteParity.AssertSameAsSqlite(Script, data =>
@@ -208,8 +210,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         return data;
     });
 
+    // Small's overflow pointer names a page the file holds, past the in-header size
     [Fact]
-    public void Header_PagesAfterDatabaseSize_AreNotRead() => AssertCorrupt("page number", p => p.AppendPages(1).SetOverflowPointer(SmallRoot, 1, PastTheEnd));
+    public void Header_PagesAfterDatabaseSize_AreNotRead() => AssertCorrupt("page number", p => p.AppendPages(1).SetOverflowPointer(SmallRoot, 1, PastTheEnd), "PAGE-14");
 
     // When the version-valid-for number differs from the change counter, the in-header size is stale and the file length decides
     [Fact]
@@ -237,14 +240,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal("file length", Assert.Throws<SqliteCorruptException>(() => new Sqlite3Database(stream)).Structure);
     }
 
+    // A file cut short by whole pages is HDR-14, the in-header size larger than the file, in Header_Relaxable
     [Fact]
-    public void Truncated_InsideTheHeader() => AssertCorrupt("file length", p => p.Truncate(50));
-
-    [Fact]
-    public void Truncated_AfterTheSchemaPage() => AssertCorrupt("file length", p => p.Truncate(p.PageSize));
-
-    [Fact]
-    public void Truncated_LastPageMissing() => AssertCorrupt("file length", p => p.Truncate((p.PageCount - 1) * p.PageSize));
+    public void Truncated_InsideTheHeader() => AssertCorrupt("file length", p => p.Truncate(50), "HDR-02");
 
     // HDR-17: a partial last page still counts as a page, so the file opens and a table that does not touch that page
     // reads as before. The last page is a leaf of Keyed: Strict fails reading it, Lenient reads the missing bytes as
@@ -357,12 +355,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
     }
 
-    [Fact]
-    public void CellCount_PointerArrayPastEndOfPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(DeepFirstLeaf, 0xFFFF));
-
     // Page 1's b-tree header follows the 100 byte database header: 100 + 8 + 2 * 250 = 608 is past the page
     [Fact]
-    public void CellCount_PointerArrayPastEndOfSchemaPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(MasterRoot, 250));
+    public void CellCount_PointerArrayPastEndOfSchemaPage() => AssertCorrupt("b-tree page header", p => p.SetCellCount(MasterRoot, 250), "PAGE-03");
 
     // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold, in either mode. Their pointers would
     // overlap the cells, which would then read as garbage.
@@ -380,16 +375,12 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     // Child pointers
 
-    // As in SQLite, the depth limit is what stops a cycle. Root and left page alternate, so the walk gives up at the
-    // root's first child pointer.
-    [Fact]
-    public void Cycle_RightMostPointerBackToRoot() => AssertCorrupt("interior cell child pointer", p => p.SetRightMostPointer(DeepLeft, DeepRoot), "PAGE-24");
-
-    [Fact]
-    public void ChildPointer_PastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(DeepLeft, 0, PastTheEnd), "PAGE-14");
-
-    [Fact]
-    public void WithoutRowId_ChildPointerPastTheEnd() => AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(KeyedRoot, 0, PastTheEnd));
+    // In a table's interior page, and in a WITHOUT ROWID table's
+    [Theory]
+    [InlineData("Deep")]
+    [InlineData("Keyed")]
+    public void ChildPointer_PastTheEnd(string table) =>
+        AssertCorrupt("interior cell child pointer", p => p.SetChildPointer(table == "Deep" ? DeepLeft : KeyedRoot, 0, PastTheEnd), "PAGE-14");
 
     // Every interior page has a right-most child
     [Fact]
@@ -397,7 +388,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read
     [Fact]
-    public void SchemaRootPage_Zero() => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, 0));
+    public void SchemaRootPage_Zero() => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, 0), "PAGE-15");
 
     // Schema rows. Each case edits one sqlite_schema row with writable_schema, after a schema of tables, a view, an index, a
     // trigger, a table with an automatic index and a virtual table.
@@ -575,14 +566,23 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         SqliteParity.AssertTablesSameAsSqlite(SchemaScript, db, "t", "u");
     }
 
-    // Row 1 is the last cell on Small's page. Its payload size (the 1-byte varint 7, before the rowid varint and the
-    // record) becomes 127, which no longer fits in the page.
-    [Fact]
-    public void LeafCell_PayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 7, 0x7F));
+    /// <summary>
+    /// A payload size that no longer fits in the page. Row 1 is the last cell on Small's page; its payload size (the
+    /// 1-byte varint 7, before the rowid varint and the record) becomes 127. The first key is the last cell on Keyed's
+    /// first leaf, a 60 byte cell at offset 452; its payload size (the 1-byte varint 59, before the record) becomes 100,
+    /// which is still below the index page overflow threshold of 102.
+    /// </summary>
+    [Theory]
+    [InlineData("Small")]
+    [InlineData("Keyed")]
+    public void LeafCell_PayloadPastEndOfPage(string table) => AssertCorrupt("b-tree leaf cell", p =>
+    {
+        if (table == "Small")
+            p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) - 2, 7, 0x7F);
+        else
+            p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _) - 1, 59, 100);
+    }, "CELL-10");
 
-    // The first key is the last cell on Keyed's first leaf, a 60 byte cell at offset 452. Its payload size (the 1-byte
-    // varint 59, before the record) becomes 100, which is still below the index page overflow threshold of 102 and no
-    // longer fits in the page.
     // CELL-11: a payload that is all on its page is read straight from the page, even where it runs into the reserved
     // bytes. Small's row 1 is the cell at the end of the usable area; its payload grows by 2 bytes into the 8 reserved
     // bytes (zeros), and its text value from 3 to 5 bytes to match.
@@ -628,17 +628,14 @@ CREATE VIRTUAL TABLE f USING fts5(c);
             return p.SetCellOffset(SmallRoot, 0, at).Data;
         });
 
-    [Fact]
-    public void WithoutRowId_LeafCellPayloadPastEndOfPage() => AssertCorrupt("b-tree leaf cell", p => p.WriteByte(p.GetRecordOffset(KeyedFirstLeaf, 0, out _) - 1, 59, 100));
-
     // Records. Small's row 1 is (NULL rowid alias, 'one', NULL), its record header bytes are: size, 0, 19, 0.
 
     [Fact]
-    public void Record_HeaderLargerThanPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 4, 0x7F));
+    public void Record_HeaderLargerThanPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _), 4, 0x7F), "REC-03");
 
     // The payload is 7 bytes: the 4 byte header and 'one'. Serial type 21 is a 4 byte text, one byte more than the payload holds.
     [Fact]
-    public void Record_SerialTypeTooLargeForPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 19, 21));
+    public void Record_SerialTypeTooLargeForPayload() => AssertCorrupt("record header", p => p.WriteByte(p.GetRecordOffset(SmallRoot, 0, out _) + 2, 19, 21), "CELL-23");
 
     /// <summary>
     /// Record headers SQLite reads although it never writes them. REC-04: a header size of 0 is a record of no fields,
@@ -722,8 +719,23 @@ CREATE VIRTUAL TABLE f USING fts5(c);
 
     // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
 
-    [Fact]
-    public void Overflow_ChainEndsEarly() => AssertCorrupt("overflow chain", p => p.SetOverflowPointer(SmallRoot, 1, 0));
+    // CELL-13: the chain ends while payload remains, at the cell's first overflow pointer or at an intermediate
+    // overflow page's next pointer
+    [Theory]
+    [InlineData("first pointer")]
+    [InlineData("next pointer")]
+    public void Overflow_ChainEndsEarly(string pointer) => AssertCorrupt("overflow chain", p =>
+    {
+        if (pointer == "first pointer")
+        {
+            p.SetOverflowPointer(SmallRoot, 1, 0);
+            return;
+        }
+
+        List<uint> chain = p.GetOverflowChain(SmallRoot, 1);
+        Assert.True(chain.Count >= 2);
+        p.SetOverflowNextPointer(chain[0], 0);
+    }, "CELL-13");
 
     // CELL-16: SQLite never follows the last overflow page's next pointer, so a bad one reads on
     [Fact]
@@ -734,20 +746,6 @@ CREATE VIRTUAL TABLE f USING fts5(c);
 
         using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
         SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small");
-    }
-
-    // CELL-13: a chain that ends on an intermediate overflow page, while payload remains
-    [Fact]
-    public void Overflow_ChainEndsOnOverflowPage()
-    {
-        DbPatcher patcher = new DbPatcher(Base);
-        List<uint> chain = patcher.GetOverflowChain(SmallRoot, 1);
-        Assert.True(chain.Count >= 2);
-
-        Exception ex = RunBounded(() => ReadEverything(patcher.SetOverflowNextPointer(chain[0], 0).Data));
-        SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(ex);
-        Assert.Equal("overflow chain", corrupt.Structure);
-        Assert.Equal("CELL-13", corrupt.Check);
     }
 
     // HDR-20: the lock-byte page is never data, in either mode. The database is padded with zero pages past 1 GiB, and
@@ -773,9 +771,10 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         Assert.Empty(issues);
     }
 
-    [Fact]
-    public void Overflow_PointerPastTheEnd() => AssertCorrupt("page number", p => p.SetOverflowPointer(SmallRoot, 1, PastTheEnd));
-
+    /// <summary>
+    /// Deep's left interior page points back to the root. As in SQLite, the depth limit is what stops the cycle: root
+    /// and left page alternate, so the walk gives up at the root's first child pointer.
+    /// </summary>
     [Fact]
     public void Corruption_OtherTablesStillReadLikeSqlite()
     {
@@ -785,7 +784,9 @@ CREATE VIRTUAL TABLE f USING fts5(c);
         {
             using Sqlite3Database db = new Sqlite3Database(new MemoryStream(data));
 
-            Assert.Equal(DeepLeft, Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep")).Page);
+            SqliteCorruptException corrupt = Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep"));
+            Assert.Equal("PAGE-24", corrupt.Check);
+            Assert.Equal(DeepLeft, corrupt.Page);
 
             // The failure is not sticky: the same database still reads its other table, and fails the same way again
             SqliteParity.AssertTablesSameAsSqlite(Script, db, "Small");
