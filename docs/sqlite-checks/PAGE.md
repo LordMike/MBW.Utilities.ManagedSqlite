@@ -59,17 +59,6 @@ Strict-required: Yes = SQLite always fails; Optional = only integrity_check / ce
 - `cursorIsAtLastEntry` for BTCF_AtLast ([B:5738](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5738)).
 - `fetchPayload`: payload pointer inside page ([B:5413](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5413)).
 
-## 3. Most important gaps
+## 3. Open gaps
 
-SQLite rejects, we accept:
-1. **PAGE-21**: a child page with 0 cells (leaf or interior) is always CORRUPT in SQLite; we read it as empty.
-2. **PAGE-18**: page 1 (sqlite_master) with an index page type is CORRUPT in SQLite at schema load; we read it as a WITHOUT ROWID tree. For user tables the kind/SQL mismatch is checked only by the Sql package's `GetTableDefinition()`, not by `EnumerateRows()`.
-3. **PAGE-19**: an interior root with 0 cells that is not page 1 is CORRUPT in SQLite; we follow its right-most pointer.
-4. **PAGE-03**: `nCell > (pageSize-8)/6` is CORRUPT in SQLite; our bound is "pointer array fits in the page", about 3x looser.
-5. **PAGE-14**: our page-count limit is `max(file pages, header size)`; SQLite uses the header size when valid (else file size), so pointers between the header size and the file size are CORRUPT in SQLite and accepted by us.
-
-We reject, SQLite accepts (Lenient candidates):
-1. **PAGE-11/12**: cell-pointer range and cell-extends-past-usable-area checks; SQLite does these only with `cell_size_check=ON`. We also run them for every cell when the page is loaded, so one bad cell fails the whole page (and earlier rows on that page are not returned), while SQLite fails only when it reaches that cell, and only if the payload read itself goes out of bounds.
-2. **PAGE-17**: a 0-byte file is an empty database in SQLite; we report "file length" corruption.
-3. **PAGE-14**: a partial trailing page is counted and zero-filled by SQLite; we treat it as truncation.
-4. **PAGE-13**: we decode interior table keys on a scan; SQLite never does, so a malformed key at the very end of an interior page fails only for us.
+None. Every gap the survey listed is closed; the README lists the checks and what the reader does for each.
