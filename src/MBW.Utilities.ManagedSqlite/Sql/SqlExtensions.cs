@@ -78,8 +78,7 @@ public static class SqlExtensions
     /// it has none. A whole number in a column with REAL affinity reads as a double, as SQLite may store such values as
     /// integers to save space. See the README for how declared types map to affinities.
     /// </remarks>
-    /// <exception cref="SqliteCorruptException">The table's definition does not match its b-tree (see
-    /// <see cref="GetTableDefinition(Sqlite3Table)"/>), or the record is malformed up to the column</exception>
+    /// <exception cref="SqliteCorruptException">The record is malformed up to the column</exception>
     public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
     {
         value = null;
