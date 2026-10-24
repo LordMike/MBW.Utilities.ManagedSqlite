@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
+using MBW.Utilities.ManagedSqlite.Sql;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
@@ -68,12 +70,82 @@ public sealed class Sqlite3Row
     }
 
     /// <summary>
-    /// The value of field <paramref name="index"/> of the record. Like SQLite, this decodes the record only up to that
-    /// field, so damage after it, or fields past the table's columns, do not fail the read. False when the record has
-    /// fewer fields.
+    /// The value of field <paramref name="index"/> of the record, the position in <see cref="ColumnData"/>. That is not
+    /// <see cref="SqlTableColumn.Ordinal"/> in a WITHOUT ROWID table, or after a VIRTUAL generated column; to read a
+    /// column, use <see cref="TryGetOrdinal(SqlTableColumn, out object?)"/>. Like SQLite, this decodes the record only
+    /// up to that field, so damage after it, or fields past the table's columns, do not fail the read. False when the
+    /// record has fewer fields.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetOrdinal(ushort index, out object? value) => TryGetField(index, out value);
+
+    /// <summary>
+    /// The value of <paramref name="column"/>, a column of this row's table definition, read as SQLite reads it: a
+    /// long, double, string, byte[], or null for NULL. A rowid alias reads <see cref="RowId"/>, a record too short to
+    /// hold the column (a row written before ALTER TABLE ADD COLUMN) reads its DEFAULT, and an INTEGER in a column with
+    /// REAL affinity reads as a REAL. The column's field is found whatever the table's record order. False for a
+    /// VIRTUAL generated column, which SQLite computes and does not store, and for a DEFAULT this library does not
+    /// evaluate. See the README for how declared types map to affinities.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="column"/> is null</exception>
+    /// <exception cref="ArgumentException"><paramref name="column"/> is not a column of this row's table definition,
+    /// from <c>row.Table.GetTableDefinition()</c> (a column read from another database object of the same file is
+    /// not)</exception>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that column</exception>
+    public bool TryGetOrdinal(SqlTableColumn column, out object? value)
+    {
+        ArgumentNullException.ThrowIfNull(column);
+
+        SqlTableDefinition tableDefinition = Table.GetTableDefinition();
+        if (!tableDefinition.TryGetColumn(column.Name, out SqlTableColumn? own) || own != column)
+            throw new ArgumentException($"column '{column.Name}' is not a column of the definition of table '{tableDefinition.TableName}' that this row's database read", nameof(column));
+
+        return TryGetColumn(tableDefinition, column, out value);
+    }
+
+    /// <summary>
+    /// <see cref="TryGetOrdinal(SqlTableColumn, out object?)"/> for a <paramref name="column"/> of
+    /// <paramref name="tableDefinition"/>, this row's table's definition
+    /// </summary>
+    internal bool TryGetColumn(SqlTableDefinition tableDefinition, SqlTableColumn column, out object? value)
+    {
+        value = null;
+
+        // SQLite computes a VIRTUAL generated column when it is read, nothing is stored for it
+        if (column.IsVirtualGenerated)
+            return false;
+
+        // A rowid alias column reads the rowid, which SQLite takes from the cell, not the record, so it reads even when
+        // the record is shorter (REC-21)
+        if (column == tableDefinition.RowIdColumn)
+        {
+            value = RowId;
+            return true;
+        }
+
+        // Like SQLite, the record is decoded only up to this column. A record too short to hold it, such as one written
+        // before ALTER TABLE ADD COLUMN, reads the column's default (REC-11). OP_Column in vdbe.c:
+        //       if( pOp->p4type==P4_MEM ){
+        //         sqlite3VdbeMemShallowCopy(pDest, pOp->p4.pMem, MEM_Static);
+        //       }else{
+        //         sqlite3VdbeMemSetNull(pDest);
+        //       }
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3165 (OP_Column)
+        if (!TryGetField(column.RecordIndex, out value))
+        {
+            if (!column.HasKnownDefault)
+                return false;
+
+            value = column.DefaultValue is byte[] blob ? blob.Clone() : column.DefaultValue;
+        }
+
+        // SQLite writes REAL values without a fractional part as integers, and turns them back into REAL when read
+        // through a column with REAL affinity
+        if (value is long integer && column.DetectedType == typeof(double))
+            value = (double)integer;
+
+        return true;
+    }
 
     /// <summary>
     /// True when fields <paramref name="a"/> and <paramref name="b"/> of the record exist and decode to equal values
@@ -162,26 +234,54 @@ public sealed class Sqlite3Row
     }
 
     /// <summary>
-    /// The value of field <paramref name="index"/> of the record, as <see cref="TryGetOrdinal(ushort, out object?)"/>
-    /// reads it, converted to <typeparamref name="T"/> with <see cref="Convert.ChangeType(object, Type)"/>. False when
-    /// the record has fewer fields, or the value is NULL.
+    /// The value of field <paramref name="index"/> of the record, as <typeparamref name="T"/>. False when the record
+    /// has fewer fields (as <see cref="TryGetOrdinal(ushort, out object?)"/>), or the value does not convert:
+    /// <list type="bullet">
+    /// <item>NULL converts to <c>default</c>: null for a reference type or <see cref="Nullable{T}"/>, 0 for a number,
+    /// as <c>sqlite3_column_int</c> reads NULL.</item>
+    /// <item>A value that already is <typeparamref name="T"/>, or the type a <see cref="Nullable{T}"/> wraps, is
+    /// returned as it is.</item>
+    /// <item>An INTEGER converts to <see cref="double"/>, <see cref="float"/> or <see cref="decimal"/>, to
+    /// <see cref="bool"/> (true when not 0), and to a narrower integer type when it fits.</item>
+    /// <item>A REAL converts to an integer type or <see cref="bool"/> as SQLite does, truncated toward zero
+    /// (3.5 is 3, -3.5 is -3), when the result fits; to <see cref="float"/> and <see cref="decimal"/> when it fits.
+    /// A REAL converts to <see cref="decimal"/> as .NET does, rounded to 15 significant digits.</item>
+    /// <item>TEXT and BLOB convert to nothing else, and nothing converts to them: text is not parsed as a number, in
+    /// any culture, and numbers are not formatted.</item>
+    /// <item>Other types, such as enums, <see cref="char"/> or <see cref="ReadOnlyMemory{T}"/>, are not converted
+    /// to; read a blob without a copy with <see cref="TryGetBlob"/>.</item>
+    /// </list>
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
-    /// <exception cref="InvalidCastException">The value cannot be converted to <typeparamref name="T"/></exception>
-    /// <exception cref="FormatException">The value is text that does not parse as <typeparamref name="T"/></exception>
-    /// <exception cref="OverflowException">The value is out of the range of <typeparamref name="T"/></exception>
-    public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
+    public bool TryGetOrdinal<T>(ushort index, out T? value)
     {
-        value = default;
-
-        if (!TryGetOrdinal(index, out object? tmp))
+        if (!TryGetOrdinal(index, out object? stored))
+        {
+            value = default;
             return false;
+        }
 
-        // TODO: Is null a success case?
-        if (tmp == null)
+        return ValueConverter.TryConvert(stored, out value);
+    }
+
+    /// <summary>
+    /// The value of <paramref name="column"/>, read as <see cref="TryGetOrdinal(SqlTableColumn, out object?)"/> reads
+    /// it, as <typeparamref name="T"/>. False when the column has no value, or the value does not convert, with the
+    /// conversions of <see cref="TryGetOrdinal{T}(ushort, out T)"/>.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="column"/> is null</exception>
+    /// <exception cref="ArgumentException"><paramref name="column"/> is not a column of this row's table definition,
+    /// from <c>row.Table.GetTableDefinition()</c> (a column read from another database object of the same file is
+    /// not)</exception>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that column</exception>
+    public bool TryGetOrdinal<T>(SqlTableColumn column, out T? value)
+    {
+        if (!TryGetOrdinal(column, out object? stored))
+        {
+            value = default;
             return false;
+        }
 
-        value = (T)Convert.ChangeType(tmp, typeof(T));
-        return true;
+        return ValueConverter.TryConvert(stored, out value);
     }
 }
