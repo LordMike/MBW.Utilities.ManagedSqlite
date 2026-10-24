@@ -135,4 +135,32 @@ INSERT INTO tbl VALUES (42, 1.5, 'text', x'0102', NULL);")));
         Assert.False(row.TryGetDouble(4, out _));
         Assert.False(row.TryGetInt64(5, out _));
     }
+
+    /// <summary>
+    /// With shared row buffers, a row is readable only while it is the latest: an earlier row throws rather than read
+    /// fields a later row wrote. A row that read ColumnData in the loop keeps its values, and the last row stays
+    /// readable after the loop.
+    /// </summary>
+    [Fact]
+    public void SharedRowBuffersFailReadsOfEarlierRows()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+CREATE TABLE tbl (a, b);
+INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');")));
+
+        List<Sqlite3Row> rows = new List<Sqlite3Row>();
+        foreach (Sqlite3Row row in db.GetTable("tbl").EnumerateRows(shareRowBuffers: true))
+        {
+            Assert.True(row.TryGetInt64(0, out _));
+            if (rows.Count == 1)
+                _ = row.ColumnData;
+            rows.Add(row);
+        }
+
+        Assert.Throws<InvalidOperationException>(() => rows[0].TryGetOrdinal(1, out _));
+        Assert.Throws<InvalidOperationException>(() => rows[0].ColumnData);
+        Assert.Equal(new object[] { 2L, "two" }, rows[1].ColumnData);
+        Assert.True(rows[2].TryGetString(1, out string last));
+        Assert.Equal("three", last);
+    }
 }

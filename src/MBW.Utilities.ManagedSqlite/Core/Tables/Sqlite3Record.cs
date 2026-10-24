@@ -65,6 +65,32 @@ internal struct Sqlite3Record
     /// </summary>
     private int _parsed = -1;
 
+    /// <summary>
+    /// The field table that the rows of one enumeration share, see <see cref="Sqlite3Table.EnumerateRows(bool)"/>, and
+    /// the number of the row that owns it: the latest one made
+    /// </summary>
+    internal sealed class SharedFields
+    {
+        public int[] Fields = Array.Empty<int>();
+        public int Row;
+    }
+
+    private readonly SharedFields? _shared;
+
+    /// <summary>
+    /// This record's number in <see cref="_shared"/>, which owns the shared field table while it is the latest
+    /// </summary>
+    private readonly int _sharedRow;
+
+    /// <summary>
+    /// A record whose field table is <paramref name="shared"/>'s, which this record now owns
+    /// </summary>
+    public Sqlite3Record(uint page, ArraySegment<byte> payload, SharedFields shared) : this(page, payload)
+    {
+        _shared = shared;
+        _sharedRow = ++shared.Row;
+    }
+
     public Sqlite3Record(uint page, ArraySegment<byte> payload)
     {
         _page = page;
@@ -260,6 +286,10 @@ internal struct Sqlite3Record
     /// </summary>
     private void Parse(int p2, bool keep, Sqlite3Row row)
     {
+        // A later row of the enumeration owns the shared field table now, and may have written over this row's fields
+        if (_shared != null && _shared.Row != _sharedRow)
+            throw new InvalidOperationException("This row came from EnumerateRows(shareRowBuffers: true), and the enumeration has moved past it. Read its values inside the loop, or read ColumnData there to keep them.");
+
         if (_parsed > p2)
             return;
 
@@ -290,7 +320,18 @@ internal struct Sqlite3Record
             // size itself, so the parse never names more fields than this. The first parse reads one serial type even
             // when there is no room for one, so the table holds at least one.
             if (keep && headerSize > 0)
-                _fields = new int[2 * Math.Max(1, headerSize - _headerPos)];
+            {
+                int size = (int)(2 * Math.Max(1, headerSize - _headerPos));
+                if (_shared == null)
+                    _fields = new int[size];
+                else
+                {
+                    // The table only grows. It needs no clearing: a field is read only after the parse wrote it.
+                    if (_shared.Fields.Length < size)
+                        _shared.Fields = new int[size];
+                    _fields = _shared.Fields;
+                }
+            }
 
             // REC-04, CELL-22: a header size of 0 is a record of no fields, so every column reads as its default or NULL.
             // SQLite parses one serial type past the (empty) header, finds the record corrupt, and then forgives it:

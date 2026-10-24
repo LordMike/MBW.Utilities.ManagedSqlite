@@ -412,6 +412,15 @@ internal static class SqliteParity
             })
             .ToList();
 
+        // Rows that share one field table read the same values, when each is read inside the loop
+        int index = 0;
+        foreach (Sqlite3Row row in table.EnumerateRows(shareRowBuffers: true))
+        {
+            Assert.Equal(rows[index++].Item2, stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray());
+            AssertTypedReadsSameAsValues(row, stored, definition.RowIdColumn?.Name);
+        }
+        Assert.Equal(rows.Count, index);
+
         return new Table(name, definition.RowIdColumn?.Name, columns, rows);
     }
 
