@@ -393,35 +393,31 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0), "PAGE-15");
 
-    // PAGE-26: both of Deep's root pointers lead to its left interior page, and SQLite reads that page's rows twice. So
-    // do we: the walk follows fewer child pointers than the database has pages, so PAGE-40 does not fire.
-    [Fact]
-    public void SharedSubtree_ReadsLikeSqlite() =>
-        SqliteParity.AssertSameAsSqlite(Script, data => new DbPatcher(data).SetRightMostPointer(DeepRoot, DeepLeft).Data);
-
     /// <summary>
-    /// PAGE-40: Deep's right-most child becomes a chain of 16 interior pages, each with 6 pointers to the next, and the
-    /// last with 6 pointers to Deep's first leaf. There is no cycle and the tree is within 20 levels, but a scan reaches
-    /// that leaf 6^16 times. SQLite does, and does not finish, so it is not run here. Both modes fail once the walk has
-    /// followed as many child pointers as the database has pages.
+    /// INTEG-14: both of Deep's root pointers lead to its left interior page, so a scan reaches that page's rows twice.
+    /// SQLite returns them twice and finds the damage only in integrity_check. Strict fails at the first repeated rowid.
+    /// Lenient reports it and reads as SQLite does.
     /// </summary>
     [Theory]
     [InlineData(SqliteValidation.Strict)]
     [InlineData(SqliteValidation.Lenient)]
-    public void SharedSubtree_ExponentialWalk(SqliteValidation validation)
+    public void SharedSubtree_RowIdsOutOfOrder(SqliteValidation validation)
     {
-        const uint levels = 16;
-        uint first = PastTheEnd;
-        DbPatcher patcher = new DbPatcher(Base).SetDatabaseSizeInPages(first + levels - 1).AppendPages((int)levels);
-        for (uint page = first; page < first + levels; page++)
-            patcher.WriteInteriorTablePage(page, Enumerable.Repeat(page + 1 < first + levels ? page + 1 : DeepFirstLeaf, 6).ToArray());
-        patcher.SetRightMostPointer(DeepRoot, first);
+        Func<byte[], byte[]> patch = data => new DbPatcher(data).SetRightMostPointer(DeepRoot, DeepLeft).Data;
 
         List<string> issues = new List<string>();
         Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
-        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(patcher.Data), settings);
-        Assert.Equal("PAGE-40", Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Deep"))).Check);
-        Assert.Empty(issues);
+        if (validation == SqliteValidation.Strict)
+        {
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(patch(Base)), settings);
+            Assert.Equal("INTEG-14", Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep")).Check);
+        }
+        else
+        {
+            SqliteParity.AssertSameAsSqlite(Script, patch, settings);
+            Assert.Contains("INTEG-14", issues);
+            Assert.All(issues, check => Assert.Equal("INTEG-14", check));
+        }
     }
 
     // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read

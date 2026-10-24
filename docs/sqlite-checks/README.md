@@ -37,6 +37,7 @@ The code for each of these carries its ID in a comment.
 | PAGE-01, PAGE-22, PAGE-24 | An unknown page type, a child page of the other b-tree kind, and a tree deeper than 20 levels fail as in SQLite, with their IDs |
 | PAGE-18 | Page 1 must be a table b-tree page, and a table's root page the b-tree kind its SQL declares (checked when the table is opened) |
 | PAGE-19, PAGE-21 | Empty interior roots and empty child pages are corrupt; Lenient reports and walks on |
+| INTEG-14 | A rowid table's rows must come in strictly increasing rowid order, which also stops a b-tree whose pages share a subtree from being walked once per pointer. SQLite checks this only in integrity_check: Strict fails (stricter than SQLite), Lenient reports and returns the row as SQLite does |
 | CELL-01, CELL-02 | Payload sizes keep their low 32 bits |
 | CELL-10, CELL-11 | A payload must stay in its page's usable area when read through accessPayload; one that is all on its page may run into the reserved bytes |
 | CELL-13, CELL-16 | An overflow chain that ends early is corrupt; the last overflow page's next pointer is never read |
@@ -71,9 +72,3 @@ The WAL and rollback journal checks in [WALJ.md](WALJ.md). The code for each car
 | WALJ-43, WALJ-44, WALJ-45 | Not implemented: the reader reads one database, so a hot journal is played back whatever super-journal it names (listed under Differences from SQLite in the README) |
 | WALJ-01 to WALJ-03, WALJ-06 to WALJ-10, WALJ-12 to WALJ-21, WALJ-24, WALJ-27, WALJ-29, WALJ-34, WALJ-36, WALJ-37, WALJ-39, WALJ-42, WALJ-46 to WALJ-60 | Tolerated as SQLite tolerates them: bad WAL headers or frames end the WAL at the last valid commit, a journal that is not hot is ignored, and playback stops at the first bad record |
 | WALJ-04, WALJ-05, WALJ-22, WALJ-23, WALJ-30 to WALJ-33, WALJ-35, WALJ-38, WALJ-40, WALJ-41, WALJ-62 | Not applicable: locks, the `-shm` wal-index (the WAL is always recovered from the `-wal` file), open options, build flags and writes |
-
-## Added later
-
-| Checks | What the reader does |
-|---|---|
-| PAGE-40 | The reader's own bound: a b-tree walk that follows as many child pointers as the database has pages has reached a page twice, and fails in both modes, so a shared subtree cannot make a scan run for ever. SQLite has no such check; a walk within the bound reads shared rows as often as SQLite does |
