@@ -15,7 +15,7 @@ public sealed class Sqlite3Table
     internal ReaderBase Reader => _reader;
 
     /// <summary>
-    /// The table's definition, kept once <see cref="Sql.SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
+    /// The table's definition, kept once <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
     /// without error, so reading values by name does not look it up for each value
     /// </summary>
     internal Sql.SqlTableDefinition? SqlDefinition { get; set; }
@@ -58,13 +58,49 @@ public sealed class Sqlite3Table
     /// that is the primary key columns first, then the others, see <see cref="Sqlite3Row"/>.
     /// </summary>
     /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
-    public IEnumerable<Sqlite3Row> EnumerateRows()
+    public IEnumerable<Sqlite3Row> EnumerateRows() => EnumerateRows(false);
+
+    /// <summary>
+    /// Enumerates the table's rows as <see cref="EnumerateRows()"/> does. With <paramref name="shareRowBuffers"/>, the
+    /// rows share one field table, which saves an allocation per row.
+    /// </summary>
+    /// <param name="shareRowBuffers">
+    /// True to share one field table among all the rows of this enumeration. This is only safe when each row is read
+    /// inside the loop that enumerates it, and is not kept or read after the enumeration moves to the next row.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// A row finds its values through a table of the record's fields, which it builds on its first read. Normally each
+    /// row allocates its own: at least 8 bytes for each column (16 for a long TEXT or BLOB), about 100 bytes per row
+    /// for a 10 column table. With <paramref name="shareRowBuffers"/> the rows of one enumeration take turns with a
+    /// single table, which each new row takes over. The table grows to the widest record, and lives as long as the
+    /// enumeration, or any row that read a field from it.
+    /// </para>
+    /// <para>
+    /// The cost is that a row is only readable while it is the latest one. Once the enumeration moves on, every read of
+    /// an earlier row (<see cref="Sqlite3Row.TryGetOrdinal(ushort, out object?)"/>, the typed reads,
+    /// <see cref="Sqlite3Row.ColumnData"/>) throws <see cref="InvalidOperationException"/>. Its values are not read
+    /// from the wrong row. Don't collect these rows in a list, and don't keep them past the loop body, for example with
+    /// <c>ToList()</c>, <c>OrderBy()</c> or a <c>yield return</c>. To keep a row's values, read
+    /// <see cref="Sqlite3Row.ColumnData"/> inside the loop: a row that has read it keeps its own values, and stays
+    /// readable.
+    /// </para>
+    /// <para>
+    /// This pays off most with the typed reads (<see cref="Sqlite3Row.TryGetInt64"/>,
+    /// <see cref="Sqlite3Row.TryGetDouble"/>, <see cref="Sqlite3Row.TryGetString"/>), which box nothing, so the field
+    /// table is then a large part of what a row allocates.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
+    public IEnumerable<Sqlite3Row> EnumerateRows(bool shareRowBuffers)
     {
+        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+
         // A WITHOUT ROWID table is stored in an index b-tree
-        return IsWithoutRowId ? EnumerateWithoutRowIdRows() : EnumerateRowIdRows();
+        return IsWithoutRowId ? EnumerateWithoutRowIdRows(shared) : EnumerateRowIdRows(shared);
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateRowIdRows()
+    private IEnumerable<Sqlite3Row> EnumerateRowIdRows(Sqlite3Record.SharedFields? shared)
     {
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
@@ -73,12 +109,17 @@ public sealed class Sqlite3Table
                 BTreePage.PayloadCell cell = leaf.GetCell(i, out long rowId);
                 ArraySegment<byte> payload = ReadPayload(leaf, rowId, cell);
 
-                yield return new Sqlite3Row(this, rowId, new Sqlite3Record(leaf.Page, payload));
+                yield return new Sqlite3Row(this, rowId, NewRecord(leaf.Page, payload, shared));
             }
         }
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows()
+    private static Sqlite3Record NewRecord(uint page, ArraySegment<byte> payload, Sqlite3Record.SharedFields? shared)
+    {
+        return shared == null ? new Sqlite3Record(page, payload) : new Sqlite3Record(page, payload, shared);
+    }
+
+    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(Sqlite3Record.SharedFields? shared)
     {
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)RootPage))
         {
@@ -87,7 +128,7 @@ public sealed class Sqlite3Table
             ArraySegment<byte> payload = ReadPayload(page, null, cell);
 
             // There is no rowid
-            yield return new Sqlite3Row(this, 0, new Sqlite3Record(page.Page, payload));
+            yield return new Sqlite3Row(this, 0, NewRecord(page.Page, payload, shared));
         }
     }
 

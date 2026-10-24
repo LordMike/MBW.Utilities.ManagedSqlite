@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
 
@@ -64,6 +65,32 @@ internal struct Sqlite3Record
     /// </summary>
     private int _parsed = -1;
 
+    /// <summary>
+    /// The field table that the rows of one enumeration share, see <see cref="Sqlite3Table.EnumerateRows(bool)"/>, and
+    /// the number of the row that owns it: the latest one made
+    /// </summary>
+    internal sealed class SharedFields
+    {
+        public int[] Fields = Array.Empty<int>();
+        public int Row;
+    }
+
+    private readonly SharedFields? _shared;
+
+    /// <summary>
+    /// This record's number in <see cref="_shared"/>, which owns the shared field table while it is the latest
+    /// </summary>
+    private readonly int _sharedRow;
+
+    /// <summary>
+    /// A record whose field table is <paramref name="shared"/>'s, which this record now owns
+    /// </summary>
+    public Sqlite3Record(uint page, ArraySegment<byte> payload, SharedFields shared) : this(page, payload)
+    {
+        _shared = shared;
+        _sharedRow = ++shared.Row;
+    }
+
     public Sqlite3Record(uint page, ArraySegment<byte> payload)
     {
         _page = page;
@@ -112,6 +139,76 @@ internal struct Sqlite3Record
         }
 
         blob = default;
+        return false;
+    }
+
+    /// <summary>
+    /// The value of field <paramref name="index"/> when it is stored as an INTEGER (serial types 1 to 6, 8 and 9),
+    /// without boxing it. False when the record has fewer fields, or the field holds another type.
+    /// </summary>
+    public bool TryGetInt64(int index, Sqlite3Row row, out long value)
+    {
+        if (ParseField(index, row))
+        {
+            uint serialType = (uint)_fields![2 * index];
+            if (serialType is >= 1 and <= 6 or 8 or 9)
+            {
+                value = DecodeInteger(serialType, _fields[2 * index + 1]);
+                return true;
+            }
+        }
+
+        value = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// The value of field <paramref name="index"/> when it is stored as a REAL (serial type 7) or an INTEGER, without
+    /// boxing it. False when the record has fewer fields, or the field holds another type, or a NaN, which SQLite reads
+    /// as NULL (see <see cref="Decode"/>).
+    /// </summary>
+    public bool TryGetDouble(int index, Sqlite3Row row, out double value)
+    {
+        if (ParseField(index, row))
+        {
+            uint serialType = (uint)_fields![2 * index];
+            if (serialType == 7)
+            {
+                value = DecodeReal(_fields[2 * index + 1]);
+                if (!double.IsNaN(value))
+                    return true;
+            }
+
+            // SQLite writes a REAL without a fractional part, in a column of REAL affinity, as an INTEGER, so a REAL
+            // column reads integers too: https://www.sqlite.org/datatype3.html#type_affinity
+            if (serialType is >= 1 and <= 6 or 8 or 9)
+            {
+                value = DecodeInteger(serialType, _fields[2 * index + 1]);
+                return true;
+            }
+        }
+
+        value = 0;
+        return false;
+    }
+
+    /// <summary>
+    /// The value of field <paramref name="index"/> when it is stored as TEXT (an odd serial type of 13 or more),
+    /// decoded in the database's encoding. False when the record has fewer fields, or the field holds another type.
+    /// </summary>
+    public bool TryGetString(int index, Sqlite3Row row, [NotNullWhen(true)] out string? value)
+    {
+        if (ParseField(index, row))
+        {
+            uint serialType = (uint)_fields![2 * index];
+            if (serialType >= 13 && (serialType & 0x01) == 0x01)
+            {
+                value = row.Table.Reader.DecodeString(_data, _start + _fields[2 * index + 1], (int)((serialType - 13) / 2));
+                return true;
+            }
+        }
+
+        value = null;
         return false;
     }
 
@@ -190,6 +287,10 @@ internal struct Sqlite3Record
     /// </summary>
     private void Parse(int p2, bool keep, Sqlite3Row row)
     {
+        // A later row of the enumeration owns the shared field table now, and may have written over this row's fields
+        if (_shared != null && _shared.Row != _sharedRow)
+            throw new InvalidOperationException("This row came from EnumerateRows(shareRowBuffers: true), and the enumeration has moved past it. Read its values inside the loop, or read ColumnData there to keep them.");
+
         if (_parsed > p2)
             return;
 
@@ -216,9 +317,22 @@ internal struct Sqlite3Record
             _headerSize = (int)headerSize;
             _headerPos = pos - _start;
             _nextOffset = (int)headerSize;
-            // Each serial type takes at least one byte of the header, after the header size itself
+            // Sized once for the whole record: each serial type takes at least one byte of the header, after the header
+            // size itself, so the parse never names more fields than this. The first parse reads one serial type even
+            // when there is no room for one, so the table holds at least one.
             if (keep && headerSize > 0)
-                _fields = new int[2 * Math.Min(8, Math.Max(1, headerSize - _headerPos))];
+            {
+                int size = (int)(2 * Math.Max(1, headerSize - _headerPos));
+                if (_shared == null)
+                    _fields = new int[size];
+                else
+                {
+                    // The table only grows. It needs no clearing: a field is read only after the parse wrote it.
+                    if (_shared.Fields.Length < size)
+                        _shared.Fields = new int[size];
+                    _fields = _shared.Fields;
+                }
+            }
 
             // REC-04, CELL-22: a header size of 0 is a record of no fields, so every column reads as its default or NULL.
             // SQLite parses one serial type past the (empty) header, finds the record corrupt, and then forgives it:
@@ -247,9 +361,6 @@ internal struct Sqlite3Record
         bool overread = false;
         do
         {
-            if (_fields != null && 2 * i + 2 > _fields.Length)
-                Array.Resize(ref _fields, _fields.Length * 2);
-
             // A serial type that runs past the payload runs past the header too, which the checks below reject
             int pos = _start + headerPos;
             bool read = TryReadVarInt32(_data, _start + _length, ref pos, out long serialType);
@@ -331,7 +442,6 @@ internal struct Sqlite3Record
     private readonly object? Decode(ReaderBase reader, long serialType, int offset)
     {
         byte[] payload = _data;
-        int length = _start + _length;
         int pos = _start + offset;
 
         switch (serialType)
@@ -345,11 +455,9 @@ internal struct Sqlite3Record
             case 2:
             case 3:
             case 4:
-                return ByteArrayReader.ReadInteger(payload, length, ref pos, (int)serialType);
             case 5:
-                return ByteArrayReader.ReadInteger(payload, length, ref pos, 6);
             case 6:
-                return ByteArrayReader.ReadInteger(payload, length, ref pos, 8);
+                return DecodeInteger((uint)serialType, offset);
             case 7:
             {
                 // Serial type 7 is a big-endian IEEE 754 double (https://www.sqlite.org/fileformat.html#record_format).
@@ -359,7 +467,7 @@ internal struct Sqlite3Record
                 // ("pMem->flags = IsNaN(x) ? MEM_Null : MEM_Real"), so a NaN reads as NULL here too.
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4071 (serialGet, serial type 7)
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbemem.c#L1092 (sqlite3VdbeMemSetDouble)
-                double real = BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(payload, length, ref pos, 8));
+                double real = DecodeReal(offset);
                 return double.IsNaN(real) ? null : real;
             }
             case 8:
@@ -384,6 +492,38 @@ internal struct Sqlite3Record
                 return reader.DecodeString(payload, pos, size);
             }
         }
+    }
+
+    /// <summary>
+    /// The INTEGER of serial type 1 to 6, 8 or 9 that starts at <paramref name="offset"/> in the payload
+    /// </summary>
+    private readonly long DecodeInteger(uint serialType, int offset)
+    {
+        int pos = _start + offset;
+        switch (serialType)
+        {
+            case 8:
+                // Serial types 8 and 9: integer constants 0 and 1, no payload bytes
+                return 0;
+            case 9:
+                return 1;
+            case 5:
+                return ByteArrayReader.ReadInteger(_data, _start + _length, ref pos, 6);
+            case 6:
+                return ByteArrayReader.ReadInteger(_data, _start + _length, ref pos, 8);
+            default:
+                return ByteArrayReader.ReadInteger(_data, _start + _length, ref pos, (int)serialType);
+        }
+    }
+
+    /// <summary>
+    /// The REAL of serial type 7 that starts at <paramref name="offset"/>, a big-endian IEEE 754 double
+    /// (https://www.sqlite.org/fileformat.html#record_format)
+    /// </summary>
+    private readonly double DecodeReal(int offset)
+    {
+        int pos = _start + offset;
+        return BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(_data, _start + _length, ref pos, 8));
     }
 
     private static long SerialTypeSize(long serialType)
