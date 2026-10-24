@@ -42,24 +42,13 @@ public static class SqlExtensions
         return definition;
     }
 
-    /// <exception cref="SqliteCorruptException">The SQL declares the table WITHOUT ROWID and its root page is a table
-    /// b-tree page, or the other way around</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
-        // A definition that was read without error reads the same again: the schema and the checks below don't change
+        // The table's root page was checked against its SQL (PAGE-18) when the table was opened
         if (table.SqlDefinition != null)
             return table.SqlDefinition;
 
         SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
-
-        // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
-        // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
-        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
-        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
-        Checks.Strict(definition.IsWithoutRowId == table.IsWithoutRowId, "PAGE-18",
-            $"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
-            table.SchemaDefinition.RootPage, "b-tree page header");
 
         table.SqlDefinition = definition;
         return definition;
