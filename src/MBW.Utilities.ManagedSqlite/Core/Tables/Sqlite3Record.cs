@@ -154,7 +154,6 @@ internal struct Sqlite3Record
     /// </summary>
     public bool TryGetValue(int index, Sqlite3Row row, out object? value)
     {
-        _overflow?.BeginRead();
         if (!ParseField(index, row))
         {
             value = null;
@@ -173,7 +172,6 @@ internal struct Sqlite3Record
     /// </summary>
     public bool TryGetBlob(int index, Sqlite3Row row, out ReadOnlyMemory<byte> blob)
     {
-        _overflow?.BeginRead();
         if (ParseField(index, row))
         {
             uint serialType = (uint)_fields![2 * index];
@@ -198,7 +196,6 @@ internal struct Sqlite3Record
     /// </summary>
     public bool TryGetInt64(int index, Sqlite3Row row, out long value)
     {
-        _overflow?.BeginRead();
         if (ParseField(index, row))
         {
             uint serialType = (uint)_fields![2 * index];
@@ -220,7 +217,6 @@ internal struct Sqlite3Record
     /// </summary>
     public bool TryGetDouble(int index, Sqlite3Row row, out double value)
     {
-        _overflow?.BeginRead();
         if (ParseField(index, row))
         {
             uint serialType = (uint)_fields![2 * index];
@@ -250,7 +246,6 @@ internal struct Sqlite3Record
     /// </summary>
     public bool TryGetString(int index, Sqlite3Row row, [NotNullWhen(true)] out string? value)
     {
-        _overflow?.BeginRead();
         if (ParseField(index, row))
         {
             uint serialType = (uint)_fields![2 * index];
@@ -277,7 +272,6 @@ internal struct Sqlite3Record
     /// </summary>
     public bool FieldsEqual(int a, int b, Sqlite3Row row)
     {
-        _overflow?.BeginRead();
         if (!ParseField(Math.Max(a, b), row))
             return false;
 
@@ -314,7 +308,6 @@ internal struct Sqlite3Record
     /// </summary>
     public object?[] ReadAll(Sqlite3Row row)
     {
-        _overflow?.BeginRead();
         Parse(int.MaxValue, false, row);
 
         object?[] values = new object?[_parsed];
@@ -716,12 +709,15 @@ internal struct Sqlite3Record
         private int _known;
 
         /// <summary>
-        /// The last page read, and its index in the chain. It is in the reader's page buffer, so it is valid only until
-        /// the next page read, and is forgotten by <see cref="BeginRead"/>.
+        /// The last page read, and its index in the chain. It is in the reader's page buffer, so it is valid only while
+        /// the buffer's <see cref="ReaderBase.PageBufferGeneration"/> is still <see cref="_readGeneration"/>: reads of
+        /// several values of a row that lie on one overflow page then read that page once.
         /// </summary>
         private int _readIndex = -1;
 
         private byte[]? _readData;
+
+        private long _readGeneration;
 
         /// <summary>
         /// The header, when it runs past the local bytes, read from the overflow pages to its end
@@ -738,11 +734,6 @@ internal struct Sqlite3Record
             Local = local;
             _first = first;
         }
-
-        /// <summary>
-        /// Called as a value is read: pages may have been read into the reader's page buffer since the last one
-        /// </summary>
-        public void BeginRead() => _readIndex = -1;
 
         /// <summary>
         /// Page <paramref name="index"/> of the chain, read into the reader's page buffer, following the next pointers
@@ -767,7 +758,9 @@ internal struct Sqlite3Record
 
         private byte[] Read(int index, Sqlite3Row row, in Sqlite3Record record, int pageData)
         {
-            if (index == _readIndex)
+            // Another page may have been read into the page buffer since, by this row or any other
+            ReaderBase reader = row.Table.Reader;
+            if (index == _readIndex && _readGeneration == reader.PageBufferGeneration)
                 return _readData!;
 
             uint page = _pages![index];
@@ -784,9 +777,10 @@ internal struct Sqlite3Record
                 index == 0 ? record._page : _pages[index - 1], "overflow chain");
 
             // Each page is read through the reader, so a page the WAL or a journal holds is read from there
-            byte[] data = row.Table.Reader.ReadPage(page);
+            byte[] data = reader.ReadPage(page);
             _readIndex = index;
             _readData = data;
+            _readGeneration = reader.PageBufferGeneration;
 
             // CELL-16: the next pointer is followed only while payload remains, so the last overflow page's pointer is
             // never read, whatever it holds. accessPayload in btree.c stops as soon as the payload is copied:

@@ -424,10 +424,20 @@ internal sealed class ReaderBase : IDisposable
     internal bool IsPageBuffer(byte[] data) => data == _pageBuffer;
 
     /// <summary>
+    /// Counts the reads into <see cref="PageBuffer"/>, so a holder of a page in it can tell whether it still holds that
+    /// page: it does while the count is the one it saw after its read
+    /// </summary>
+    internal long PageBufferGeneration { get; private set; }
+
+    /// <summary>
     /// Reads a whole page into <paramref name="buffer"/>, which holds at least <see cref="PageSize"/> bytes
     /// </summary>
     internal void ReadPage(uint page, byte[] buffer)
     {
+        // Counted before the read, so a read that fails part way also makes the buffer's previous page stale
+        if (buffer == _pageBuffer)
+            PageBufferGeneration++;
+
         CheckPage(page);
 
         // Note: Pages are 1-indexed
