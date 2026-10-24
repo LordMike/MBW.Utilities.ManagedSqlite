@@ -62,8 +62,7 @@ public sealed class SqlTableDefinition
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     public bool TryGetColumn(string name, [NotNullWhen(true)] out SqlTableColumn? column)
     {
-        if (name == null)
-            throw new ArgumentNullException(nameof(name));
+        ArgumentNullException.ThrowIfNull(name);
 
         return _columnIndex.TryGetValue(name, out column);
     }

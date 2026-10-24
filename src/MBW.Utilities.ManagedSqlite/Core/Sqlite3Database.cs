@@ -115,8 +115,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithWal(Stream database, Stream wal, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
-        if (wal == null)
-            throw new ArgumentNullException(nameof(wal));
+        ArgumentNullException.ThrowIfNull(wal);
 
         return FromStreams(database, null, wal, settings, leaveOpen);
     }
@@ -147,8 +146,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithJournal(Stream database, Stream journal, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
-        if (journal == null)
-            throw new ArgumentNullException(nameof(journal));
+        ArgumentNullException.ThrowIfNull(journal);
 
         return FromStreams(database, journal, null, settings, leaveOpen);
     }
@@ -172,8 +170,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromPath(string path, Sqlite3Settings? settings = null)
     {
-        if (path == null)
-            throw new ArgumentNullException(nameof(path));
+        ArgumentNullException.ThrowIfNull(path);
 
         Stream? database = null, journal = null, wal = null;
         try
@@ -209,8 +206,7 @@ public sealed class Sqlite3Database : IDisposable
     /// </summary>
     private static Sqlite3Database FromStreams(Stream database, Stream? journal, Stream? wal, Sqlite3Settings? settings, bool leaveOpen)
     {
-        if (database == null)
-            throw new ArgumentNullException(nameof(database));
+        ArgumentNullException.ThrowIfNull(database);
 
         IFileView main;
         IFileView? journalView = null, walView = null;
