@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Linq;
 using CommandLine;
@@ -9,76 +10,71 @@ using MBW.Utilities.ManagedSqlite.Sql;
 
 namespace MBW.Utilities.ManagedSqlite.Reader;
 
-class CommandBase
+[Verb("describe", HelpText = "Dumps the schema of an Sqlite3 database file. A -wal or -journal file next to it is used.")]
+class DescribeCommand
 {
     [Value(0, Required = true, HelpText = "Database file")]
-    public string DatabaseFile { get; set; }
-}
+    public string DatabaseFile { get; set; } = null!;
 
-[Verb("describe", HelpText = "Dumps the schema of an Sqlite3 database file.")]
-class DescribeCommand : CommandBase
-{
-    [Option('s', "SizeStatistics", HelpText = "Calculate sizes of tables and indexes")]
+    [Option('s', "SizeStatistics", HelpText = "Calculate sizes of tables and indexes (not implemented)")]
     public bool DoSizeStatistics { get; set; }
-}
-
-[Verb("dump", HelpText = "Dumps the contents of an Sqlite3 database file.")]
-class DumpCommand : CommandBase
-{
-
 }
 
 class Program
 {
     static int Main(string[] args)
     {
-        return Parser.Default.ParseArguments<DescribeCommand, DumpCommand>(args)
+        return Parser.Default.ParseArguments(args, typeof(DescribeCommand))
             .MapResult(
                 (DescribeCommand opts) => RunDescribe(opts),
-                (DumpCommand opts) => RunDump(opts),
                 errs => 1);
     }
 
-    private static bool TryReadFile(string path, out Stream stream, out Sqlite3Database db, out List<Sqlite3SchemaRow> tables)
+    private static bool TryReadFile(string path, [NotNullWhen(true)] out Sqlite3Database? db, [NotNullWhen(true)] out List<Sqlite3SchemaRow>? tables)
     {
-        stream = null;
         db = null;
         tables = null;
 
         try
         {
-            stream = File.OpenRead(path);
-            db = Sqlite3Database.FromStreamWithNoJournal(stream);
+            db = Sqlite3Database.FromPath(path);
 
-            tables = db.GetTables().ToList();
+            tables = db.GetSchema().ToList();
         }
         catch (Exception e)
         {
-            Console.WriteLine(e.Message);
+            db?.Dispose();
+            db = null;
+
+            Console.Error.WriteLine(e.Message);
             return false;
         }
 
         return true;
     }
 
-    private static string InlineSql(string sql)
+    private static string InlineSql(string? sql)
     {
-        return sql.Replace("\r", "").Replace("\n", "").Replace("  ", "");
+        return (sql ?? "").Replace("\r", "").Replace("\n", "").Replace("  ", "");
     }
 
     private static int RunDescribe(DescribeCommand opts)
     {
-        if (!TryReadFile(opts.DatabaseFile, out Stream stream, out Sqlite3Database db,
-                out List<Sqlite3SchemaRow> tables))
+        if (!TryReadFile(opts.DatabaseFile, out Sqlite3Database? db, out List<Sqlite3SchemaRow>? tables))
             return 1;
 
-        Console.WriteLine($"Database: pagesize {db.Header.PageSize:N0}B, encoding {db.TextEncoding}");
-        Console.WriteLine($"          size {db.Header.DatabaseSizeInPages:N0} pages/{db.Header.DatabaseSizeInPages * db.Header.PageSize:N0}B - actual size: {stream.Length:N0}B");
+        Console.WriteLine($"Database: encoding {db.TextEncoding}, WAL mode {(db.IsWalMode ? "yes" : "no")}, size {new FileInfo(opts.DatabaseFile).Length:N0}B");
         Console.WriteLine();
+
+        if (opts.DoSizeStatistics)
+        {
+            Console.Error.WriteLine("Unable to do statistics: not implemented");
+            Console.Error.WriteLine();
+        }
 
         foreach (Sqlite3SchemaRow row in tables)
         {
-            if (row.Type != "table")
+            if (row.Kind is not (Sqlite3SchemaKind.Table or Sqlite3SchemaKind.VirtualTable))
                 continue;
 
             Console.WriteLine($"{row.Type} {row.Name}");
@@ -100,7 +96,7 @@ class Program
                 Console.WriteLine("  Error: Unable to parse SQL");
             }
 
-            List<Sqlite3SchemaRow> indexes = tables.Where(s => s.Type == "index" && s.TableName == row.TableName).ToList();
+            List<Sqlite3SchemaRow> indexes = tables.Where(s => s.Kind == Sqlite3SchemaKind.Index && s.TableName == row.TableName).ToList();
 
             Console.WriteLine($"  Indexes ({indexes.Count})");
             foreach (Sqlite3SchemaRow index in indexes)
@@ -109,57 +105,10 @@ class Program
                 Console.WriteLine($"      Schema: {InlineSql(index.Sql)}");
             }
 
-            if (!opts.DoSizeStatistics)
-            {
-                Console.WriteLine("Unable to do statistics");
-            }
-
             Console.WriteLine();
         }
 
+        db.Dispose();
         return 0;
     }
-
-    private static int RunDump(DumpCommand opts)
-    {
-        if (!TryReadFile(opts.DatabaseFile, out Stream stream, out Sqlite3Database db,
-                out List<Sqlite3SchemaRow> tables))
-            return 1;
-
-        throw new System.NotImplementedException();
-    }
-
-    //using (FileStream fs = File.OpenRead("BigBlobDb.db"))
-    //using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(fs))
-    //{
-    //    IEnumerable<Sqlite3SchemaRow> tables = db.GetTables();
-
-    //    foreach (Sqlite3SchemaRow table in tables)
-    //    {
-    //        Console.WriteLine($"{table.Type} \"{table.Name}\", [{table.TableName}] (RP: {table.RootPage}): {table.Sql}; ");
-
-    //        if (table.Type == "table")
-    //        {
-    //            Sqlite3Table tableData = db.GetTable(table.Name);
-
-    //            foreach (Sqlite3Row row in tableData.EnumerateRows())
-    //            {
-    //                Console.Write(row.RowId);
-
-    //                foreach (object obj in row.ColumnData)
-    //                {
-    //                    Console.Write(" | ");
-
-    //                    if (obj == null)
-    //                        Console.Write(" <null> ");
-    //                    else
-    //                        Console.Write(obj);
-    //                }
-
-    //                Console.WriteLine();
-    //            }
-    //        }
-    //    }
-    //}
-
 }

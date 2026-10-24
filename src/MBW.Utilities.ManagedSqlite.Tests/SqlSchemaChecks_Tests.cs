@@ -1,9 +1,9 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using MBW.Utilities.ManagedSqlite.Sql;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
+using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
@@ -46,6 +46,12 @@ public class SqlSchemaChecks_Tests
         using Sqlite3Database lenient = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) });
         Assert.Equal("b", lenient.GetTable("u").GetTableDefinition().Columns.Single().Name);
         Assert.Equal(new[] { check }, issues);
+        // A row that failed made nothing
+        Assert.All(lenient.GetSchema().Where(s => s.Error != null), failed =>
+        {
+            Assert.Equal(check, failed.Error.Check);
+            Assert.Equal(Sqlite3SchemaKind.None, failed.Kind);
+        });
     }
 
     private static void AssertAccepted(byte[] data)

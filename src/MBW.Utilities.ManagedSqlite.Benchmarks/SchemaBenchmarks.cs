@@ -3,7 +3,6 @@ using System.IO;
 using BenchmarkDotNet.Attributes;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
-using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
 
@@ -109,7 +108,7 @@ public class SchemaBenchmarks
     {
         int count = 0;
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(_image, false));
-        foreach (Sqlite3SchemaRow _ in db.GetTables())
+        foreach (Sqlite3SchemaRow _ in db.GetSchema())
             count++;
 
         return count;

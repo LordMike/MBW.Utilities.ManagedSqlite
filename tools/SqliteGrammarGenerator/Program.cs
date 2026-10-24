@@ -87,7 +87,7 @@ lines.Add(CsArray("ushort", "Default", Array("yy_default")));
 lines.Add(CsArray("ushort", "Fallback", Array("yyFallback")));
 lines.Add(CsArray("ushort", "RuleLhs", Array("yyRuleInfoLhs")));
 lines.Add(CsArray("sbyte", "RuleRhsCount", Array("yyRuleInfoNRhs")));
-lines.Add(CsStrings("RuleNames", Strings("yyRuleName")));
+lines.Add(CsRules(Strings("yyRuleName")));
 lines.Add(CsStrings("TokenNames", Strings("yyTokenName")));
 lines.Add("    /// <summary>");
 lines.Add("    /// The keywords and their token codes, as sqlite3KeywordCode in keywordhash.h finds them");
@@ -129,6 +129,30 @@ string CsArray(string type, string name, List<int> values)
     }
 
     return sb.Append("\n    };\n").ToString();
+}
+
+// The rules' numbers as constants, so the parser's reduce actions switch on the number: each named by its left-hand
+// side, "__", and its right-hand symbols joined by "_" ("|" as "_or_", and "empty" for none)
+string CsRules(List<string> rules)
+{
+    StringBuilder sb = new();
+    sb.Append("    /// <summary>\n");
+    sb.Append("    /// The rules' numbers (yyRuleName in parse.c), each named by its left-hand side, \"__\", and its right-hand\n");
+    sb.Append("    /// symbols joined by \"_\" (\"|\" as \"_or_\", and \"empty\" for none)\n");
+    sb.Append("    /// </summary>\n");
+    sb.Append("    public static class Rule\n    {\n");
+    HashSet<string> names = new();
+    for (int i = 0; i < rules.Count; i++)
+    {
+        string[] parts = rules[i].Split(" ::=");
+        string rhs = parts[1].Trim();
+        string name = parts[0] + "__" + (rhs.Length == 0 ? "empty" : string.Join("_", rhs.Split(' ').Select(s => s.Replace("|", "_or_"))));
+        if (!names.Add(name))
+            throw new InvalidOperationException($"two rules are named {name}");
+        sb.Append($"        public const int {name} = {i}; // {rules[i]}\n");
+    }
+
+    return sb.Append("    }\n").ToString();
 }
 
 string CsStrings(string name, List<string> values) =>

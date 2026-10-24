@@ -1,4 +1,5 @@
 using System.Diagnostics.CodeAnalysis;
+using System.Linq;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
 
@@ -56,6 +57,14 @@ INSERT INTO t (rowid, Value) VALUES (-9223372036854775808, 'min'), (-5, 'negativ
     [InlineData("local row, overflowing row, local row on one leaf", @"
 CREATE TABLE t (v);
 INSERT INTO t VALUES (1), (randomblob(5000)), (2);")]
+    // Values past the cell's local bytes are read from the overflow page. 512 byte pages keep all but 508 bytes of
+    // these payloads on the leaf, so for the shorter texts the integer, and for the longer ones the real, straddles
+    // the end of the local bytes.
+    [InlineData("values after the local bytes", @"
+PRAGMA page_size = 512;
+CREATE TABLE t (a BLOB, b INTEGER, c REAL, d TEXT);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 20)
+INSERT INTO t SELECT randomblob(100), 1234567890123 * x, x + 0.5, printf('%.*c', 490 + x, 'v') FROM seq;")]
     // An index b-tree, keys inserted out of order, with enough rows for interior pages, whose cells hold rows too
     [InlineData("WITHOUT ROWID 3000 rows, 3 levels", @"
 PRAGMA page_size = 512;
@@ -85,6 +94,16 @@ WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 200
 INSERT INTO t SELECT x, 'row ' || x FROM seq;
 DELETE FROM t WHERE Id % 2 = 0;")]
     public void BTreeShape(string name, string script) => SqliteParity.AssertSameAsSqlite(script);
+
+    /// <summary>
+    /// A record header longer than the cell's local bytes, which is read from the overflow page: 60 columns give a 62
+    /// byte header, and 512 byte pages keep 54 bytes of this 562 byte payload on the leaf page
+    /// </summary>
+    [Fact]
+    public void RecordHeaderOnOverflowPage() => SqliteParity.AssertSameAsSqlite($@"
+PRAGMA page_size = 512;
+CREATE TABLE t ({string.Join(", ", Enumerable.Range(0, 60).Select(i => $"c{i}"))});
+INSERT INTO t (c0, c59) VALUES (1, printf('%.*c', 500, 'v'));");
 
     [Theory]
     // sqlite_master no longer fits on page 1, so it becomes an interior page with a cell and a right-most pointer, each

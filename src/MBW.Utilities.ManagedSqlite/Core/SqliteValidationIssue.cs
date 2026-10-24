@@ -7,10 +7,14 @@ namespace MBW.Utilities.ManagedSqlite.Core;
 public sealed class SqliteValidationIssue
 {
     /// <summary>
-    /// The ID of the check, such as "HDR-14", from the SQLite check survey of issue #58
+    /// The ID of the check, such as "HDR-14", from the
+    /// <see href="https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md">SQLite check survey</see>
     /// </summary>
     public string Check { get; }
 
+    /// <summary>
+    /// What was wrong, in words
+    /// </summary>
     public string Message { get; }
 
     /// <summary>
@@ -31,5 +35,8 @@ public sealed class SqliteValidationIssue
         Structure = structure;
     }
 
+    /// <summary>
+    /// The check's ID and the message, as "HDR-14: ..."
+    /// </summary>
     public override string ToString() => $"{Check}: {Message}";
 }

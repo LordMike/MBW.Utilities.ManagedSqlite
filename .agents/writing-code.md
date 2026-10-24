@@ -15,7 +15,8 @@ running SQLite, not from intuition.
 - A file SQLite reads must read here with the same values. A file SQLite rejects must be rejected here, at the same point
   (database open, table open, or the row), unless the next section says otherwise.
 - Out of scope: writing, running SQL (including views), and indexes as a lookup structure. WAL and rollback journals are
-  added by separate work, against the check list in `docs/sqlite-checks/WALJ.md`.
+  read (`FromStreamWithWal`, `FromStreamWithJournal`, and `FromPath`, which picks up a `-wal` or `-journal` file next to
+  the database); their checks are listed in `docs/sqlite-checks/WALJ.md`.
 - Virtual tables are listed, but reading one throws `NotSupportedException`.
 - When behaviour is unclear, write a parity test first (see "Tests") and let SQLite decide.
 
@@ -39,8 +40,9 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
 
 - **Comment density follows the surrounding code.** Code that mirrors SQLite is the exception: it gets the plentiful
   comments described above.
-- **Construction:** prefer static factories (e.g. `ReaderBase.Open`) over public constructors. The WAL work replaces
-  `Sqlite3Database`'s public constructor with factories. Keep parsed state `readonly`.
+- **Construction:** prefer static factories (e.g. `ReaderBase.Open`) over public constructors. `Sqlite3Database` is
+  opened through `FromPath`, `FromStreamWithNoJournal`, `FromStreamWithWal` and `FromStreamWithJournal`; its constructor
+  is internal. Keep parsed state `readonly`.
 - **Nullable annotations:** the libraries are annotated. Where the compiler cannot see that a value is non-null, use
   `!` alone. Don't add a `Debug.Assert` next to it or custom guard helpers.
 - **Enum widths:** make enums as small as possible (`BTreeKind : byte`). An enum that mirrors an on-disk field keeps that
@@ -49,10 +51,12 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
   (such as interpolated string handlers) need their attributes polyfilled under `Internal/Compat/`, next to
   `NullableAttributes.cs`.
 - **Errors:** damaged files surface as `SqliteCorruptException`, raised through `Checks` (next section). Damage to the
-  tree (pages, cells, payloads, overflow chains) fails the row enumerator. A record is decoded lazily, as SQLite's
-  OP_Column does: damage in its header or values fails the accessor that reads that field (`TryGetOrdinal`,
-  `TryGetValueByName`, `ColumnData`), and only once the header is parsed that far. A caller bug (`null` argument, an
-  invalid `FallbackEncoding`) is not corruption and is never converted.
+  tree (pages, cells, a payload's size and local bytes) fails the row enumerator. A record is decoded lazily, as
+  SQLite's OP_Column does: damage in its header or values fails the accessor that reads that field (`TryGetOrdinal`,
+  `TryGetBlob`, the typed reads, `TryGetValueByName`, `ColumnData`), and only once the header is parsed that far. Overflow pages are
+  read the same way, only for the header or a value past the cell's local bytes, so damage to an overflow chain fails
+  the accessor that needs the page, as SQLite fails the column read. A caller bug (`null` argument, an invalid
+  `FallbackEncoding`) is not corruption and is never converted.
 - **Hot paths** (per page, per cell, per row) must not allocate on the success path. Verify that with a throwaway
   BenchmarkDotNet run and report the numbers in the PR; don't commit one-off benchmarks.
 
@@ -66,10 +70,11 @@ relaxes only the checks where the data that follows is still intact.
 
 1. **Find the SQLite code that does the same check.** The survey was made against SQLite 3.53.4. Look it up in the survey tables in `docs/sqlite-checks/` by area: HDR (file header),
    PAGE (b-tree pages), CELL (cells and overflow), REC (records), SCHEMA (sqlite_schema rows), DDL (CREATE statements),
-   INTEG (`integrity_check` only, mostly not for the read path), WALJ (WAL and journals).
+   INTEG (`integrity_check` only, not for the read path except INTEG-14), WALJ (WAL and journals).
 2. **If SQLite has no such check, don't add one.** That holds even when the data looks wrong; for example, SQLite reads
    reserved serial types 10 and 11 as NULL. Checks that SQLite runs only in `PRAGMA integrity_check`, `quick_check` or
-   with `cell_size_check=ON` don't belong on the read path either.
+   with `cell_size_check=ON` don't belong on the read path either. The one exception is INTEG-14 (rowids in order), a
+   Relaxable check that stops a b-tree whose pages share a subtree from being walked exponentially often.
 3. **Prove it against real SQLite.** Patch a database in the parity tests and confirm that SQLite (Microsoft.Data.Sqlite)
    fails, or reads on, at the same place.
 
@@ -123,13 +128,13 @@ PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= fi
 ```
 
 Rules:
-- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. The
-  exceptions are the entry-point wrappers that turn an unexpected exception into a `SqliteCorruptException` with an
-  inner exception.
+- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. Nothing
+  turns other exceptions into `SqliteCorruptException`: an `IndexOutOfRangeException` or similar from damaged bytes is a
+  missing check, so add one where SQLite makes it, rather than catching the exception.
 - **Pass the message as an interpolated string straight into the call.** The `CheckMessage` handler builds it only when
   the check fails, so a passing check allocates nothing. Don't build the message first.
 - **The check ID is the survey ID.** A check with no ID gets a new row in the right area table, with the next free
-  number, in the same PR (CELL-38 is an example: the reader's own bound on a payload's size, which it needs because it allocates the payload
+  number, in the same PR (CELL-38 is an example: the reader's own bound on a payload's size, which it needs because it allocates a value
   before SQLite would find the damage). An ID means one
   check: don't reuse SQLite's ID for a different bound.
 - **A Relaxable check that can fire repeatedly** (on every read of the same page) should report once; see HDR-17 in
@@ -137,8 +142,8 @@ Rules:
 - **Comment and link format:** follow "Citing SQLite source" above, and start the comment with the check ID.
 - **Schema checks fail at open.** Every sqlite_schema row is parsed when the database is opened, as SQLite loads it, so
   Strict fails the open; Lenient reports the error and keeps it on the row, which then cannot be opened.
-- **Structural damage fails the enumerator; a bad value fails only its cell.** Pages, cells, overflow and record headers
-  belong to the first group. Invalid text belongs to the second.
+- **Damage to the tree fails the enumerator; damage to a record fails only the reads that reach it.** Pages and cells
+  belong to the first group. Record headers, values and overflow chains belong to the second.
 
 ### Test it
 
@@ -160,7 +165,7 @@ Each check gets parity tests in the corruption suite (`Tests/Corruption_Tests.cs
 - [ ] SQLite does this check on the read path (cited by pinned link and function)
 - [ ] Strict vs Relaxable chosen by the table above, and the Lenient fallback cannot produce wrong values
 - [ ] The comment has the ID, the quoted condition and the link
-- [ ] The ID is listed in `docs/sqlite-checks/README.md` (the survey tables' *Ours* column is a snapshot from before #58)
+- [ ] The ID is listed in `docs/sqlite-checks/README.md` (the survey tables' *Ours* column is not kept current)
 - [ ] Parity tests for Strict, and for Lenient if Relaxable
 
 
@@ -177,7 +182,10 @@ Each check gets parity tests in the corruption suite (`Tests/Corruption_Tests.cs
   `writable_schema` edit asserts how many rows it changed (`SqliteParity.Build(script, edit, rows)`).
 - **Tests in one file look alike.** Each theory fixes the statement shape (e.g.
   `CREATE TABLE t ({columns}) WITHOUT ROWID; INSERT INTO t VALUES {values}`), and its `[InlineData]` rows give only what
-  varies. All CREATE syntax lives in `Tests/SqlCreateTable_Tests.cs`.
+  varies. CREATE TABLE syntax that SQLite accepts lives in `Tests/SqlCreateTable_Tests.cs`; the checks SQLite makes
+  on a CREATE TABLE in `Tests/SqlCreateTableChecks_Tests.cs`, and those on the schema as a whole in
+  `Tests/SqlSchemaChecks_Tests.cs`; whole schemas taken from real applications in
+  `Tests/SqlRealWorldSchemas_Tests.cs`.
 - **A test must add a new syntax or code path.** Don't add rows like "N columns" unless something special happens at N.
 - **One API path per assertion.** Don't test `TryGetX` and `GetX` for the same lookup; keep `Try*` only where its false
   result is the behaviour under test.
