@@ -338,8 +338,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     private Sqlite3SchemaRow? FindTable(string name)
     {
-        if (name == null)
-            throw new ArgumentNullException(nameof(name));
+        ArgumentNullException.ThrowIfNull(name);
 
         // Names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c), so tables named
         // "é" and "É" are two tables
