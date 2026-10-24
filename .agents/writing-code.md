@@ -162,7 +162,7 @@ Each check gets parity tests in the corruption suite (`Tests/Corruption_Tests.cs
 - [ ] SQLite does this check on the read path (cited by pinned link and function)
 - [ ] Strict vs Relaxable chosen by the table above, and the Lenient fallback cannot produce wrong values
 - [ ] The comment has the ID, the quoted condition and the link
-- [ ] The ID is listed in `docs/sqlite-checks/README.md` (the survey tables' *Ours* column is a snapshot from before #58)
+- [ ] The ID is listed in `docs/sqlite-checks/README.md` (the survey tables' *Ours* column is not kept current)
 - [ ] Parity tests for Strict, and for Lenient if Relaxable
 
 

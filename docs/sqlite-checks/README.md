@@ -15,18 +15,18 @@ a stable ID (such as `PAGE-21`) that the code, its comments, `SqliteCorruptExcep
 | INTEG | [INTEG.md](INTEG.md) | Checks only `PRAGMA integrity_check` makes, which do not belong on the read path |
 | WALJ | [WALJ.md](WALJ.md) | WAL and rollback journal checks, for the WAL and journal work |
 
-The tables were written against SQLite 3.53.4 and this repository at debcfb3, so their *Ours* column and the file and
-line references in it describe the reader before #58; the tables below list what changed since. The *Open gaps*
-section at the end of HDR.md, PAGE.md, CELL.md, REC.md, SCHEMA.md and DDL.md lists what still differs from SQLite. The links into SQLite are pinned to the `version-3.53.4` tag so
-their line numbers stay valid.
+The area tables list SQLite 3.53.4's checks. Their *Ours* column is not kept current: the tables below say what the
+reader does for each check, and the *Open gaps* section at the end of HDR.md, PAGE.md, CELL.md, REC.md, SCHEMA.md and
+DDL.md lists what differs from SQLite. The links into SQLite are pinned to the `version-3.53.4` tag so their line
+numbers stay valid.
 
-## Implemented in #58
+## What the reader does
 
 The code for each of these carries its ID in a comment.
 
 | Checks | What the reader does |
 |---|---|
-| HDR-02, HDR-03, HDR-09, HDR-11, PAGE-14, PAGE-15 | Strict, as before, now raised through `Checks` with their IDs |
+| HDR-02, HDR-03, HDR-09, HDR-11, PAGE-14, PAGE-15 | Strict, raised through `Checks` with their IDs |
 | HDR-05, HDR-08, HDR-14, HDR-24, SCHEMA-02 | Relaxable: Strict fails as SQLite does, Lenient reports and reads on |
 | HDR-01, PAGE-17 | A 0-byte file is an empty database |
 | HDR-17 | A partial last page: Strict fails reading it (stricter than SQLite), Lenient reads the missing bytes as zeros, as SQLite does |
