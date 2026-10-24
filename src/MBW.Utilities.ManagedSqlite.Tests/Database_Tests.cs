@@ -223,17 +223,17 @@ WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v + 1 FROM n WHERE v < 1000) I
         using (Sqlite3Database single = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
             expected = tables.ToDictionary(name => name, name => single.GetTable(name).EnumerateRows().Select(row => row.ColumnData).ToList());
 
-        string path = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString("N") + ".db");
-        File.WriteAllBytes(path, data);
-        try
+        if (!fromFile)
         {
-            using Sqlite3Database db = fromFile ? Sqlite3Database.FromPath(path) : Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
             ReadInParallel(db, tables, expected);
+            return;
         }
-        finally
-        {
-            File.Delete(path);
-        }
+
+        using SqliteParity.SnapshotDirectory snapshot = new SqliteParity.SnapshotDirectory();
+        File.WriteAllBytes(snapshot.Database, data);
+        using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database))
+            ReadInParallel(db, tables, expected);
     }
 
     private static void ReadInParallel(Sqlite3Database db, string[] tables, Dictionary<string, List<IReadOnlyList<object>>> expected)
