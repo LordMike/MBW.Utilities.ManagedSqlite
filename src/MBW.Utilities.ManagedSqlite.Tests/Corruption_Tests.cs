@@ -758,22 +758,60 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
 
     // CELL-13: the chain ends while payload remains, at the cell's first overflow pointer or at an intermediate
-    // overflow page's next pointer
+    // overflow page's next pointer. As in SQLite, only a read that needs the missing pages fails: every row is
+    // enumerated, and row 2's Name, in the cell's local bytes, still reads.
     [Theory]
     [InlineData("first pointer")]
     [InlineData("next pointer")]
-    public void Overflow_ChainEndsEarly(string pointer) => AssertCorrupt("overflow chain", p =>
+    public void Overflow_ChainEndsEarly(string pointer)
     {
+        DbPatcher p = new DbPatcher(Base);
         if (pointer == "first pointer")
         {
             p.SetOverflowPointer(SmallRoot, 1, 0);
-            return;
+        }
+        else
+        {
+            List<uint> chain = p.GetOverflowChain(SmallRoot, 1);
+            Assert.True(chain.Count >= 2);
+            p.SetOverflowNextPointer(chain[0], 0);
         }
 
-        List<uint> chain = p.GetOverflowChain(SmallRoot, 1);
-        Assert.True(chain.Count >= 2);
-        p.SetOverflowNextPointer(chain[0], 0);
-    }, "CELL-13");
+        SqliteParity.AssertSqliteReportsCorrupt(p.Data, "Small");
+        SqliteParity.AssertSqliteReads(p.Data, "Small", "Id, Name");
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(p.Data));
+        List<Sqlite3Row> rows = db.GetTable("Small").EnumerateRows().ToList();
+        Assert.True(rows[1].TryGetOrdinal(1, out string name));
+        Assert.Equal("two", name);
+
+        SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => rows[1].TryGetOrdinal(2, out _));
+        Assert.Equal("CELL-13", ex.Check);
+        Assert.Equal("overflow chain", ex.Structure);
+    }
+
+    // A record header that ends a few bytes before the end of the cell's local bytes is read from those bytes alone, so
+    // a broken first overflow pointer fails only the overflowing value, as in SQLite. 34 columns give a 36 byte header,
+    // and 512 byte pages keep 39 bytes of this payload on the leaf page.
+    [Fact]
+    public void Overflow_ChainEndsEarly_LocalHeaderStillReads()
+    {
+        DbPatcher p = new DbPatcher(SqliteParity.Build($@"
+PRAGMA page_size = 512;
+CREATE TABLE t ({string.Join(", ", Enumerable.Range(0, 34).Select(i => $"c{i}"))});
+INSERT INTO t (c0, c33) VALUES (1, printf('%.*c', 500, 'v'));"));
+        p.SetOverflowPointer(2, 0, 0);
+
+        SqliteParity.AssertSqliteReads(p.Data, "t", "c0");
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(p.Data));
+        Sqlite3Row row = db.GetTable("t").EnumerateRows().Single();
+        Assert.True(row.TryGetOrdinal(0, out long value));
+        Assert.Equal(1L, value);
+
+        SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => row.TryGetOrdinal(33, out string _));
+        Assert.Equal("CELL-13", ex.Check);
+    }
 
     // CELL-16: SQLite never follows the last overflow page's next pointer, so a bad one reads on
     [Fact]
