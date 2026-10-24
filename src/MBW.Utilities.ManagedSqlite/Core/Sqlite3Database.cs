@@ -13,6 +13,11 @@ using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
+/// <summary>
+/// A SQLite 3 database, opened for reading with <see cref="FromPath"/> or one of the <c>FromStream</c> methods. Its
+/// tables are found with <see cref="GetTable"/>, <see cref="TryGetTable"/> and <see cref="GetTables"/>. Dispose it to
+/// close its files.
+/// </summary>
 public sealed class Sqlite3Database : IDisposable
 {
     private readonly ReaderBase _reader;
@@ -23,6 +28,10 @@ public sealed class Sqlite3Database : IDisposable
 
     internal DatabaseHeader Header => _reader.Header;
 
+    /// <summary>
+    /// The encoding that text values are read with: the header's text encoding field, read as SQLite reads it (the low
+    /// two bits, where 0 means UTF-8), or <see cref="Sqlite3Settings.FallbackEncoding"/> when the field is 0
+    /// </summary>
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
     internal Sqlite3Settings Settings => _reader.Settings;
@@ -376,6 +385,12 @@ public sealed class Sqlite3Database : IDisposable
         return new Sqlite3Table(_reader, root, tbl);
     }
 
+    /// <summary>
+    /// Every row of the schema table, <c>sqlite_master</c>, in the order it is stored. Despite the name, that is not
+    /// only tables: indexes, views and triggers have rows too, see <see cref="Sqlite3SchemaRow.Type"/>. The schema
+    /// table's own row is not among them. The rows are read once, when the database is opened. In
+    /// <see cref="SqliteValidation.Lenient"/>, a row that failed to load is included, and its table cannot be opened.
+    /// </summary>
     public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
 
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
@@ -387,6 +402,10 @@ public sealed class Sqlite3Database : IDisposable
         return (T)val;
     }
 
+    /// <summary>
+    /// Disposes the database's files: the streams it was opened from, unless they were passed with
+    /// <c>leaveOpen</c>, or the files <see cref="FromPath"/> opened. Its tables must not be read afterwards.
+    /// </summary>
     public void Dispose()
     {
         _reader.Dispose();
