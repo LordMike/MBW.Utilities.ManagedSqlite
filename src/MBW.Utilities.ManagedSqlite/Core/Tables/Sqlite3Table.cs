@@ -8,6 +8,11 @@ using MBW.Utilities.ManagedSqlite.Core.Objects;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
+/// <summary>
+/// A table of the database, opened with <see cref="Sqlite3Database.GetTable"/> or
+/// <see cref="Sqlite3Database.TryGetTable"/>. Its rows are read with <see cref="EnumerateRows()"/>, and its columns with
+/// <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/>.
+/// </summary>
 public sealed class Sqlite3Table
 {
     private readonly ReaderBase _reader;
@@ -15,20 +20,22 @@ public sealed class Sqlite3Table
     internal ReaderBase Reader => _reader;
 
     /// <summary>
-    /// The table's definition, kept once <see cref="Sql.SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
+    /// The table's definition, kept once <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
     /// without error, so reading values by name does not look it up for each value
     /// </summary>
     internal Sql.SqlTableDefinition? SqlDefinition { get; set; }
 
     private BTreePage? _rootPage;
 
+    /// <summary>
+    /// The table's row in the schema table, <c>sqlite_master</c>
+    /// </summary>
     public Sqlite3SchemaRow SchemaDefinition { get; }
 
     /// <summary>
     /// True when the table's root page is an index b-tree page, which is how SQLite stores a WITHOUT ROWID table. A
-    /// rowid table's root page is a table b-tree page. This comes from the root page alone, without parsing the
-    /// schema SQL, so it can't tell when the two disagree, which SQLite reports as corrupt. GetTableDefinition checks
-    /// that when it pairs a table with its definition.
+    /// rowid table's root page is a table b-tree page. A root page that disagrees with the schema SQL is reported as
+    /// corrupt when the table is opened, as SQLite does when it reads the table.
     /// </summary>
     public bool IsWithoutRowId { get; }
 
@@ -58,54 +65,96 @@ public sealed class Sqlite3Table
     /// that is the primary key columns first, then the others, see <see cref="Sqlite3Row"/>.
     /// </summary>
     /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
-    public IEnumerable<Sqlite3Row> EnumerateRows()
-    {
-        using IEnumerator<Sqlite3Row> rows = EnumerateRowsInternal().GetEnumerator();
+    public IEnumerable<Sqlite3Row> EnumerateRows() => EnumerateRows(false);
 
-        while (true)
-        {
-            try
-            {
-                if (!rows.MoveNext())
-                    yield break;
-            }
-            catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
-            {
-                throw new SqliteCorruptException($"unable to read the rows of table {SchemaDefinition.Name}", structure: "table b-tree", innerException: e);
-            }
-
-            yield return rows.Current;
-        }
-    }
-
-    private IEnumerable<Sqlite3Row> EnumerateRowsInternal()
+    /// <summary>
+    /// Enumerates the table's rows as <see cref="EnumerateRows()"/> does. With <paramref name="shareRowBuffers"/>, the
+    /// rows share one field table, which saves an allocation per row.
+    /// </summary>
+    /// <param name="shareRowBuffers">
+    /// True to share one field table among all the rows of this enumeration. This is only safe when each row is read
+    /// inside the loop that enumerates it, and is not kept or read after the enumeration moves to the next row.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// A row finds its values through a table of the record's fields, which it builds on its first read. Normally each
+    /// row allocates its own: at least 8 bytes for each column (16 for a long TEXT or BLOB), about 100 bytes per row
+    /// for a 10 column table. With <paramref name="shareRowBuffers"/> the rows of one enumeration take turns with a
+    /// single table, which each new row takes over. The table grows to the widest record, and lives as long as the
+    /// enumeration, or any row that read a field from it.
+    /// </para>
+    /// <para>
+    /// The cost is that a row is only readable while it is the latest one. Once the enumeration moves on, every read of
+    /// an earlier row (<see cref="Sqlite3Row.TryGetOrdinal(ushort, out object?)"/>, the typed reads,
+    /// <see cref="Sqlite3Row.ColumnData"/>) throws <see cref="InvalidOperationException"/>. Its values are not read
+    /// from the wrong row. Don't collect these rows in a list, and don't keep them past the loop body, for example with
+    /// <c>ToList()</c>, <c>OrderBy()</c> or a <c>yield return</c>. To keep a row's values, read
+    /// <see cref="Sqlite3Row.ColumnData"/> inside the loop: a row that has read it keeps its own values, and stays
+    /// readable.
+    /// </para>
+    /// <para>
+    /// This pays off most with the typed reads (<see cref="Sqlite3Row.TryGetInt64"/>,
+    /// <see cref="Sqlite3Row.TryGetDouble"/>, <see cref="Sqlite3Row.TryGetString"/>), which box nothing, so the field
+    /// table is then a large part of what a row allocates.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
+    public IEnumerable<Sqlite3Row> EnumerateRows(bool shareRowBuffers)
     {
         // A WITHOUT ROWID table is stored in an index b-tree
-        return IsWithoutRowId ? EnumerateWithoutRowIdRows() : EnumerateRowIdRows();
+        return IsWithoutRowId ? EnumerateWithoutRowIdRows(shareRowBuffers) : EnumerateRowIdRows(shareRowBuffers);
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateRowIdRows()
+    private IEnumerable<Sqlite3Row> EnumerateRowIdRows(bool shareRowBuffers)
     {
+        // Created inside the iterator, so each enumeration has its own field table
+        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+
+        bool first = true;
+        long previous = 0;
+
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
             for (int i = 0; i < leaf.CellCount; i++)
             {
                 BTreePage.PayloadCell cell = leaf.GetCell(i, out long rowId);
 
-                yield return new Sqlite3Row(this, rowId, ReadRecord(leaf, rowId, cell));
+                // INTEG-14: a scan yields rowids in strictly increasing order. SQLite checks this only in integrity_check,
+                // checkTreePage in btree.c:
+                //   if( keyCanBeEqual ? (info.nKey > maxKey) : (info.nKey >= maxKey) ){
+                //     checkAppendMsg(pCheck, "Rowid %lld out of order", info.nKey);
+                // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L10985 (checkTreePage)
+                // A plain read in SQLite returns the rows as they lie. Here a repeated or decreasing rowid fails Strict,
+                // which also stops a b-tree whose pages share a subtree at its first repeated row; a scan would otherwise
+                // walk that subtree once per pointer to it, exponentially often within 20 levels. Lenient reports each
+                // repetition and returns the rows as SQLite does, so it walks such a tree as long as SQLite would.
+                Checks.Relaxable(first || rowId > previous, _reader.Settings, "INTEG-14",
+                    $"rowid {rowId} follows rowid {previous}, so the table's rows are out of order", leaf.Page, "table b-tree");
+                first = false;
+                previous = rowId;
+
+                yield return new Sqlite3Row(this, rowId, ReadRecord(leaf, rowId, cell, shared));
             }
         }
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows()
+    private static Sqlite3Record NewRecord(uint page, ArraySegment<byte> payload, Sqlite3Record.SharedFields? shared)
     {
+        return shared == null ? new Sqlite3Record(page, payload) : new Sqlite3Record(page, payload, shared);
+    }
+
+    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(bool shareRowBuffers)
+    {
+        // Created inside the iterator, so each enumeration has its own field table
+        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)RootPage))
         {
             BTreeIndexPage page = entry.Key;
             BTreePage.PayloadCell cell = page.GetCell(entry.Value);
 
             // There is no rowid
-            yield return new Sqlite3Row(this, 0, ReadRecord(page, null, cell));
+            yield return new Sqlite3Row(this, 0, ReadRecord(page, null, cell, shared));
         }
     }
 
@@ -120,7 +169,7 @@ public sealed class Sqlite3Table
     /// reads the overflow pages only for a value, or a header, that lies past the local bytes, as SQLite does.
     /// <paramref name="rowId"/> names the row in error messages, and is null in a WITHOUT ROWID table.
     /// </summary>
-    private Sqlite3Record ReadRecord(BTreePage page, long? rowId, BTreePage.PayloadCell cell)
+    private Sqlite3Record ReadRecord(BTreePage page, long? rowId, BTreePage.PayloadCell cell, Sqlite3Record.SharedFields? shared)
     {
         string structure = page is BTreeIndexPage { IsLeaf: false } ? "b-tree interior cell" : "b-tree leaf cell";
         long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
@@ -159,13 +208,13 @@ public sealed class Sqlite3Table
         // the array, right after its 0 bytes.
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3048 (OP_Column)
         if (payloadSize == 0)
-            return new Sqlite3Record(page.Page, cell.PayloadOffset < _reader.PageSize
+            return NewRecord(page.Page, cell.PayloadOffset < _reader.PageSize
                 ? new ArraySegment<byte>(page.Data, (int)cell.PayloadOffset, 0)
-                : new ArraySegment<byte>(EmptyRecord, 0, 0));
+                : new ArraySegment<byte>(EmptyRecord, 0, 0), shared);
 
         // All data is on this page, which the check above keeps inside it
         if (!overflows)
-            return new Sqlite3Record(page.Page, new ArraySegment<byte>(page.Data, (int)cell.PayloadOffset, payloadSize));
+            return NewRecord(page.Page, new ArraySegment<byte>(page.Data, (int)cell.PayloadOffset, payloadSize), shared);
 
         // The first overflow page's number follows the local bytes. accessPayload reads it with get4byte, past the
         // usable size when the reserved space is under 4 bytes, so only the page end limits it.
@@ -174,8 +223,10 @@ public sealed class Sqlite3Table
         int pointerPos = (int)localEnd;
         uint overflowPage = ByteArrayReader.ReadUInt32(page.Data, (int)_reader.PageSize, ref pointerPos);
 
-        return new Sqlite3Record(page.Page, new ArraySegment<byte>(page.Data, (int)cell.PayloadOffset, (int)cell.DataSizeInCell),
-            payloadSize, overflowPage);
+        ArraySegment<byte> local = new ArraySegment<byte>(page.Data, (int)cell.PayloadOffset, (int)cell.DataSizeInCell);
+        return shared == null
+            ? new Sqlite3Record(page.Page, local, payloadSize, overflowPage)
+            : new Sqlite3Record(page.Page, local, payloadSize, overflowPage, shared);
     }
 
     private static string RowName(long? rowId) => rowId.HasValue ? $"row {rowId.Value}" : "a WITHOUT ROWID row";
