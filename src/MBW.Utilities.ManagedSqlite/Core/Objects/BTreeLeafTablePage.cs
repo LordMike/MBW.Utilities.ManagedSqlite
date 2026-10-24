@@ -22,8 +22,18 @@ internal class BTreeLeafTablePage : BTreePage
         int start = GetCellOffset(index);
         int pos = start;
 
-        uint bytes = ReadPayloadSize(data, ref pos, start);
-        rowId = ReadCellVarInt(data, ref pos, start);
+        uint bytes;
+        if (start <= (int)Reader.PageSize - MaxCellHeaderSize)
+        {
+            // Both varints are on the page, so the checks of the reads below cannot fail
+            bytes = ReadPayloadSizeInPage(data, ref pos);
+            rowId = ReadCellVarIntInPage(data, ref pos);
+        }
+        else
+        {
+            bytes = ReadPayloadSize(data, ref pos, start);
+            rowId = ReadCellVarInt(data, ref pos, start);
+        }
 
         return new PayloadCell
         {
