@@ -9,7 +9,7 @@ internal sealed class DatabaseHeader
 {
     public const int HeaderSize = 100;
 
-    private static readonly byte[] _expectedHeader = {
+    private static readonly byte[] ExpectedHeader = {
         (byte) 'S', (byte) 'Q', (byte) 'L', (byte) 'i', (byte) 't', (byte) 'e', (byte) ' ', (byte) 'f',
         (byte) 'o',(byte) 'r', (byte) 'm', (byte) 'a', (byte) 't', (byte) ' ', (byte) '3', 0
     };
@@ -18,8 +18,6 @@ internal sealed class DatabaseHeader
     /// The database page size in bytes (512 to 65536)
     /// </summary>
     public uint PageSize { get; }
-
-    public FileWriteVersion WriteVersion { get; }
 
     public FileReadVersion ReadVersion { get; }
 
@@ -35,29 +33,11 @@ internal sealed class DatabaseHeader
 
     public uint DatabaseSizeInPages { get; }
 
-    public uint FirstFreelistTrunkPage { get; }
-
-    public uint FreeListPages { get; }
-
-    public uint SchemaCookie { get; }
-
     public uint SchemaFormat { get; }
-
-    public uint DefaultPageCacheSize { get; }
-
-    public uint Value7 { get; }
 
     public SqliteEncoding TextEncoding { get; }
 
-    public uint UserVersion { get; }
-
-    public uint IncrementalVacuumMode { get; }
-
-    public uint ApplicationId { get; }
-
     public uint VersionValidFor { get; }
-
-    public uint Version { get; }
 
     /// <summary>
     /// Parses the first <see cref="HeaderSize"/> bytes of the database file. <paramref name="length"/> is how many
@@ -76,15 +56,15 @@ internal sealed class DatabaseHeader
         //   if( memcmp(page1, zMagicHeader, 16)!=0 ){ goto page1_init_failed; }
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3314
         Checks.Strict(HasMagic(data), "HDR-03",
-            $"the magic bytes {data.Take(_expectedHeader.Length).ToArray().ToHex()} did not match {_expectedHeader.ToHex()}",
+            $"the magic bytes {data.Take(ExpectedHeader.Length).ToArray().ToHex()} did not match {ExpectedHeader.ToHex()}",
             structure: "magic bytes");
 
-        int pos = _expectedHeader.Length;
+        int pos = ExpectedHeader.Length;
 
         // The page size is stored as a big-endian 2-byte value, where 1 means 65536
         ushort rawPageSize = ByteArrayReader.ReadUInt16(data, length, ref pos);
         PageSize = rawPageSize == 1 ? 65536u : rawPageSize;
-        WriteVersion = (FileWriteVersion)ByteArrayReader.ReadByte(data, length, ref pos);
+        pos += 1; // write version
         ReadVersion = (FileReadVersion)ByteArrayReader.ReadByte(data, length, ref pos);
         ReservedSpaceAtEndOfPage = ByteArrayReader.ReadByte(data, length, ref pos);
         MaximumEmbeddedPayloadFraction = ByteArrayReader.ReadByte(data, length, ref pos);
@@ -93,23 +73,13 @@ internal sealed class DatabaseHeader
         ChangeCounter = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
         DatabaseSizeInPages = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        FirstFreelistTrunkPage = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        FreeListPages = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        SchemaCookie = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        pos += 12; // first freelist trunk page, freelist page count, schema cookie
         SchemaFormat = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        DefaultPageCacheSize = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        Value7 = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        pos += 8; // default page cache size, largest root b-tree page (auto-vacuum)
         TextEncoding = (SqliteEncoding)ByteArrayReader.ReadUInt32(data, length, ref pos);
-        UserVersion = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        IncrementalVacuumMode = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        ApplicationId = ByteArrayReader.ReadUInt32(data, length, ref pos);
-
-        pos += 20;
+        pos += 32; // user version, incremental vacuum mode, application id, 20 reserved bytes
 
         VersionValidFor = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        Version = ByteArrayReader.ReadUInt32(data, length, ref pos);
-
-        // TODO: Warn/err on mismatch with expected values
 
         Validate(settings);
     }
@@ -158,9 +128,9 @@ internal sealed class DatabaseHeader
 
     private static bool HasMagic(byte[] data)
     {
-        for (int i = 0; i < _expectedHeader.Length; i++)
+        for (int i = 0; i < ExpectedHeader.Length; i++)
         {
-            if (data[i] != _expectedHeader[i])
+            if (data[i] != ExpectedHeader[i])
                 return false;
         }
 

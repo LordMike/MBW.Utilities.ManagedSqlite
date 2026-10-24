@@ -89,7 +89,7 @@ internal static class SqliteParity
 
     private static string DumpWithLibrary(Sqlite3Database db)
     {
-        List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
+        List<Sqlite3SchemaRow> schema = db.GetSchema().ToList();
         return Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
             schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
             schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
@@ -243,13 +243,29 @@ internal static class SqliteParity
     }
 
     /// <summary>
-    /// Asserts that real SQLite loads the schema of the database file <paramref name="data"/> and reads the rows of
-    /// <paramref name="table"/>
+    /// The first value of the first row <paramref name="sql"/> returns from the database file <paramref name="data"/>,
+    /// as real SQLite reads it as <typeparamref name="T"/> (Microsoft.Data.Sqlite's GetFieldValue, over
+    /// sqlite3_column_int64 and sqlite3_column_double), and NULL as <c>default</c>
     /// </summary>
-    public static void AssertSqliteReads(byte[] data, string table)
+    public static T ReadFirstValueWithSqlite<T>(byte[] data, string sql)
     {
         using SqliteConnection connection = Open(data);
-        Query(connection, $"SELECT * FROM {Name(table)}");
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        using SqliteDataReader reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        return reader.IsDBNull(0) ? default : reader.GetFieldValue<T>(0);
+    }
+
+    /// <summary>
+    /// Asserts that real SQLite loads the schema of the database file <paramref name="data"/> and reads the rows of
+    /// <paramref name="table"/>, or only their <paramref name="columns"/>
+    /// </summary>
+    public static void AssertSqliteReads(byte[] data, string table, string columns = "*")
+    {
+        using SqliteConnection connection = Open(data);
+        Query(connection, $"SELECT {columns} FROM {Name(table)}");
     }
 
     /// <summary>
@@ -260,6 +276,35 @@ internal static class SqliteParity
     {
         using SqliteConnection connection = Open(data);
         Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM {Name(table)}"));
+    }
+
+    /// <summary>
+    /// Asserts that the schema objects SQLite loads from the database file <paramref name="data"/> are those whose rows
+    /// this library gives a <see cref="Sqlite3SchemaRow.Kind"/>, by name and kind, and its tables those
+    /// <see cref="Sqlite3Database.GetTables"/> lists. SQLite knows tables, virtual tables and views by
+    /// <c>PRAGMA table_list</c> (a shadow table is a table), indexes by <c>PRAGMA index_list</c>, and triggers by their
+    /// sqlite_schema rows, which it rejects when it cannot load them.
+    /// </summary>
+    public static void AssertSchemaKindsSameAsSqlite(byte[] data)
+    {
+        using SqliteConnection connection = Open(data);
+        List<string> objects = Query(connection, @"
+SELECT name, CASE type WHEN 'virtual' THEN 'VirtualTable' WHEN 'view' THEN 'View' ELSE 'Table' END FROM pragma_table_list
+WHERE schema = 'main' AND name <> 'sqlite_schema'
+UNION
+SELECT il.name, 'Index' FROM pragma_table_list tl, pragma_index_list(tl.name) il
+WHERE tl.schema = 'main' AND tl.type IN ('table', 'shadow') AND NOT (tl.wr AND il.origin = 'pk')
+UNION
+SELECT name, 'Trigger' FROM sqlite_schema WHERE type = 'trigger'").Select(o => $"{o[1]} {o[0]}").ToList();
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+        List<string> actual = db.GetSchema().Where(s => s.Kind != Sqlite3SchemaKind.None).Select(s => $"{s.Kind} {s.Name}").ToList();
+
+        Assert.Equal(Sorted(objects), Sorted(actual));
+        Assert.Equal(Sorted(objects.Where(o => o.StartsWith("Table ") || o.StartsWith("VirtualTable "))),
+            Sorted(db.GetTables().Select(s => $"{s.Kind} {s.Name}")));
+
+        static string Sorted(IEnumerable<string> lines) => string.Join("\n", lines.OrderBy(s => s, StringComparer.Ordinal));
     }
 
     /// <summary>
@@ -407,20 +452,32 @@ internal static class SqliteParity
             .Select(row =>
             {
                 object[] values = stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray();
-                AssertBlobsSameAsValues(row, stored, definition.RowIdColumn?.Name);
+                AssertTypedReadsSameAsValues(row, stored, definition.RowIdColumn?.Name);
                 return (row.HasRowId ? row.RowId : (long?)null, values);
             })
             .ToList();
+
+        // Rows that share one field table read the same values, when each is read inside the loop
+        int index = 0;
+        foreach (Sqlite3Row row in table.EnumerateRows(shareRowBuffers: true))
+        {
+            Assert.True(index < rows.Count, "the rows that share a field table outnumber the others");
+            Assert.Equal(rows[index++].Item2, stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray());
+            AssertTypedReadsSameAsValues(row, stored, definition.RowIdColumn?.Name);
+        }
+        Assert.Equal(rows.Count, index);
 
         return new Table(name, definition.RowIdColumn?.Name, columns, rows);
     }
 
     /// <summary>
-    /// <see cref="Sqlite3Row.TryGetBlob"/> returns the bytes <see cref="Sqlite3Row.TryGetOrdinal(ushort, out object)"/>
-    /// returns for each BLOB field of the <paramref name="stored"/> columns, and false for every other field. The rowid
+    /// The typed reads (<see cref="Sqlite3Row.TryGetInt64"/>, <see cref="Sqlite3Row.TryGetDouble"/>,
+    /// <see cref="Sqlite3Row.TryGetString"/> and <see cref="Sqlite3Row.TryGetBlob"/>) return what
+    /// <see cref="Sqlite3Row.TryGetOrdinal(ushort, out object)"/> returns for each field of the <paramref name="stored"/>
+    /// columns that holds their type, and false for every other field. TryGetDouble also reads INTEGERs. The rowid
     /// alias is skipped: it reads the rowid, so its field is never decoded, as in SQLite.
     /// </summary>
-    private static void AssertBlobsSameAsValues(Sqlite3Row row, List<string> stored, string rowIdAlias)
+    private static void AssertTypedReadsSameAsValues(Sqlite3Row row, List<string> stored, string rowIdAlias)
     {
         for (ushort i = 0; i < stored.Count; i++)
         {
@@ -428,9 +485,21 @@ internal static class SqliteParity
                 continue;
 
             bool exists = row.TryGetOrdinal(i, out object value);
-            bool isBlob = row.TryGetBlob(i, out ReadOnlyMemory<byte> blob);
-            Assert.Equal(exists && value is byte[], isBlob);
-            if (isBlob)
+
+            Assert.Equal(exists && value is long, row.TryGetInt64(i, out long integer));
+            if (value is long)
+                Assert.Equal((long)value, integer);
+
+            Assert.Equal(exists && value is double or long, row.TryGetDouble(i, out double real));
+            if (value is double or long)
+                Assert.Equal(Convert.ToDouble(value), real);
+
+            Assert.Equal(exists && value is string, row.TryGetString(i, out string text));
+            if (value is string)
+                Assert.Equal((string)value, text);
+
+            Assert.Equal(exists && value is byte[], row.TryGetBlob(i, out ReadOnlyMemory<byte> blob));
+            if (value is byte[])
                 Assert.Equal((byte[])value, blob.ToArray());
         }
     }

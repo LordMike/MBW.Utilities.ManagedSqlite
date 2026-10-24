@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -13,6 +14,11 @@ using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
+/// <summary>
+/// A SQLite 3 database, opened for reading with <see cref="FromPath"/> or one of the <c>FromStream</c> methods. Its
+/// tables are found with <see cref="GetTable"/>, <see cref="TryGetTable"/> and <see cref="GetTables"/>. Dispose it to
+/// close its files.
+/// </summary>
 public sealed class Sqlite3Database : IDisposable
 {
     private readonly ReaderBase _reader;
@@ -21,8 +27,17 @@ public sealed class Sqlite3Database : IDisposable
     private readonly Sqlite3MasterTable _masterTable;
     private readonly Sqlite3SchemaRow _masterSchemaRow;
 
+    // What FindTable resolves a name to, built once at open: the first row per name that made a table, and the first
+    // error per name. Never changed after, so lookups need no lock.
+    private readonly Dictionary<string, Sqlite3SchemaRow> _tablesByName;
+    private readonly Dictionary<string, SqliteCorruptException>? _errorsByName;
+
     internal DatabaseHeader Header => _reader.Header;
 
+    /// <summary>
+    /// The encoding that text values are read with: the header's text encoding field, read as SQLite reads it (the low
+    /// two bits, where 0 means UTF-8), or <see cref="Sqlite3Settings.FallbackEncoding"/> when the field is 0
+    /// </summary>
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
     internal Sqlite3Settings Settings => _reader.Settings;
@@ -45,24 +60,18 @@ public sealed class Sqlite3Database : IDisposable
     /// </summary>
     internal Sqlite3Database(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
     {
+        // A copy, so the caller changing the settings later can't change how this database reads
+        _reader = ReaderBase.Open(main, journal, wal, settings.Clone());
+
         try
         {
-            // A copy, so the caller changing the settings later can't change how this database reads
-            _reader = ReaderBase.Open(main, journal, wal, settings.Clone());
-
-            try
-            {
-                _masterTable = OpenMasterTable(out _masterSchemaRow);
-            }
-            catch
-            {
-                DisposeQuietly(_reader);
-                throw;
-            }
+            _masterTable = OpenMasterTable(out _masterSchemaRow);
+            _tablesByName = IndexTables(_masterTable.Tables, out _errorsByName);
         }
-        catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
+        catch
         {
-            throw new SqliteCorruptException("unable to read the database header or schema", innerException: e);
+            DisposeQuietly(_reader);
+            throw;
         }
     }
 
@@ -84,6 +93,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentException"><paramref name="database"/> is not readable, or is not seekable</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithNoJournal(Stream database, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
         return FromStreams(database, null, null, settings, leaveOpen);
@@ -109,10 +119,10 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentException">A stream is not readable, or is not seekable</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt, the WAL has an unknown format version, or (in Strict) its page size differs from the database's</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithWal(Stream database, Stream wal, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
-        if (wal == null)
-            throw new ArgumentNullException(nameof(wal));
+        ArgumentNullException.ThrowIfNull(wal);
 
         return FromStreams(database, null, wal, settings, leaveOpen);
     }
@@ -140,10 +150,10 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentException">A stream is not readable, or is not seekable</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithJournal(Stream database, Stream journal, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
-        if (journal == null)
-            throw new ArgumentNullException(nameof(journal));
+        ArgumentNullException.ThrowIfNull(journal);
 
         return FromStreams(database, journal, null, settings, leaveOpen);
     }
@@ -164,10 +174,10 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="IOException">A file could not be opened</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt, the WAL has an unknown format version, or (in Strict) its page size differs from the database's</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromPath(string path, Sqlite3Settings? settings = null)
     {
-        if (path == null)
-            throw new ArgumentNullException(nameof(path));
+        ArgumentNullException.ThrowIfNull(path);
 
         Stream? database = null, journal = null, wal = null;
         try
@@ -203,8 +213,7 @@ public sealed class Sqlite3Database : IDisposable
     /// </summary>
     private static Sqlite3Database FromStreams(Stream database, Stream? journal, Stream? wal, Sqlite3Settings? settings, bool leaveOpen)
     {
-        if (database == null)
-            throw new ArgumentNullException(nameof(database));
+        ArgumentNullException.ThrowIfNull(database);
 
         IFileView main;
         IFileView? journalView = null, walView = null;
@@ -215,6 +224,10 @@ public sealed class Sqlite3Database : IDisposable
                 CheckStream(journal, nameof(journal));
             if (wal != null)
                 CheckStream(wal, nameof(wal));
+
+            // A caller error: the reader tests only for Lenient, so an undefined value would quietly read as Strict
+            if (settings != null && settings.Validation is not (SqliteValidation.Strict or SqliteValidation.Lenient))
+                throw new ArgumentOutOfRangeException(nameof(settings), settings.Validation, "settings.Validation must be Strict or Lenient");
 
             main = new StreamFileView(database, leaveOpen);
             journalView = journal != null ? new StreamFileView(journal, leaveOpen) : null;
@@ -262,25 +275,25 @@ public sealed class Sqlite3Database : IDisposable
     private Sqlite3MasterTable OpenMasterTable(out Sqlite3SchemaRow schemaRow)
     {
         // Parse table on Page 1, the sqlite_master table
-        BTreePage rootBtree = BTreePage.Parse(_reader, 1);
+        BTreePage rootBTree = BTreePage.Parse(_reader, 1);
 
         // PAGE-18: the schema table is a rowid table, read with a table cursor, so page 1 must be a table b-tree page.
         // moveToRoot in btree.c:
         //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
         //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
-        Checks.Strict(rootBtree is not BTreeIndexPage, "PAGE-18", $"page 1 is an index b-tree page, but holds the schema table",
+        Checks.Strict(rootBTree is not BTreeIndexPage, "PAGE-18", $"page 1 is an index b-tree page, but holds the schema table",
             1, "b-tree page header");
 
         // Fake the schema for the sqlite_master table
         const string schemaSql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);";
-        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page, schemaSql)
+        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBTree.Page, schemaSql)
         {
-            IsTable = true,
+            Kind = Sqlite3SchemaKind.Table,
             Table = SchemaParser.ParseCreateTable(schemaSql, "sqlite_master", _reader.Settings)
         };
 
-        Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
+        Sqlite3Table table = new Sqlite3Table(_reader, rootBTree, schemaRow);
         return new Sqlite3MasterTable(this, _reader, table);
     }
 
@@ -289,7 +302,9 @@ public sealed class Sqlite3Database : IDisposable
     /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
-    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
+    /// page is malformed, or is a b-tree page of the other kind than its SQL declares (PAGE-18)</exception>
     public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -307,9 +322,11 @@ public sealed class Sqlite3Database : IDisposable
     /// <summary>
     /// Gets a table by name, see <see cref="TryGetTable"/>.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     /// <exception cref="KeyNotFoundException">No table with that name exists</exception>
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
-    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
+    /// page is malformed, or is a b-tree page of the other kind than its SQL declares (PAGE-18)</exception>
     public Sqlite3Table GetTable(string name)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -326,6 +343,8 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     private Sqlite3SchemaRow? FindTable(string name)
     {
+        ArgumentNullException.ThrowIfNull(name);
+
         // Names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c), so tables named
         // "é" and "É" are two tables
         AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
@@ -333,33 +352,72 @@ public sealed class Sqlite3Database : IDisposable
         if (names.Equals(name, "sqlite_master") || names.Equals(name, "sqlite_schema"))
             return _masterSchemaRow;
 
+        if (_tablesByName.TryGetValue(name, out Sqlite3SchemaRow? tbl))
+            return tbl;
+
         // In Lenient, a row that failed to load made nothing in the schema, as with writable_schema in SQLite, so a
         // later row may still make a table of its name. The error is thrown only when no table has the name.
-        SqliteCorruptException? error = null;
-        foreach (Sqlite3SchemaRow tbl in GetTables())
+        return _errorsByName != null && _errorsByName.TryGetValue(name, out SqliteCorruptException? error) ? throw error : null;
+    }
+
+    private static Dictionary<string, Sqlite3SchemaRow> IndexTables(List<Sqlite3SchemaRow> rows, out Dictionary<string, SqliteCorruptException>? errors)
+    {
+        AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
+        Dictionary<string, Sqlite3SchemaRow> tables = new Dictionary<string, Sqlite3SchemaRow>(names);
+        errors = null;
+
+        foreach (Sqlite3SchemaRow row in rows)
         {
             // A table is known by what its statement made, as in SQLite. The type column must agree in Strict
             // (SCHEMA-26), in any case, so "TABLE" is a table too.
-            if (!names.Equals(tbl.Name, name))
-                continue;
-
-            if (tbl.Error != null)
-                error ??= tbl.Error;
-            else if (tbl.IsTable)
-                return tbl;
+            if (row.Error != null)
+            {
+                errors ??= new Dictionary<string, SqliteCorruptException>(names);
+                if (!errors.ContainsKey(row.Name))
+                    errors.Add(row.Name, row.Error);
+            }
+            else if (row.IsTable && !tables.ContainsKey(row.Name))
+                tables.Add(row.Name, row);
         }
 
-        return error == null ? null : throw error;
+        return tables;
     }
 
     private Sqlite3Table OpenTable(Sqlite3SchemaRow tbl)
     {
         // Parsed to check it and learn its kind, in the reader's page buffer: the table reads it again when its rows are read
         BTreePage root = BTreePage.Parse(_reader, tbl.RootPage, buffer: _reader.PageBuffer);
+
+        // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
+        // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
+        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
+        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
+        // SQLite reports it on the table's first row read; here the root is read when the table is opened, as are
+        // the root page's other checks.
+        // A table row that failed to parse has an Error, which FindTable threw before the table got here
+        bool sqlWithoutRowId = tbl.Table!.Has(ParsedTable.TF_WithoutRowid);
+        Checks.Strict(sqlWithoutRowId == root is BTreeIndexPage, "PAGE-18",
+            $"the SQL of table {tbl.Name} declares {(sqlWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(root is BTreeIndexPage ? "an index" : "a table")} b-tree page",
+            tbl.RootPage, "b-tree page header");
+
         return new Sqlite3Table(_reader, root, tbl);
     }
 
-    public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
+    /// <summary>
+    /// Every row of the schema table (<c>sqlite_schema</c>), in its row order, which is the order SQLite loads them,
+    /// whatever their kind: tables, virtual tables, indexes, views and triggers, and in
+    /// <see cref="SqliteValidation.Lenient"/> rows that failed to load. Each row's
+    /// <see cref="Sqlite3SchemaRow.Kind"/> says what its statement made. The schema table itself is not a row.
+    /// </summary>
+    public IEnumerable<Sqlite3SchemaRow> GetSchema() => _masterTable.Tables;
+
+    /// <summary>
+    /// The rows of <see cref="GetSchema"/> that made a table: ordinary tables, which include a virtual table's shadow
+    /// tables, and virtual tables, which <see cref="GetTable"/> cannot read (see <see cref="Sqlite3SchemaRow.IsVirtual"/>).
+    /// Indexes, views, triggers and rows that made nothing are left out.
+    /// </summary>
+    public IEnumerable<Sqlite3SchemaRow> GetTables() => GetSchema().Where(s => s.IsTable);
 
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
     {
@@ -370,6 +428,10 @@ public sealed class Sqlite3Database : IDisposable
         return (T)val;
     }
 
+    /// <summary>
+    /// Disposes the database's files: the streams it was opened from, unless they were passed with
+    /// <c>leaveOpen</c>, or the files <see cref="FromPath"/> opened. Its tables must not be read afterwards.
+    /// </summary>
     public void Dispose()
     {
         _reader.Dispose();

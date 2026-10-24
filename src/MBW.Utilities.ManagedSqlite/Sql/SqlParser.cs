@@ -1,52 +1,21 @@
 ﻿using System;
-using System.Diagnostics.CodeAnalysis;
 using System.Linq;
 using System.Text;
 using MBW.Utilities.ManagedSqlite.Core;
-using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
 /// <summary>
-/// Reads a table's CREATE TABLE statement as SQLite does when it loads the schema (<see cref="SchemaParser"/>), and
-/// describes the table's columns from what SQLite builds
+/// Describes a table's columns from what SQLite builds from its CREATE TABLE statement, which
+/// <see cref="SchemaParser"/> reads as SQLite does when it loads the schema
 /// </summary>
 internal static class SqlParser
 {
     /// <summary>
-    /// Parses the CREATE TABLE statement of the schema row <paramref name="objectName"/>
+    /// Describes a table SQLite built from its CREATE TABLE, in a database of text encoding <paramref name="encoding"/>
     /// </summary>
-    /// <exception cref="SqliteCorruptException">SQLite would find the statement malformed</exception>
-    public static SqlTableDefinition Parse(string sql, string objectName, Sqlite3Settings settings)
-    {
-        return Build(SchemaParser.ParseCreateTable(sql, objectName, settings));
-    }
-
-    /// <summary>
-    /// Parses a CREATE TABLE statement in <see cref="SqliteValidation.Strict"/>, false when SQLite would refuse it
-    /// </summary>
-    public static bool TryParse(string? sql, [NotNullWhen(true)] out SqlTableDefinition? tableDefinition)
-    {
-        tableDefinition = null;
-        if (sql == null)
-            return false;
-
-        try
-        {
-            tableDefinition = Parse(sql, "", new Sqlite3Settings());
-            return true;
-        }
-        catch (SqliteCorruptException)
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// Describes a table SQLite built from its CREATE TABLE
-    /// </summary>
-    public static SqlTableDefinition Build(ParsedTable table)
+    public static SqlTableDefinition Build(ParsedTable table, SqliteEncoding encoding)
     {
         SqlTableDefinition definition = new SqlTableDefinition(table.Name);
         definition.IsWithoutRowId = table.Has(ParsedTable.TF_WithoutRowid);
@@ -74,7 +43,7 @@ internal static class SqlParser
                 virtualColumns++;
             else
             {
-                column.HasKnownDefault = ColumnDefault.TryEvaluate(parsed.Default, parsed.Affinity, out object? value);
+                column.HasKnownDefault = ColumnDefault.TryEvaluate(parsed.Default, parsed.Affinity, encoding, out object? value);
                 column.DefaultValue = value;
             }
 

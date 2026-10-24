@@ -1,5 +1,4 @@
 ﻿using System;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Exceptions;
 

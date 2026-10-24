@@ -637,421 +637,425 @@ internal static class SqliteGrammar
         0, 0, -1, -1, -3, -2, 0, -4, -2, 0, -1, -1,
     };
 
-    public static readonly string[] RuleNames =
+    /// <summary>
+    /// The rules' numbers (yyRuleName in parse.c), each named by its left-hand side, "__", and its right-hand
+    /// symbols joined by "_" ("|" as "_or_", and "empty" for none)
+    /// </summary>
+    public static class Rule
     {
-        "explain ::= EXPLAIN",
-        "explain ::= EXPLAIN QUERY PLAN",
-        "cmdx ::= cmd",
-        "cmd ::= BEGIN transtype trans_opt",
-        "transtype ::=",
-        "transtype ::= DEFERRED",
-        "transtype ::= IMMEDIATE",
-        "transtype ::= EXCLUSIVE",
-        "cmd ::= COMMIT|END trans_opt",
-        "cmd ::= ROLLBACK trans_opt",
-        "cmd ::= SAVEPOINT nm",
-        "cmd ::= RELEASE savepoint_opt nm",
-        "cmd ::= ROLLBACK trans_opt TO savepoint_opt nm",
-        "create_table ::= createkw temp TABLE ifnotexists nm dbnm",
-        "createkw ::= CREATE",
-        "ifnotexists ::=",
-        "ifnotexists ::= IF NOT EXISTS",
-        "temp ::= TEMP",
-        "temp ::=",
-        "create_table_args ::= LP columnlist conslist_opt RP table_option_set",
-        "create_table_args ::= AS select",
-        "table_option_set ::=",
-        "table_option_set ::= table_option_set COMMA table_option",
-        "table_option ::= WITHOUT nm",
-        "table_option ::= nm",
-        "columnname ::= nm typetoken",
-        "typetoken ::=",
-        "typetoken ::= typename LP signed RP",
-        "typetoken ::= typename LP signed COMMA signed RP",
-        "typename ::= typename ID|STRING",
-        "scanpt ::=",
-        "scantok ::=",
-        "ccons ::= CONSTRAINT nm",
-        "ccons ::= DEFAULT scantok term",
-        "ccons ::= DEFAULT LP expr RP",
-        "ccons ::= DEFAULT PLUS scantok term",
-        "ccons ::= DEFAULT MINUS scantok term",
-        "ccons ::= DEFAULT scantok ID|INDEXED",
-        "ccons ::= NOT NULL onconf",
-        "ccons ::= PRIMARY KEY sortorder onconf autoinc",
-        "ccons ::= UNIQUE onconf",
-        "ccons ::= CHECK LP expr RP",
-        "ccons ::= REFERENCES nm eidlist_opt refargs",
-        "ccons ::= defer_subclause",
-        "ccons ::= COLLATE ID|STRING",
-        "generated ::= LP expr RP",
-        "generated ::= LP expr RP ID",
-        "autoinc ::=",
-        "autoinc ::= AUTOINCR",
-        "refargs ::=",
-        "refargs ::= refargs refarg",
-        "refarg ::= MATCH nm",
-        "refarg ::= ON INSERT refact",
-        "refarg ::= ON DELETE refact",
-        "refarg ::= ON UPDATE refact",
-        "refact ::= SET NULL",
-        "refact ::= SET DEFAULT",
-        "refact ::= CASCADE",
-        "refact ::= RESTRICT",
-        "refact ::= NO ACTION",
-        "defer_subclause ::= NOT DEFERRABLE init_deferred_pred_opt",
-        "defer_subclause ::= DEFERRABLE init_deferred_pred_opt",
-        "init_deferred_pred_opt ::=",
-        "init_deferred_pred_opt ::= INITIALLY DEFERRED",
-        "init_deferred_pred_opt ::= INITIALLY IMMEDIATE",
-        "conslist_opt ::=",
-        "tconscomma ::= COMMA",
-        "tcons ::= CONSTRAINT nm",
-        "tcons ::= PRIMARY KEY LP sortlist autoinc RP onconf",
-        "tcons ::= UNIQUE LP sortlist RP onconf",
-        "tcons ::= CHECK LP expr RP onconf",
-        "tcons ::= FOREIGN KEY LP eidlist RP REFERENCES nm eidlist_opt refargs defer_subclause_opt",
-        "defer_subclause_opt ::=",
-        "onconf ::=",
-        "onconf ::= ON CONFLICT resolvetype",
-        "orconf ::=",
-        "orconf ::= OR resolvetype",
-        "resolvetype ::= IGNORE",
-        "resolvetype ::= REPLACE",
-        "cmd ::= DROP TABLE ifexists fullname",
-        "ifexists ::= IF EXISTS",
-        "ifexists ::=",
-        "cmd ::= createkw temp VIEW ifnotexists nm dbnm eidlist_opt AS select",
-        "cmd ::= DROP VIEW ifexists fullname",
-        "cmd ::= select",
-        "select ::= WITH wqlist selectnowith",
-        "select ::= WITH RECURSIVE wqlist selectnowith",
-        "select ::= selectnowith",
-        "selectnowith ::= selectnowith multiselect_op oneselect",
-        "multiselect_op ::= UNION",
-        "multiselect_op ::= UNION ALL",
-        "multiselect_op ::= EXCEPT|INTERSECT",
-        "oneselect ::= SELECT distinct selcollist from where_opt groupby_opt having_opt orderby_opt limit_opt",
-        "oneselect ::= SELECT distinct selcollist from where_opt groupby_opt having_opt window_clause orderby_opt limit_opt",
-        "values ::= VALUES LP nexprlist RP",
-        "oneselect ::= mvalues",
-        "mvalues ::= values COMMA LP nexprlist RP",
-        "mvalues ::= mvalues COMMA LP nexprlist RP",
-        "distinct ::= DISTINCT",
-        "distinct ::= ALL",
-        "distinct ::=",
-        "sclp ::=",
-        "selcollist ::= sclp scanpt expr scanpt as",
-        "selcollist ::= sclp scanpt STAR",
-        "selcollist ::= sclp scanpt nm DOT STAR",
-        "as ::= AS nm",
-        "as ::=",
-        "from ::=",
-        "from ::= FROM seltablist",
-        "stl_prefix ::= seltablist joinop",
-        "stl_prefix ::=",
-        "seltablist ::= stl_prefix nm dbnm as on_using",
-        "seltablist ::= stl_prefix nm dbnm as indexed_by on_using",
-        "seltablist ::= stl_prefix nm dbnm LP exprlist RP as on_using",
-        "seltablist ::= stl_prefix LP select RP as on_using",
-        "seltablist ::= stl_prefix LP seltablist RP as on_using",
-        "dbnm ::=",
-        "dbnm ::= DOT nm",
-        "fullname ::= nm",
-        "fullname ::= nm DOT nm",
-        "xfullname ::= nm",
-        "xfullname ::= nm DOT nm",
-        "xfullname ::= nm AS nm",
-        "xfullname ::= nm DOT nm AS nm",
-        "joinop ::= COMMA|JOIN",
-        "joinop ::= JOIN_KW JOIN",
-        "joinop ::= JOIN_KW nm JOIN",
-        "joinop ::= JOIN_KW nm nm JOIN",
-        "on_using ::= ON expr",
-        "on_using ::= USING LP idlist RP",
-        "on_using ::=",
-        "indexed_opt ::=",
-        "indexed_by ::= INDEXED BY nm",
-        "indexed_by ::= NOT INDEXED",
-        "orderby_opt ::=",
-        "orderby_opt ::= ORDER BY sortlist",
-        "sortlist ::= sortlist COMMA expr sortorder nulls",
-        "sortlist ::= expr sortorder nulls",
-        "sortorder ::= ASC",
-        "sortorder ::= DESC",
-        "sortorder ::=",
-        "nulls ::= NULLS FIRST",
-        "nulls ::= NULLS LAST",
-        "nulls ::=",
-        "groupby_opt ::=",
-        "groupby_opt ::= GROUP BY nexprlist",
-        "having_opt ::=",
-        "having_opt ::= HAVING expr",
-        "limit_opt ::=",
-        "limit_opt ::= LIMIT expr",
-        "limit_opt ::= LIMIT expr OFFSET expr",
-        "limit_opt ::= LIMIT expr COMMA expr",
-        "cmd ::= with DELETE FROM xfullname indexed_opt where_opt_ret orderby_opt limit_opt",
-        "where_opt ::=",
-        "where_opt ::= WHERE expr",
-        "where_opt_ret ::=",
-        "where_opt_ret ::= WHERE expr",
-        "where_opt_ret ::= RETURNING selcollist",
-        "where_opt_ret ::= WHERE expr RETURNING selcollist",
-        "cmd ::= with UPDATE orconf xfullname indexed_opt SET setlist from where_opt_ret orderby_opt limit_opt",
-        "setlist ::= setlist COMMA nm EQ expr",
-        "setlist ::= setlist COMMA LP idlist RP EQ expr",
-        "setlist ::= nm EQ expr",
-        "setlist ::= LP idlist RP EQ expr",
-        "cmd ::= with insert_cmd INTO xfullname idlist_opt select upsert",
-        "cmd ::= with insert_cmd INTO xfullname idlist_opt DEFAULT VALUES returning",
-        "upsert ::=",
-        "upsert ::= RETURNING selcollist",
-        "upsert ::= ON CONFLICT LP sortlist RP where_opt DO UPDATE SET setlist where_opt upsert",
-        "upsert ::= ON CONFLICT LP sortlist RP where_opt DO NOTHING upsert",
-        "upsert ::= ON CONFLICT DO NOTHING returning",
-        "upsert ::= ON CONFLICT DO UPDATE SET setlist where_opt returning",
-        "returning ::= RETURNING selcollist",
-        "insert_cmd ::= INSERT orconf",
-        "insert_cmd ::= REPLACE",
-        "idlist_opt ::=",
-        "idlist_opt ::= LP idlist RP",
-        "idlist ::= idlist COMMA nm",
-        "idlist ::= nm",
-        "expr ::= LP expr RP",
-        "expr ::= ID|INDEXED|JOIN_KW",
-        "expr ::= nm DOT nm",
-        "expr ::= nm DOT nm DOT nm",
-        "term ::= NULL|FLOAT|BLOB",
-        "term ::= STRING",
-        "term ::= INTEGER",
-        "expr ::= VARIABLE",
-        "expr ::= expr COLLATE ID|STRING",
-        "expr ::= CAST LP expr AS typetoken RP",
-        "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist RP",
-        "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist ORDER BY sortlist RP",
-        "expr ::= ID|INDEXED|JOIN_KW LP STAR RP",
-        "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist RP filter_over",
-        "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist ORDER BY sortlist RP filter_over",
-        "expr ::= ID|INDEXED|JOIN_KW LP STAR RP filter_over",
-        "term ::= CTIME_KW",
-        "expr ::= LP nexprlist COMMA expr RP",
-        "expr ::= expr AND expr",
-        "expr ::= expr OR expr",
-        "expr ::= expr LT|GT|GE|LE expr",
-        "expr ::= expr EQ|NE expr",
-        "expr ::= expr BITAND|BITOR|LSHIFT|RSHIFT expr",
-        "expr ::= expr PLUS|MINUS expr",
-        "expr ::= expr STAR|SLASH|REM expr",
-        "expr ::= expr CONCAT expr",
-        "likeop ::= NOT LIKE_KW|MATCH",
-        "expr ::= expr likeop expr",
-        "expr ::= expr likeop expr ESCAPE expr",
-        "expr ::= expr ISNULL|NOTNULL",
-        "expr ::= expr NOT NULL",
-        "expr ::= expr IS expr",
-        "expr ::= expr IS NOT expr",
-        "expr ::= expr IS NOT DISTINCT FROM expr",
-        "expr ::= expr IS DISTINCT FROM expr",
-        "expr ::= NOT expr",
-        "expr ::= BITNOT expr",
-        "expr ::= PLUS|MINUS expr",
-        "expr ::= expr PTR expr",
-        "between_op ::= BETWEEN",
-        "between_op ::= NOT BETWEEN",
-        "expr ::= expr between_op expr AND expr",
-        "in_op ::= IN",
-        "in_op ::= NOT IN",
-        "expr ::= expr in_op LP exprlist RP",
-        "expr ::= LP select RP",
-        "expr ::= expr in_op LP select RP",
-        "expr ::= expr in_op nm dbnm paren_exprlist",
-        "expr ::= EXISTS LP select RP",
-        "expr ::= CASE case_operand case_exprlist case_else END",
-        "case_exprlist ::= case_exprlist WHEN expr THEN expr",
-        "case_exprlist ::= WHEN expr THEN expr",
-        "case_else ::= ELSE expr",
-        "case_else ::=",
-        "case_operand ::=",
-        "exprlist ::=",
-        "nexprlist ::= nexprlist COMMA expr",
-        "nexprlist ::= expr",
-        "paren_exprlist ::=",
-        "paren_exprlist ::= LP exprlist RP",
-        "cmd ::= createkw uniqueflag INDEX ifnotexists nm dbnm ON nm LP sortlist RP where_opt",
-        "uniqueflag ::= UNIQUE",
-        "uniqueflag ::=",
-        "eidlist_opt ::=",
-        "eidlist_opt ::= LP eidlist RP",
-        "eidlist ::= eidlist COMMA nm collate sortorder",
-        "eidlist ::= nm collate sortorder",
-        "collate ::=",
-        "collate ::= COLLATE ID|STRING",
-        "cmd ::= DROP INDEX ifexists fullname",
-        "cmd ::= VACUUM vinto",
-        "cmd ::= VACUUM nm vinto",
-        "vinto ::= INTO expr",
-        "vinto ::=",
-        "cmd ::= PRAGMA nm dbnm",
-        "cmd ::= PRAGMA nm dbnm EQ nmnum",
-        "cmd ::= PRAGMA nm dbnm LP nmnum RP",
-        "cmd ::= PRAGMA nm dbnm EQ minus_num",
-        "cmd ::= PRAGMA nm dbnm LP minus_num RP",
-        "plus_num ::= PLUS INTEGER|FLOAT",
-        "minus_num ::= MINUS INTEGER|FLOAT",
-        "cmd ::= createkw trigger_decl BEGIN trigger_cmd_list END",
-        "trigger_decl ::= temp TRIGGER ifnotexists nm dbnm trigger_time trigger_event ON fullname foreach_clause when_clause",
-        "trigger_time ::= BEFORE|AFTER",
-        "trigger_time ::= INSTEAD OF",
-        "trigger_time ::=",
-        "trigger_event ::= DELETE|INSERT",
-        "trigger_event ::= UPDATE",
-        "trigger_event ::= UPDATE OF idlist",
-        "when_clause ::=",
-        "when_clause ::= WHEN expr",
-        "trigger_cmd_list ::= trigger_cmd_list trigger_cmd SEMI",
-        "trigger_cmd_list ::= trigger_cmd SEMI",
-        "tridxby ::= INDEXED BY nm",
-        "tridxby ::= NOT INDEXED",
-        "trigger_cmd ::= UPDATE orconf xfullname tridxby SET setlist from where_opt scanpt",
-        "trigger_cmd ::= scanpt insert_cmd INTO xfullname idlist_opt select upsert scanpt",
-        "trigger_cmd ::= DELETE FROM xfullname tridxby where_opt scanpt",
-        "trigger_cmd ::= scanpt select scanpt",
-        "expr ::= RAISE LP IGNORE RP",
-        "expr ::= RAISE LP raisetype COMMA expr RP",
-        "raisetype ::= ROLLBACK",
-        "raisetype ::= ABORT",
-        "raisetype ::= FAIL",
-        "cmd ::= DROP TRIGGER ifexists fullname",
-        "cmd ::= ATTACH database_kw_opt expr AS expr key_opt",
-        "cmd ::= DETACH database_kw_opt expr",
-        "key_opt ::=",
-        "key_opt ::= KEY expr",
-        "cmd ::= REINDEX",
-        "cmd ::= REINDEX nm dbnm",
-        "cmd ::= ANALYZE",
-        "cmd ::= ANALYZE nm dbnm",
-        "cmd ::= ALTER TABLE fullname RENAME TO nm",
-        "cmd ::= alter_add carglist",
-        "alter_add ::= ALTER TABLE fullname ADD kwcolumn_opt nm typetoken",
-        "cmd ::= ALTER TABLE fullname DROP kwcolumn_opt nm",
-        "cmd ::= ALTER TABLE fullname RENAME kwcolumn_opt nm TO nm",
-        "cmd ::= ALTER TABLE fullname DROP CONSTRAINT nm",
-        "cmd ::= ALTER TABLE fullname ALTER kwcolumn_opt nm DROP NOT NULL",
-        "cmd ::= ALTER TABLE fullname ALTER kwcolumn_opt nm SET NOT NULL onconf",
-        "cmd ::= ALTER TABLE fullname ADD CONSTRAINT nm CHECK LP expr RP onconf",
-        "cmd ::= ALTER TABLE fullname ADD CHECK LP expr RP onconf",
-        "cmd ::= create_vtab",
-        "cmd ::= create_vtab LP vtabarglist RP",
-        "create_vtab ::= createkw VIRTUAL TABLE ifnotexists nm dbnm USING nm",
-        "vtabarg ::=",
-        "vtabargtoken ::= ANY",
-        "vtabargtoken ::= lp anylist RP",
-        "lp ::= LP",
-        "with ::= WITH wqlist",
-        "with ::= WITH RECURSIVE wqlist",
-        "wqas ::= AS",
-        "wqas ::= AS MATERIALIZED",
-        "wqas ::= AS NOT MATERIALIZED",
-        "wqitem ::= withnm eidlist_opt wqas LP select RP",
-        "withnm ::= nm",
-        "wqlist ::= wqitem",
-        "wqlist ::= wqlist COMMA wqitem",
-        "windowdefn_list ::= windowdefn_list COMMA windowdefn",
-        "windowdefn ::= nm AS LP window RP",
-        "window ::= PARTITION BY nexprlist orderby_opt frame_opt",
-        "window ::= nm PARTITION BY nexprlist orderby_opt frame_opt",
-        "window ::= ORDER BY sortlist frame_opt",
-        "window ::= nm ORDER BY sortlist frame_opt",
-        "window ::= nm frame_opt",
-        "frame_opt ::=",
-        "frame_opt ::= range_or_rows frame_bound_s frame_exclude_opt",
-        "frame_opt ::= range_or_rows BETWEEN frame_bound_s AND frame_bound_e frame_exclude_opt",
-        "range_or_rows ::= RANGE|ROWS|GROUPS",
-        "frame_bound_s ::= frame_bound",
-        "frame_bound_s ::= UNBOUNDED PRECEDING",
-        "frame_bound_e ::= frame_bound",
-        "frame_bound_e ::= UNBOUNDED FOLLOWING",
-        "frame_bound ::= expr PRECEDING|FOLLOWING",
-        "frame_bound ::= CURRENT ROW",
-        "frame_exclude_opt ::=",
-        "frame_exclude_opt ::= EXCLUDE frame_exclude",
-        "frame_exclude ::= NO OTHERS",
-        "frame_exclude ::= CURRENT ROW",
-        "frame_exclude ::= GROUP|TIES",
-        "window_clause ::= WINDOW windowdefn_list",
-        "filter_over ::= filter_clause over_clause",
-        "filter_over ::= over_clause",
-        "filter_over ::= filter_clause",
-        "over_clause ::= OVER LP window RP",
-        "over_clause ::= OVER nm",
-        "filter_clause ::= FILTER LP WHERE expr RP",
-        "term ::= QNUMBER",
-        "input ::= cmdlist",
-        "cmdlist ::= cmdlist ecmd",
-        "cmdlist ::= ecmd",
-        "ecmd ::= SEMI",
-        "ecmd ::= cmdx SEMI",
-        "ecmd ::= explain cmdx SEMI",
-        "trans_opt ::=",
-        "trans_opt ::= TRANSACTION",
-        "trans_opt ::= TRANSACTION nm",
-        "savepoint_opt ::= SAVEPOINT",
-        "savepoint_opt ::=",
-        "cmd ::= create_table create_table_args",
-        "table_option_set ::= table_option",
-        "columnlist ::= columnlist COMMA columnname carglist",
-        "columnlist ::= columnname carglist",
-        "nm ::= ID|INDEXED|JOIN_KW",
-        "nm ::= STRING",
-        "typetoken ::= typename",
-        "typename ::= ID|STRING",
-        "signed ::= plus_num",
-        "signed ::= minus_num",
-        "carglist ::= carglist ccons",
-        "carglist ::=",
-        "ccons ::= NULL onconf",
-        "ccons ::= GENERATED ALWAYS AS generated",
-        "ccons ::= AS generated",
-        "conslist_opt ::= COMMA conslist",
-        "conslist ::= conslist tconscomma tcons",
-        "conslist ::= tcons",
-        "tconscomma ::=",
-        "defer_subclause_opt ::= defer_subclause",
-        "resolvetype ::= raisetype",
-        "selectnowith ::= oneselect",
-        "oneselect ::= values",
-        "sclp ::= selcollist COMMA",
-        "as ::= ID|STRING",
-        "indexed_opt ::= indexed_by",
-        "returning ::=",
-        "expr ::= term",
-        "likeop ::= LIKE_KW|MATCH",
-        "case_operand ::= expr",
-        "exprlist ::= nexprlist",
-        "nmnum ::= plus_num",
-        "nmnum ::= nm",
-        "nmnum ::= ON",
-        "nmnum ::= DELETE",
-        "nmnum ::= DEFAULT",
-        "plus_num ::= INTEGER|FLOAT",
-        "foreach_clause ::=",
-        "foreach_clause ::= FOR EACH ROW",
-        "tridxby ::=",
-        "database_kw_opt ::= DATABASE",
-        "database_kw_opt ::=",
-        "kwcolumn_opt ::=",
-        "kwcolumn_opt ::= COLUMNKW",
-        "vtabarglist ::= vtabarg",
-        "vtabarglist ::= vtabarglist COMMA vtabarg",
-        "vtabarg ::= vtabarg vtabargtoken",
-        "anylist ::=",
-        "anylist ::= anylist LP anylist RP",
-        "anylist ::= anylist ANY",
-        "with ::=",
-        "windowdefn_list ::= windowdefn",
-        "window ::= frame_opt",
-    };
+        public const int explain__EXPLAIN = 0; // explain ::= EXPLAIN
+        public const int explain__EXPLAIN_QUERY_PLAN = 1; // explain ::= EXPLAIN QUERY PLAN
+        public const int cmdx__cmd = 2; // cmdx ::= cmd
+        public const int cmd__BEGIN_transtype_trans_opt = 3; // cmd ::= BEGIN transtype trans_opt
+        public const int transtype__empty = 4; // transtype ::=
+        public const int transtype__DEFERRED = 5; // transtype ::= DEFERRED
+        public const int transtype__IMMEDIATE = 6; // transtype ::= IMMEDIATE
+        public const int transtype__EXCLUSIVE = 7; // transtype ::= EXCLUSIVE
+        public const int cmd__COMMIT_or_END_trans_opt = 8; // cmd ::= COMMIT|END trans_opt
+        public const int cmd__ROLLBACK_trans_opt = 9; // cmd ::= ROLLBACK trans_opt
+        public const int cmd__SAVEPOINT_nm = 10; // cmd ::= SAVEPOINT nm
+        public const int cmd__RELEASE_savepoint_opt_nm = 11; // cmd ::= RELEASE savepoint_opt nm
+        public const int cmd__ROLLBACK_trans_opt_TO_savepoint_opt_nm = 12; // cmd ::= ROLLBACK trans_opt TO savepoint_opt nm
+        public const int create_table__createkw_temp_TABLE_ifnotexists_nm_dbnm = 13; // create_table ::= createkw temp TABLE ifnotexists nm dbnm
+        public const int createkw__CREATE = 14; // createkw ::= CREATE
+        public const int ifnotexists__empty = 15; // ifnotexists ::=
+        public const int ifnotexists__IF_NOT_EXISTS = 16; // ifnotexists ::= IF NOT EXISTS
+        public const int temp__TEMP = 17; // temp ::= TEMP
+        public const int temp__empty = 18; // temp ::=
+        public const int create_table_args__LP_columnlist_conslist_opt_RP_table_option_set = 19; // create_table_args ::= LP columnlist conslist_opt RP table_option_set
+        public const int create_table_args__AS_select = 20; // create_table_args ::= AS select
+        public const int table_option_set__empty = 21; // table_option_set ::=
+        public const int table_option_set__table_option_set_COMMA_table_option = 22; // table_option_set ::= table_option_set COMMA table_option
+        public const int table_option__WITHOUT_nm = 23; // table_option ::= WITHOUT nm
+        public const int table_option__nm = 24; // table_option ::= nm
+        public const int columnname__nm_typetoken = 25; // columnname ::= nm typetoken
+        public const int typetoken__empty = 26; // typetoken ::=
+        public const int typetoken__typename_LP_signed_RP = 27; // typetoken ::= typename LP signed RP
+        public const int typetoken__typename_LP_signed_COMMA_signed_RP = 28; // typetoken ::= typename LP signed COMMA signed RP
+        public const int typename__typename_ID_or_STRING = 29; // typename ::= typename ID|STRING
+        public const int scanpt__empty = 30; // scanpt ::=
+        public const int scantok__empty = 31; // scantok ::=
+        public const int ccons__CONSTRAINT_nm = 32; // ccons ::= CONSTRAINT nm
+        public const int ccons__DEFAULT_scantok_term = 33; // ccons ::= DEFAULT scantok term
+        public const int ccons__DEFAULT_LP_expr_RP = 34; // ccons ::= DEFAULT LP expr RP
+        public const int ccons__DEFAULT_PLUS_scantok_term = 35; // ccons ::= DEFAULT PLUS scantok term
+        public const int ccons__DEFAULT_MINUS_scantok_term = 36; // ccons ::= DEFAULT MINUS scantok term
+        public const int ccons__DEFAULT_scantok_ID_or_INDEXED = 37; // ccons ::= DEFAULT scantok ID|INDEXED
+        public const int ccons__NOT_NULL_onconf = 38; // ccons ::= NOT NULL onconf
+        public const int ccons__PRIMARY_KEY_sortorder_onconf_autoinc = 39; // ccons ::= PRIMARY KEY sortorder onconf autoinc
+        public const int ccons__UNIQUE_onconf = 40; // ccons ::= UNIQUE onconf
+        public const int ccons__CHECK_LP_expr_RP = 41; // ccons ::= CHECK LP expr RP
+        public const int ccons__REFERENCES_nm_eidlist_opt_refargs = 42; // ccons ::= REFERENCES nm eidlist_opt refargs
+        public const int ccons__defer_subclause = 43; // ccons ::= defer_subclause
+        public const int ccons__COLLATE_ID_or_STRING = 44; // ccons ::= COLLATE ID|STRING
+        public const int generated__LP_expr_RP = 45; // generated ::= LP expr RP
+        public const int generated__LP_expr_RP_ID = 46; // generated ::= LP expr RP ID
+        public const int autoinc__empty = 47; // autoinc ::=
+        public const int autoinc__AUTOINCR = 48; // autoinc ::= AUTOINCR
+        public const int refargs__empty = 49; // refargs ::=
+        public const int refargs__refargs_refarg = 50; // refargs ::= refargs refarg
+        public const int refarg__MATCH_nm = 51; // refarg ::= MATCH nm
+        public const int refarg__ON_INSERT_refact = 52; // refarg ::= ON INSERT refact
+        public const int refarg__ON_DELETE_refact = 53; // refarg ::= ON DELETE refact
+        public const int refarg__ON_UPDATE_refact = 54; // refarg ::= ON UPDATE refact
+        public const int refact__SET_NULL = 55; // refact ::= SET NULL
+        public const int refact__SET_DEFAULT = 56; // refact ::= SET DEFAULT
+        public const int refact__CASCADE = 57; // refact ::= CASCADE
+        public const int refact__RESTRICT = 58; // refact ::= RESTRICT
+        public const int refact__NO_ACTION = 59; // refact ::= NO ACTION
+        public const int defer_subclause__NOT_DEFERRABLE_init_deferred_pred_opt = 60; // defer_subclause ::= NOT DEFERRABLE init_deferred_pred_opt
+        public const int defer_subclause__DEFERRABLE_init_deferred_pred_opt = 61; // defer_subclause ::= DEFERRABLE init_deferred_pred_opt
+        public const int init_deferred_pred_opt__empty = 62; // init_deferred_pred_opt ::=
+        public const int init_deferred_pred_opt__INITIALLY_DEFERRED = 63; // init_deferred_pred_opt ::= INITIALLY DEFERRED
+        public const int init_deferred_pred_opt__INITIALLY_IMMEDIATE = 64; // init_deferred_pred_opt ::= INITIALLY IMMEDIATE
+        public const int conslist_opt__empty = 65; // conslist_opt ::=
+        public const int tconscomma__COMMA = 66; // tconscomma ::= COMMA
+        public const int tcons__CONSTRAINT_nm = 67; // tcons ::= CONSTRAINT nm
+        public const int tcons__PRIMARY_KEY_LP_sortlist_autoinc_RP_onconf = 68; // tcons ::= PRIMARY KEY LP sortlist autoinc RP onconf
+        public const int tcons__UNIQUE_LP_sortlist_RP_onconf = 69; // tcons ::= UNIQUE LP sortlist RP onconf
+        public const int tcons__CHECK_LP_expr_RP_onconf = 70; // tcons ::= CHECK LP expr RP onconf
+        public const int tcons__FOREIGN_KEY_LP_eidlist_RP_REFERENCES_nm_eidlist_opt_refargs_defer_subclause_opt = 71; // tcons ::= FOREIGN KEY LP eidlist RP REFERENCES nm eidlist_opt refargs defer_subclause_opt
+        public const int defer_subclause_opt__empty = 72; // defer_subclause_opt ::=
+        public const int onconf__empty = 73; // onconf ::=
+        public const int onconf__ON_CONFLICT_resolvetype = 74; // onconf ::= ON CONFLICT resolvetype
+        public const int orconf__empty = 75; // orconf ::=
+        public const int orconf__OR_resolvetype = 76; // orconf ::= OR resolvetype
+        public const int resolvetype__IGNORE = 77; // resolvetype ::= IGNORE
+        public const int resolvetype__REPLACE = 78; // resolvetype ::= REPLACE
+        public const int cmd__DROP_TABLE_ifexists_fullname = 79; // cmd ::= DROP TABLE ifexists fullname
+        public const int ifexists__IF_EXISTS = 80; // ifexists ::= IF EXISTS
+        public const int ifexists__empty = 81; // ifexists ::=
+        public const int cmd__createkw_temp_VIEW_ifnotexists_nm_dbnm_eidlist_opt_AS_select = 82; // cmd ::= createkw temp VIEW ifnotexists nm dbnm eidlist_opt AS select
+        public const int cmd__DROP_VIEW_ifexists_fullname = 83; // cmd ::= DROP VIEW ifexists fullname
+        public const int cmd__select = 84; // cmd ::= select
+        public const int select__WITH_wqlist_selectnowith = 85; // select ::= WITH wqlist selectnowith
+        public const int select__WITH_RECURSIVE_wqlist_selectnowith = 86; // select ::= WITH RECURSIVE wqlist selectnowith
+        public const int select__selectnowith = 87; // select ::= selectnowith
+        public const int selectnowith__selectnowith_multiselect_op_oneselect = 88; // selectnowith ::= selectnowith multiselect_op oneselect
+        public const int multiselect_op__UNION = 89; // multiselect_op ::= UNION
+        public const int multiselect_op__UNION_ALL = 90; // multiselect_op ::= UNION ALL
+        public const int multiselect_op__EXCEPT_or_INTERSECT = 91; // multiselect_op ::= EXCEPT|INTERSECT
+        public const int oneselect__SELECT_distinct_selcollist_from_where_opt_groupby_opt_having_opt_orderby_opt_limit_opt = 92; // oneselect ::= SELECT distinct selcollist from where_opt groupby_opt having_opt orderby_opt limit_opt
+        public const int oneselect__SELECT_distinct_selcollist_from_where_opt_groupby_opt_having_opt_window_clause_orderby_opt_limit_opt = 93; // oneselect ::= SELECT distinct selcollist from where_opt groupby_opt having_opt window_clause orderby_opt limit_opt
+        public const int values__VALUES_LP_nexprlist_RP = 94; // values ::= VALUES LP nexprlist RP
+        public const int oneselect__mvalues = 95; // oneselect ::= mvalues
+        public const int mvalues__values_COMMA_LP_nexprlist_RP = 96; // mvalues ::= values COMMA LP nexprlist RP
+        public const int mvalues__mvalues_COMMA_LP_nexprlist_RP = 97; // mvalues ::= mvalues COMMA LP nexprlist RP
+        public const int distinct__DISTINCT = 98; // distinct ::= DISTINCT
+        public const int distinct__ALL = 99; // distinct ::= ALL
+        public const int distinct__empty = 100; // distinct ::=
+        public const int sclp__empty = 101; // sclp ::=
+        public const int selcollist__sclp_scanpt_expr_scanpt_as = 102; // selcollist ::= sclp scanpt expr scanpt as
+        public const int selcollist__sclp_scanpt_STAR = 103; // selcollist ::= sclp scanpt STAR
+        public const int selcollist__sclp_scanpt_nm_DOT_STAR = 104; // selcollist ::= sclp scanpt nm DOT STAR
+        public const int as__AS_nm = 105; // as ::= AS nm
+        public const int as__empty = 106; // as ::=
+        public const int from__empty = 107; // from ::=
+        public const int from__FROM_seltablist = 108; // from ::= FROM seltablist
+        public const int stl_prefix__seltablist_joinop = 109; // stl_prefix ::= seltablist joinop
+        public const int stl_prefix__empty = 110; // stl_prefix ::=
+        public const int seltablist__stl_prefix_nm_dbnm_as_on_using = 111; // seltablist ::= stl_prefix nm dbnm as on_using
+        public const int seltablist__stl_prefix_nm_dbnm_as_indexed_by_on_using = 112; // seltablist ::= stl_prefix nm dbnm as indexed_by on_using
+        public const int seltablist__stl_prefix_nm_dbnm_LP_exprlist_RP_as_on_using = 113; // seltablist ::= stl_prefix nm dbnm LP exprlist RP as on_using
+        public const int seltablist__stl_prefix_LP_select_RP_as_on_using = 114; // seltablist ::= stl_prefix LP select RP as on_using
+        public const int seltablist__stl_prefix_LP_seltablist_RP_as_on_using = 115; // seltablist ::= stl_prefix LP seltablist RP as on_using
+        public const int dbnm__empty = 116; // dbnm ::=
+        public const int dbnm__DOT_nm = 117; // dbnm ::= DOT nm
+        public const int fullname__nm = 118; // fullname ::= nm
+        public const int fullname__nm_DOT_nm = 119; // fullname ::= nm DOT nm
+        public const int xfullname__nm = 120; // xfullname ::= nm
+        public const int xfullname__nm_DOT_nm = 121; // xfullname ::= nm DOT nm
+        public const int xfullname__nm_AS_nm = 122; // xfullname ::= nm AS nm
+        public const int xfullname__nm_DOT_nm_AS_nm = 123; // xfullname ::= nm DOT nm AS nm
+        public const int joinop__COMMA_or_JOIN = 124; // joinop ::= COMMA|JOIN
+        public const int joinop__JOIN_KW_JOIN = 125; // joinop ::= JOIN_KW JOIN
+        public const int joinop__JOIN_KW_nm_JOIN = 126; // joinop ::= JOIN_KW nm JOIN
+        public const int joinop__JOIN_KW_nm_nm_JOIN = 127; // joinop ::= JOIN_KW nm nm JOIN
+        public const int on_using__ON_expr = 128; // on_using ::= ON expr
+        public const int on_using__USING_LP_idlist_RP = 129; // on_using ::= USING LP idlist RP
+        public const int on_using__empty = 130; // on_using ::=
+        public const int indexed_opt__empty = 131; // indexed_opt ::=
+        public const int indexed_by__INDEXED_BY_nm = 132; // indexed_by ::= INDEXED BY nm
+        public const int indexed_by__NOT_INDEXED = 133; // indexed_by ::= NOT INDEXED
+        public const int orderby_opt__empty = 134; // orderby_opt ::=
+        public const int orderby_opt__ORDER_BY_sortlist = 135; // orderby_opt ::= ORDER BY sortlist
+        public const int sortlist__sortlist_COMMA_expr_sortorder_nulls = 136; // sortlist ::= sortlist COMMA expr sortorder nulls
+        public const int sortlist__expr_sortorder_nulls = 137; // sortlist ::= expr sortorder nulls
+        public const int sortorder__ASC = 138; // sortorder ::= ASC
+        public const int sortorder__DESC = 139; // sortorder ::= DESC
+        public const int sortorder__empty = 140; // sortorder ::=
+        public const int nulls__NULLS_FIRST = 141; // nulls ::= NULLS FIRST
+        public const int nulls__NULLS_LAST = 142; // nulls ::= NULLS LAST
+        public const int nulls__empty = 143; // nulls ::=
+        public const int groupby_opt__empty = 144; // groupby_opt ::=
+        public const int groupby_opt__GROUP_BY_nexprlist = 145; // groupby_opt ::= GROUP BY nexprlist
+        public const int having_opt__empty = 146; // having_opt ::=
+        public const int having_opt__HAVING_expr = 147; // having_opt ::= HAVING expr
+        public const int limit_opt__empty = 148; // limit_opt ::=
+        public const int limit_opt__LIMIT_expr = 149; // limit_opt ::= LIMIT expr
+        public const int limit_opt__LIMIT_expr_OFFSET_expr = 150; // limit_opt ::= LIMIT expr OFFSET expr
+        public const int limit_opt__LIMIT_expr_COMMA_expr = 151; // limit_opt ::= LIMIT expr COMMA expr
+        public const int cmd__with_DELETE_FROM_xfullname_indexed_opt_where_opt_ret_orderby_opt_limit_opt = 152; // cmd ::= with DELETE FROM xfullname indexed_opt where_opt_ret orderby_opt limit_opt
+        public const int where_opt__empty = 153; // where_opt ::=
+        public const int where_opt__WHERE_expr = 154; // where_opt ::= WHERE expr
+        public const int where_opt_ret__empty = 155; // where_opt_ret ::=
+        public const int where_opt_ret__WHERE_expr = 156; // where_opt_ret ::= WHERE expr
+        public const int where_opt_ret__RETURNING_selcollist = 157; // where_opt_ret ::= RETURNING selcollist
+        public const int where_opt_ret__WHERE_expr_RETURNING_selcollist = 158; // where_opt_ret ::= WHERE expr RETURNING selcollist
+        public const int cmd__with_UPDATE_orconf_xfullname_indexed_opt_SET_setlist_from_where_opt_ret_orderby_opt_limit_opt = 159; // cmd ::= with UPDATE orconf xfullname indexed_opt SET setlist from where_opt_ret orderby_opt limit_opt
+        public const int setlist__setlist_COMMA_nm_EQ_expr = 160; // setlist ::= setlist COMMA nm EQ expr
+        public const int setlist__setlist_COMMA_LP_idlist_RP_EQ_expr = 161; // setlist ::= setlist COMMA LP idlist RP EQ expr
+        public const int setlist__nm_EQ_expr = 162; // setlist ::= nm EQ expr
+        public const int setlist__LP_idlist_RP_EQ_expr = 163; // setlist ::= LP idlist RP EQ expr
+        public const int cmd__with_insert_cmd_INTO_xfullname_idlist_opt_select_upsert = 164; // cmd ::= with insert_cmd INTO xfullname idlist_opt select upsert
+        public const int cmd__with_insert_cmd_INTO_xfullname_idlist_opt_DEFAULT_VALUES_returning = 165; // cmd ::= with insert_cmd INTO xfullname idlist_opt DEFAULT VALUES returning
+        public const int upsert__empty = 166; // upsert ::=
+        public const int upsert__RETURNING_selcollist = 167; // upsert ::= RETURNING selcollist
+        public const int upsert__ON_CONFLICT_LP_sortlist_RP_where_opt_DO_UPDATE_SET_setlist_where_opt_upsert = 168; // upsert ::= ON CONFLICT LP sortlist RP where_opt DO UPDATE SET setlist where_opt upsert
+        public const int upsert__ON_CONFLICT_LP_sortlist_RP_where_opt_DO_NOTHING_upsert = 169; // upsert ::= ON CONFLICT LP sortlist RP where_opt DO NOTHING upsert
+        public const int upsert__ON_CONFLICT_DO_NOTHING_returning = 170; // upsert ::= ON CONFLICT DO NOTHING returning
+        public const int upsert__ON_CONFLICT_DO_UPDATE_SET_setlist_where_opt_returning = 171; // upsert ::= ON CONFLICT DO UPDATE SET setlist where_opt returning
+        public const int returning__RETURNING_selcollist = 172; // returning ::= RETURNING selcollist
+        public const int insert_cmd__INSERT_orconf = 173; // insert_cmd ::= INSERT orconf
+        public const int insert_cmd__REPLACE = 174; // insert_cmd ::= REPLACE
+        public const int idlist_opt__empty = 175; // idlist_opt ::=
+        public const int idlist_opt__LP_idlist_RP = 176; // idlist_opt ::= LP idlist RP
+        public const int idlist__idlist_COMMA_nm = 177; // idlist ::= idlist COMMA nm
+        public const int idlist__nm = 178; // idlist ::= nm
+        public const int expr__LP_expr_RP = 179; // expr ::= LP expr RP
+        public const int expr__ID_or_INDEXED_or_JOIN_KW = 180; // expr ::= ID|INDEXED|JOIN_KW
+        public const int expr__nm_DOT_nm = 181; // expr ::= nm DOT nm
+        public const int expr__nm_DOT_nm_DOT_nm = 182; // expr ::= nm DOT nm DOT nm
+        public const int term__NULL_or_FLOAT_or_BLOB = 183; // term ::= NULL|FLOAT|BLOB
+        public const int term__STRING = 184; // term ::= STRING
+        public const int term__INTEGER = 185; // term ::= INTEGER
+        public const int expr__VARIABLE = 186; // expr ::= VARIABLE
+        public const int expr__expr_COLLATE_ID_or_STRING = 187; // expr ::= expr COLLATE ID|STRING
+        public const int expr__CAST_LP_expr_AS_typetoken_RP = 188; // expr ::= CAST LP expr AS typetoken RP
+        public const int expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_RP = 189; // expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist RP
+        public const int expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_ORDER_BY_sortlist_RP = 190; // expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist ORDER BY sortlist RP
+        public const int expr__ID_or_INDEXED_or_JOIN_KW_LP_STAR_RP = 191; // expr ::= ID|INDEXED|JOIN_KW LP STAR RP
+        public const int expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_RP_filter_over = 192; // expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist RP filter_over
+        public const int expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_ORDER_BY_sortlist_RP_filter_over = 193; // expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist ORDER BY sortlist RP filter_over
+        public const int expr__ID_or_INDEXED_or_JOIN_KW_LP_STAR_RP_filter_over = 194; // expr ::= ID|INDEXED|JOIN_KW LP STAR RP filter_over
+        public const int term__CTIME_KW = 195; // term ::= CTIME_KW
+        public const int expr__LP_nexprlist_COMMA_expr_RP = 196; // expr ::= LP nexprlist COMMA expr RP
+        public const int expr__expr_AND_expr = 197; // expr ::= expr AND expr
+        public const int expr__expr_OR_expr = 198; // expr ::= expr OR expr
+        public const int expr__expr_LT_or_GT_or_GE_or_LE_expr = 199; // expr ::= expr LT|GT|GE|LE expr
+        public const int expr__expr_EQ_or_NE_expr = 200; // expr ::= expr EQ|NE expr
+        public const int expr__expr_BITAND_or_BITOR_or_LSHIFT_or_RSHIFT_expr = 201; // expr ::= expr BITAND|BITOR|LSHIFT|RSHIFT expr
+        public const int expr__expr_PLUS_or_MINUS_expr = 202; // expr ::= expr PLUS|MINUS expr
+        public const int expr__expr_STAR_or_SLASH_or_REM_expr = 203; // expr ::= expr STAR|SLASH|REM expr
+        public const int expr__expr_CONCAT_expr = 204; // expr ::= expr CONCAT expr
+        public const int likeop__NOT_LIKE_KW_or_MATCH = 205; // likeop ::= NOT LIKE_KW|MATCH
+        public const int expr__expr_likeop_expr = 206; // expr ::= expr likeop expr
+        public const int expr__expr_likeop_expr_ESCAPE_expr = 207; // expr ::= expr likeop expr ESCAPE expr
+        public const int expr__expr_ISNULL_or_NOTNULL = 208; // expr ::= expr ISNULL|NOTNULL
+        public const int expr__expr_NOT_NULL = 209; // expr ::= expr NOT NULL
+        public const int expr__expr_IS_expr = 210; // expr ::= expr IS expr
+        public const int expr__expr_IS_NOT_expr = 211; // expr ::= expr IS NOT expr
+        public const int expr__expr_IS_NOT_DISTINCT_FROM_expr = 212; // expr ::= expr IS NOT DISTINCT FROM expr
+        public const int expr__expr_IS_DISTINCT_FROM_expr = 213; // expr ::= expr IS DISTINCT FROM expr
+        public const int expr__NOT_expr = 214; // expr ::= NOT expr
+        public const int expr__BITNOT_expr = 215; // expr ::= BITNOT expr
+        public const int expr__PLUS_or_MINUS_expr = 216; // expr ::= PLUS|MINUS expr
+        public const int expr__expr_PTR_expr = 217; // expr ::= expr PTR expr
+        public const int between_op__BETWEEN = 218; // between_op ::= BETWEEN
+        public const int between_op__NOT_BETWEEN = 219; // between_op ::= NOT BETWEEN
+        public const int expr__expr_between_op_expr_AND_expr = 220; // expr ::= expr between_op expr AND expr
+        public const int in_op__IN = 221; // in_op ::= IN
+        public const int in_op__NOT_IN = 222; // in_op ::= NOT IN
+        public const int expr__expr_in_op_LP_exprlist_RP = 223; // expr ::= expr in_op LP exprlist RP
+        public const int expr__LP_select_RP = 224; // expr ::= LP select RP
+        public const int expr__expr_in_op_LP_select_RP = 225; // expr ::= expr in_op LP select RP
+        public const int expr__expr_in_op_nm_dbnm_paren_exprlist = 226; // expr ::= expr in_op nm dbnm paren_exprlist
+        public const int expr__EXISTS_LP_select_RP = 227; // expr ::= EXISTS LP select RP
+        public const int expr__CASE_case_operand_case_exprlist_case_else_END = 228; // expr ::= CASE case_operand case_exprlist case_else END
+        public const int case_exprlist__case_exprlist_WHEN_expr_THEN_expr = 229; // case_exprlist ::= case_exprlist WHEN expr THEN expr
+        public const int case_exprlist__WHEN_expr_THEN_expr = 230; // case_exprlist ::= WHEN expr THEN expr
+        public const int case_else__ELSE_expr = 231; // case_else ::= ELSE expr
+        public const int case_else__empty = 232; // case_else ::=
+        public const int case_operand__empty = 233; // case_operand ::=
+        public const int exprlist__empty = 234; // exprlist ::=
+        public const int nexprlist__nexprlist_COMMA_expr = 235; // nexprlist ::= nexprlist COMMA expr
+        public const int nexprlist__expr = 236; // nexprlist ::= expr
+        public const int paren_exprlist__empty = 237; // paren_exprlist ::=
+        public const int paren_exprlist__LP_exprlist_RP = 238; // paren_exprlist ::= LP exprlist RP
+        public const int cmd__createkw_uniqueflag_INDEX_ifnotexists_nm_dbnm_ON_nm_LP_sortlist_RP_where_opt = 239; // cmd ::= createkw uniqueflag INDEX ifnotexists nm dbnm ON nm LP sortlist RP where_opt
+        public const int uniqueflag__UNIQUE = 240; // uniqueflag ::= UNIQUE
+        public const int uniqueflag__empty = 241; // uniqueflag ::=
+        public const int eidlist_opt__empty = 242; // eidlist_opt ::=
+        public const int eidlist_opt__LP_eidlist_RP = 243; // eidlist_opt ::= LP eidlist RP
+        public const int eidlist__eidlist_COMMA_nm_collate_sortorder = 244; // eidlist ::= eidlist COMMA nm collate sortorder
+        public const int eidlist__nm_collate_sortorder = 245; // eidlist ::= nm collate sortorder
+        public const int collate__empty = 246; // collate ::=
+        public const int collate__COLLATE_ID_or_STRING = 247; // collate ::= COLLATE ID|STRING
+        public const int cmd__DROP_INDEX_ifexists_fullname = 248; // cmd ::= DROP INDEX ifexists fullname
+        public const int cmd__VACUUM_vinto = 249; // cmd ::= VACUUM vinto
+        public const int cmd__VACUUM_nm_vinto = 250; // cmd ::= VACUUM nm vinto
+        public const int vinto__INTO_expr = 251; // vinto ::= INTO expr
+        public const int vinto__empty = 252; // vinto ::=
+        public const int cmd__PRAGMA_nm_dbnm = 253; // cmd ::= PRAGMA nm dbnm
+        public const int cmd__PRAGMA_nm_dbnm_EQ_nmnum = 254; // cmd ::= PRAGMA nm dbnm EQ nmnum
+        public const int cmd__PRAGMA_nm_dbnm_LP_nmnum_RP = 255; // cmd ::= PRAGMA nm dbnm LP nmnum RP
+        public const int cmd__PRAGMA_nm_dbnm_EQ_minus_num = 256; // cmd ::= PRAGMA nm dbnm EQ minus_num
+        public const int cmd__PRAGMA_nm_dbnm_LP_minus_num_RP = 257; // cmd ::= PRAGMA nm dbnm LP minus_num RP
+        public const int plus_num__PLUS_INTEGER_or_FLOAT = 258; // plus_num ::= PLUS INTEGER|FLOAT
+        public const int minus_num__MINUS_INTEGER_or_FLOAT = 259; // minus_num ::= MINUS INTEGER|FLOAT
+        public const int cmd__createkw_trigger_decl_BEGIN_trigger_cmd_list_END = 260; // cmd ::= createkw trigger_decl BEGIN trigger_cmd_list END
+        public const int trigger_decl__temp_TRIGGER_ifnotexists_nm_dbnm_trigger_time_trigger_event_ON_fullname_foreach_clause_when_clause = 261; // trigger_decl ::= temp TRIGGER ifnotexists nm dbnm trigger_time trigger_event ON fullname foreach_clause when_clause
+        public const int trigger_time__BEFORE_or_AFTER = 262; // trigger_time ::= BEFORE|AFTER
+        public const int trigger_time__INSTEAD_OF = 263; // trigger_time ::= INSTEAD OF
+        public const int trigger_time__empty = 264; // trigger_time ::=
+        public const int trigger_event__DELETE_or_INSERT = 265; // trigger_event ::= DELETE|INSERT
+        public const int trigger_event__UPDATE = 266; // trigger_event ::= UPDATE
+        public const int trigger_event__UPDATE_OF_idlist = 267; // trigger_event ::= UPDATE OF idlist
+        public const int when_clause__empty = 268; // when_clause ::=
+        public const int when_clause__WHEN_expr = 269; // when_clause ::= WHEN expr
+        public const int trigger_cmd_list__trigger_cmd_list_trigger_cmd_SEMI = 270; // trigger_cmd_list ::= trigger_cmd_list trigger_cmd SEMI
+        public const int trigger_cmd_list__trigger_cmd_SEMI = 271; // trigger_cmd_list ::= trigger_cmd SEMI
+        public const int tridxby__INDEXED_BY_nm = 272; // tridxby ::= INDEXED BY nm
+        public const int tridxby__NOT_INDEXED = 273; // tridxby ::= NOT INDEXED
+        public const int trigger_cmd__UPDATE_orconf_xfullname_tridxby_SET_setlist_from_where_opt_scanpt = 274; // trigger_cmd ::= UPDATE orconf xfullname tridxby SET setlist from where_opt scanpt
+        public const int trigger_cmd__scanpt_insert_cmd_INTO_xfullname_idlist_opt_select_upsert_scanpt = 275; // trigger_cmd ::= scanpt insert_cmd INTO xfullname idlist_opt select upsert scanpt
+        public const int trigger_cmd__DELETE_FROM_xfullname_tridxby_where_opt_scanpt = 276; // trigger_cmd ::= DELETE FROM xfullname tridxby where_opt scanpt
+        public const int trigger_cmd__scanpt_select_scanpt = 277; // trigger_cmd ::= scanpt select scanpt
+        public const int expr__RAISE_LP_IGNORE_RP = 278; // expr ::= RAISE LP IGNORE RP
+        public const int expr__RAISE_LP_raisetype_COMMA_expr_RP = 279; // expr ::= RAISE LP raisetype COMMA expr RP
+        public const int raisetype__ROLLBACK = 280; // raisetype ::= ROLLBACK
+        public const int raisetype__ABORT = 281; // raisetype ::= ABORT
+        public const int raisetype__FAIL = 282; // raisetype ::= FAIL
+        public const int cmd__DROP_TRIGGER_ifexists_fullname = 283; // cmd ::= DROP TRIGGER ifexists fullname
+        public const int cmd__ATTACH_database_kw_opt_expr_AS_expr_key_opt = 284; // cmd ::= ATTACH database_kw_opt expr AS expr key_opt
+        public const int cmd__DETACH_database_kw_opt_expr = 285; // cmd ::= DETACH database_kw_opt expr
+        public const int key_opt__empty = 286; // key_opt ::=
+        public const int key_opt__KEY_expr = 287; // key_opt ::= KEY expr
+        public const int cmd__REINDEX = 288; // cmd ::= REINDEX
+        public const int cmd__REINDEX_nm_dbnm = 289; // cmd ::= REINDEX nm dbnm
+        public const int cmd__ANALYZE = 290; // cmd ::= ANALYZE
+        public const int cmd__ANALYZE_nm_dbnm = 291; // cmd ::= ANALYZE nm dbnm
+        public const int cmd__ALTER_TABLE_fullname_RENAME_TO_nm = 292; // cmd ::= ALTER TABLE fullname RENAME TO nm
+        public const int cmd__alter_add_carglist = 293; // cmd ::= alter_add carglist
+        public const int alter_add__ALTER_TABLE_fullname_ADD_kwcolumn_opt_nm_typetoken = 294; // alter_add ::= ALTER TABLE fullname ADD kwcolumn_opt nm typetoken
+        public const int cmd__ALTER_TABLE_fullname_DROP_kwcolumn_opt_nm = 295; // cmd ::= ALTER TABLE fullname DROP kwcolumn_opt nm
+        public const int cmd__ALTER_TABLE_fullname_RENAME_kwcolumn_opt_nm_TO_nm = 296; // cmd ::= ALTER TABLE fullname RENAME kwcolumn_opt nm TO nm
+        public const int cmd__ALTER_TABLE_fullname_DROP_CONSTRAINT_nm = 297; // cmd ::= ALTER TABLE fullname DROP CONSTRAINT nm
+        public const int cmd__ALTER_TABLE_fullname_ALTER_kwcolumn_opt_nm_DROP_NOT_NULL = 298; // cmd ::= ALTER TABLE fullname ALTER kwcolumn_opt nm DROP NOT NULL
+        public const int cmd__ALTER_TABLE_fullname_ALTER_kwcolumn_opt_nm_SET_NOT_NULL_onconf = 299; // cmd ::= ALTER TABLE fullname ALTER kwcolumn_opt nm SET NOT NULL onconf
+        public const int cmd__ALTER_TABLE_fullname_ADD_CONSTRAINT_nm_CHECK_LP_expr_RP_onconf = 300; // cmd ::= ALTER TABLE fullname ADD CONSTRAINT nm CHECK LP expr RP onconf
+        public const int cmd__ALTER_TABLE_fullname_ADD_CHECK_LP_expr_RP_onconf = 301; // cmd ::= ALTER TABLE fullname ADD CHECK LP expr RP onconf
+        public const int cmd__create_vtab = 302; // cmd ::= create_vtab
+        public const int cmd__create_vtab_LP_vtabarglist_RP = 303; // cmd ::= create_vtab LP vtabarglist RP
+        public const int create_vtab__createkw_VIRTUAL_TABLE_ifnotexists_nm_dbnm_USING_nm = 304; // create_vtab ::= createkw VIRTUAL TABLE ifnotexists nm dbnm USING nm
+        public const int vtabarg__empty = 305; // vtabarg ::=
+        public const int vtabargtoken__ANY = 306; // vtabargtoken ::= ANY
+        public const int vtabargtoken__lp_anylist_RP = 307; // vtabargtoken ::= lp anylist RP
+        public const int lp__LP = 308; // lp ::= LP
+        public const int with__WITH_wqlist = 309; // with ::= WITH wqlist
+        public const int with__WITH_RECURSIVE_wqlist = 310; // with ::= WITH RECURSIVE wqlist
+        public const int wqas__AS = 311; // wqas ::= AS
+        public const int wqas__AS_MATERIALIZED = 312; // wqas ::= AS MATERIALIZED
+        public const int wqas__AS_NOT_MATERIALIZED = 313; // wqas ::= AS NOT MATERIALIZED
+        public const int wqitem__withnm_eidlist_opt_wqas_LP_select_RP = 314; // wqitem ::= withnm eidlist_opt wqas LP select RP
+        public const int withnm__nm = 315; // withnm ::= nm
+        public const int wqlist__wqitem = 316; // wqlist ::= wqitem
+        public const int wqlist__wqlist_COMMA_wqitem = 317; // wqlist ::= wqlist COMMA wqitem
+        public const int windowdefn_list__windowdefn_list_COMMA_windowdefn = 318; // windowdefn_list ::= windowdefn_list COMMA windowdefn
+        public const int windowdefn__nm_AS_LP_window_RP = 319; // windowdefn ::= nm AS LP window RP
+        public const int window__PARTITION_BY_nexprlist_orderby_opt_frame_opt = 320; // window ::= PARTITION BY nexprlist orderby_opt frame_opt
+        public const int window__nm_PARTITION_BY_nexprlist_orderby_opt_frame_opt = 321; // window ::= nm PARTITION BY nexprlist orderby_opt frame_opt
+        public const int window__ORDER_BY_sortlist_frame_opt = 322; // window ::= ORDER BY sortlist frame_opt
+        public const int window__nm_ORDER_BY_sortlist_frame_opt = 323; // window ::= nm ORDER BY sortlist frame_opt
+        public const int window__nm_frame_opt = 324; // window ::= nm frame_opt
+        public const int frame_opt__empty = 325; // frame_opt ::=
+        public const int frame_opt__range_or_rows_frame_bound_s_frame_exclude_opt = 326; // frame_opt ::= range_or_rows frame_bound_s frame_exclude_opt
+        public const int frame_opt__range_or_rows_BETWEEN_frame_bound_s_AND_frame_bound_e_frame_exclude_opt = 327; // frame_opt ::= range_or_rows BETWEEN frame_bound_s AND frame_bound_e frame_exclude_opt
+        public const int range_or_rows__RANGE_or_ROWS_or_GROUPS = 328; // range_or_rows ::= RANGE|ROWS|GROUPS
+        public const int frame_bound_s__frame_bound = 329; // frame_bound_s ::= frame_bound
+        public const int frame_bound_s__UNBOUNDED_PRECEDING = 330; // frame_bound_s ::= UNBOUNDED PRECEDING
+        public const int frame_bound_e__frame_bound = 331; // frame_bound_e ::= frame_bound
+        public const int frame_bound_e__UNBOUNDED_FOLLOWING = 332; // frame_bound_e ::= UNBOUNDED FOLLOWING
+        public const int frame_bound__expr_PRECEDING_or_FOLLOWING = 333; // frame_bound ::= expr PRECEDING|FOLLOWING
+        public const int frame_bound__CURRENT_ROW = 334; // frame_bound ::= CURRENT ROW
+        public const int frame_exclude_opt__empty = 335; // frame_exclude_opt ::=
+        public const int frame_exclude_opt__EXCLUDE_frame_exclude = 336; // frame_exclude_opt ::= EXCLUDE frame_exclude
+        public const int frame_exclude__NO_OTHERS = 337; // frame_exclude ::= NO OTHERS
+        public const int frame_exclude__CURRENT_ROW = 338; // frame_exclude ::= CURRENT ROW
+        public const int frame_exclude__GROUP_or_TIES = 339; // frame_exclude ::= GROUP|TIES
+        public const int window_clause__WINDOW_windowdefn_list = 340; // window_clause ::= WINDOW windowdefn_list
+        public const int filter_over__filter_clause_over_clause = 341; // filter_over ::= filter_clause over_clause
+        public const int filter_over__over_clause = 342; // filter_over ::= over_clause
+        public const int filter_over__filter_clause = 343; // filter_over ::= filter_clause
+        public const int over_clause__OVER_LP_window_RP = 344; // over_clause ::= OVER LP window RP
+        public const int over_clause__OVER_nm = 345; // over_clause ::= OVER nm
+        public const int filter_clause__FILTER_LP_WHERE_expr_RP = 346; // filter_clause ::= FILTER LP WHERE expr RP
+        public const int term__QNUMBER = 347; // term ::= QNUMBER
+        public const int input__cmdlist = 348; // input ::= cmdlist
+        public const int cmdlist__cmdlist_ecmd = 349; // cmdlist ::= cmdlist ecmd
+        public const int cmdlist__ecmd = 350; // cmdlist ::= ecmd
+        public const int ecmd__SEMI = 351; // ecmd ::= SEMI
+        public const int ecmd__cmdx_SEMI = 352; // ecmd ::= cmdx SEMI
+        public const int ecmd__explain_cmdx_SEMI = 353; // ecmd ::= explain cmdx SEMI
+        public const int trans_opt__empty = 354; // trans_opt ::=
+        public const int trans_opt__TRANSACTION = 355; // trans_opt ::= TRANSACTION
+        public const int trans_opt__TRANSACTION_nm = 356; // trans_opt ::= TRANSACTION nm
+        public const int savepoint_opt__SAVEPOINT = 357; // savepoint_opt ::= SAVEPOINT
+        public const int savepoint_opt__empty = 358; // savepoint_opt ::=
+        public const int cmd__create_table_create_table_args = 359; // cmd ::= create_table create_table_args
+        public const int table_option_set__table_option = 360; // table_option_set ::= table_option
+        public const int columnlist__columnlist_COMMA_columnname_carglist = 361; // columnlist ::= columnlist COMMA columnname carglist
+        public const int columnlist__columnname_carglist = 362; // columnlist ::= columnname carglist
+        public const int nm__ID_or_INDEXED_or_JOIN_KW = 363; // nm ::= ID|INDEXED|JOIN_KW
+        public const int nm__STRING = 364; // nm ::= STRING
+        public const int typetoken__typename = 365; // typetoken ::= typename
+        public const int typename__ID_or_STRING = 366; // typename ::= ID|STRING
+        public const int signed__plus_num = 367; // signed ::= plus_num
+        public const int signed__minus_num = 368; // signed ::= minus_num
+        public const int carglist__carglist_ccons = 369; // carglist ::= carglist ccons
+        public const int carglist__empty = 370; // carglist ::=
+        public const int ccons__NULL_onconf = 371; // ccons ::= NULL onconf
+        public const int ccons__GENERATED_ALWAYS_AS_generated = 372; // ccons ::= GENERATED ALWAYS AS generated
+        public const int ccons__AS_generated = 373; // ccons ::= AS generated
+        public const int conslist_opt__COMMA_conslist = 374; // conslist_opt ::= COMMA conslist
+        public const int conslist__conslist_tconscomma_tcons = 375; // conslist ::= conslist tconscomma tcons
+        public const int conslist__tcons = 376; // conslist ::= tcons
+        public const int tconscomma__empty = 377; // tconscomma ::=
+        public const int defer_subclause_opt__defer_subclause = 378; // defer_subclause_opt ::= defer_subclause
+        public const int resolvetype__raisetype = 379; // resolvetype ::= raisetype
+        public const int selectnowith__oneselect = 380; // selectnowith ::= oneselect
+        public const int oneselect__values = 381; // oneselect ::= values
+        public const int sclp__selcollist_COMMA = 382; // sclp ::= selcollist COMMA
+        public const int as__ID_or_STRING = 383; // as ::= ID|STRING
+        public const int indexed_opt__indexed_by = 384; // indexed_opt ::= indexed_by
+        public const int returning__empty = 385; // returning ::=
+        public const int expr__term = 386; // expr ::= term
+        public const int likeop__LIKE_KW_or_MATCH = 387; // likeop ::= LIKE_KW|MATCH
+        public const int case_operand__expr = 388; // case_operand ::= expr
+        public const int exprlist__nexprlist = 389; // exprlist ::= nexprlist
+        public const int nmnum__plus_num = 390; // nmnum ::= plus_num
+        public const int nmnum__nm = 391; // nmnum ::= nm
+        public const int nmnum__ON = 392; // nmnum ::= ON
+        public const int nmnum__DELETE = 393; // nmnum ::= DELETE
+        public const int nmnum__DEFAULT = 394; // nmnum ::= DEFAULT
+        public const int plus_num__INTEGER_or_FLOAT = 395; // plus_num ::= INTEGER|FLOAT
+        public const int foreach_clause__empty = 396; // foreach_clause ::=
+        public const int foreach_clause__FOR_EACH_ROW = 397; // foreach_clause ::= FOR EACH ROW
+        public const int tridxby__empty = 398; // tridxby ::=
+        public const int database_kw_opt__DATABASE = 399; // database_kw_opt ::= DATABASE
+        public const int database_kw_opt__empty = 400; // database_kw_opt ::=
+        public const int kwcolumn_opt__empty = 401; // kwcolumn_opt ::=
+        public const int kwcolumn_opt__COLUMNKW = 402; // kwcolumn_opt ::= COLUMNKW
+        public const int vtabarglist__vtabarg = 403; // vtabarglist ::= vtabarg
+        public const int vtabarglist__vtabarglist_COMMA_vtabarg = 404; // vtabarglist ::= vtabarglist COMMA vtabarg
+        public const int vtabarg__vtabarg_vtabargtoken = 405; // vtabarg ::= vtabarg vtabargtoken
+        public const int anylist__empty = 406; // anylist ::=
+        public const int anylist__anylist_LP_anylist_RP = 407; // anylist ::= anylist LP anylist RP
+        public const int anylist__anylist_ANY = 408; // anylist ::= anylist ANY
+        public const int with__empty = 409; // with ::=
+        public const int windowdefn_list__windowdefn = 410; // windowdefn_list ::= windowdefn
+        public const int window__frame_opt = 411; // window ::= frame_opt
+    }
 
     public static readonly string[] TokenNames =
     {

@@ -16,7 +16,8 @@ To migrate from `MBW.Utilities.ManagedSqlite.Core` or `MBW.Utilities.ManagedSqli
 // Opens MyDb.db, and its -wal or -journal file if one exists
 using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
 {
-    // Access all tables using db.GetTables(), or a single using db.GetTable("name")
+    // List the tables using db.GetTables(), or every schema row (indexes, views and triggers too) using
+    // db.GetSchema(), and open one using db.GetTable("name")
     Sqlite3Table tbl = db.GetTable("MyTable");
     
     // Read out the SQL schema of the table (to get column names)
@@ -33,7 +34,7 @@ using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
     // TryGetValueByName() reads a column by name, and also detects row-id substitutes
     row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
     
-    // Try casting it to a specific type (you must know the C# type)
+    // Read it as a C# type: NULL reads as default, and INTEGER and REAL convert into each other as in SQLite
     row.TryGetOrdinal<int>(0, out int myInteger);
 }
 ```
@@ -93,11 +94,12 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 
 ### Differences from SQLite
 
-* **Column DEFAULTs are applied by name only.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column, and SQLite reads the column's DEFAULT for it. `TryGetValueByName` does the same; `TryGetOrdinal` and `ColumnData` show the record as stored, without the column. A DEFAULT with a `CAST`, or a negation that is a real in a TEXT column, is not evaluated, and reads as no value. A column without a DEFAULT reads as NULL, as in SQLite.
+* **Column DEFAULTs are applied only to a column read through the table definition.** A row written before `ALTER TABLE ... ADD COLUMN` does not store the new column, and SQLite reads the column's DEFAULT for it. `TryGetValueByName` and `TryGetOrdinal(SqlTableColumn)` do the same; `TryGetOrdinal(index)` and `ColumnData` show the record as stored, without the column. A DEFAULT that SQLite evaluates by formatting a real as text, such as `-1.5` in a TEXT column or `CAST(1.5 AS BLOB)`, is not evaluated, and reads as no value. A column without a DEFAULT reads as NULL, as in SQLite.
 * **Lenient opens a database whose schema SQLite finds malformed.** As in SQLite, the whole schema is loaded and checked when the database is opened, and in Strict a malformed table, view, index or trigger makes the open throw `SqliteCorruptException`. Lenient reports the error to `OnValidationIssue` and keeps it on the row that failed, so only that row's table cannot be opened, and reads the other tables.
 * **Hot journals are played back, not refused.** See [Journal modes](#journal-modes).
 * **Super-journals are ignored.** The library reads one database at a time. A hot journal from a transaction across attached databases is always played back, where SQLite plays it back only while the super-journal file still exists. If that transaction did commit, the library reads the database as it was just before it.
 * **A WAL with a different page size than the database fails in Strict.** It can only belong to another database. SQLite reads it without an error, leaving part of each page undefined; Lenient ignores the WAL.
+* **Rowids out of order fail in Strict.** In a sound table they always increase. SQLite returns the rows as they lie and finds the damage only in `PRAGMA integrity_check`; Strict throws `SqliteCorruptException` (check `INTEG-14`) at the first rowid that does not increase, also in `sqlite_schema` when the database is opened, and Lenient reports it and reads on. In Strict this also stops a corrupt b-tree whose pages share a subtree at its first repeated row; Lenient walks the shared subtree once for each pointer to it, as SQLite does, and reports each repetition.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs

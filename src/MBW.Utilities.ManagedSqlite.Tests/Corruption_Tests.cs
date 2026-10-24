@@ -5,10 +5,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
-using MBW.Utilities.ManagedSqlite.Sql;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Tests;
@@ -53,7 +51,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     private static uint RootPage(string table)
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(Base));
-        return db.GetTable(table).SchemaDefinition.RootPage;
+        return db.GetTable(table).SchemaRow.RootPage;
     }
 
     /// <summary>
@@ -75,7 +73,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
-        foreach (Sqlite3SchemaRow schema in db.GetTables().Where(s => s.Type == "table").ToList())
+        foreach (Sqlite3SchemaRow schema in db.GetTables().ToList())
             ReadTable(db, schema.Name);
     }
 
@@ -86,7 +84,8 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     }
 
     /// <summary>
-    /// Runs the action with a timeout, and returns the exception it threw, if any
+    /// Runs the action with a timeout, and returns the exception it threw, if any. A
+    /// <see cref="SqliteCorruptException"/> must name the check that failed.
     /// </summary>
     private static Exception RunBounded(Action action)
     {
@@ -99,6 +98,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         }
         catch (AggregateException e)
         {
+            if (e.InnerException is SqliteCorruptException corrupt)
+                Assert.NotNull(corrupt.Check);
+
             return e.InnerException;
         }
 
@@ -345,18 +347,22 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     /// <summary>
     /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
-    /// an interior table page. The root page alone can't tell, so GetTableDefinition, which knows the SQL, checks it.
+    /// an interior table page. Opening the table compares the root page with the SQL, in either mode.
     /// </summary>
     [Theory]
-    [InlineData("Small", 0x0A)]
-    [InlineData("Keyed", 0x05)]
-    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType)
+    [InlineData("Small", 0x0A, SqliteValidation.Strict)]
+    [InlineData("Keyed", 0x05, SqliteValidation.Strict)]
+    [InlineData("Small", 0x0A, SqliteValidation.Lenient)]
+    [InlineData("Keyed", 0x05, SqliteValidation.Lenient)]
+    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType, SqliteValidation validation)
     {
         byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
 
-        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
-        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
+        List<string> issues = new();
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) });
+        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table)).Check);
+        Assert.Empty(issues);
     }
 
     // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold, in either mode. Their pointers would
@@ -385,6 +391,38 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     // Every interior page has a right-most child
     [Fact]
     public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0), "PAGE-15");
+
+    /// <summary>
+    /// INTEG-14: both of Deep's root pointers lead to its left interior page, so a scan reaches that page's rows twice.
+    /// SQLite returns them twice and finds the damage only in integrity_check. Strict fails at the first repeated rowid.
+    /// Lenient reports it and reads as SQLite does.
+    /// </summary>
+    [Theory]
+    [InlineData(SqliteValidation.Strict)]
+    [InlineData(SqliteValidation.Lenient)]
+    public void SharedSubtree_RowIdsOutOfOrder(SqliteValidation validation)
+    {
+        Func<byte[], byte[]> patch = data => new DbPatcher(data).SetRightMostPointer(DeepRoot, DeepLeft).Data;
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
+        if (validation == SqliteValidation.Strict)
+        {
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(patch(Base)), settings);
+            SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Deep")));
+            Assert.Equal("INTEG-14", corrupt.Check);
+
+            // The first repeated row is the first one of the shared subtree, met again
+            Assert.Equal(DeepFirstLeaf, corrupt.Page);
+            Assert.Empty(issues);
+        }
+        else
+        {
+            SqliteParity.AssertSameAsSqlite(Script, patch, settings);
+            Assert.Contains("INTEG-14", issues);
+            Assert.All(issues, check => Assert.Equal("INTEG-14", check));
+        }
+    }
 
     // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read
     [Fact]
@@ -593,7 +631,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
             byte[] data = SqliteParity.Build(Script, 8);
             uint root;
             using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
-                root = db.GetTable("Small").SchemaDefinition.RootPage;
+                root = db.GetTable("Small").SchemaRow.RootPage;
 
             DbPatcher p = new DbPatcher(data);
             int record = p.GetRecordOffset(root, 0, out long payloadSize);
@@ -720,22 +758,60 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     // Overflow chains. Without its overflow pages, row 2's blob would come back zero-filled.
 
     // CELL-13: the chain ends while payload remains, at the cell's first overflow pointer or at an intermediate
-    // overflow page's next pointer
+    // overflow page's next pointer. As in SQLite, only a read that needs the missing pages fails: every row is
+    // enumerated, and row 2's Name, in the cell's local bytes, still reads.
     [Theory]
     [InlineData("first pointer")]
     [InlineData("next pointer")]
-    public void Overflow_ChainEndsEarly(string pointer) => AssertCorrupt("overflow chain", p =>
+    public void Overflow_ChainEndsEarly(string pointer)
     {
+        DbPatcher p = new DbPatcher(Base);
         if (pointer == "first pointer")
         {
             p.SetOverflowPointer(SmallRoot, 1, 0);
-            return;
+        }
+        else
+        {
+            List<uint> chain = p.GetOverflowChain(SmallRoot, 1);
+            Assert.True(chain.Count >= 2);
+            p.SetOverflowNextPointer(chain[0], 0);
         }
 
-        List<uint> chain = p.GetOverflowChain(SmallRoot, 1);
-        Assert.True(chain.Count >= 2);
-        p.SetOverflowNextPointer(chain[0], 0);
-    }, "CELL-13");
+        SqliteParity.AssertSqliteReportsCorrupt(p.Data, "Small");
+        SqliteParity.AssertSqliteReads(p.Data, "Small", "Id, Name");
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(p.Data));
+        List<Sqlite3Row> rows = db.GetTable("Small").EnumerateRows().ToList();
+        Assert.True(rows[1].TryGetOrdinal(1, out string name));
+        Assert.Equal("two", name);
+
+        SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => rows[1].TryGetOrdinal(2, out _));
+        Assert.Equal("CELL-13", ex.Check);
+        Assert.Equal("overflow chain", ex.Structure);
+    }
+
+    // A record header that ends a few bytes before the end of the cell's local bytes is read from those bytes alone, so
+    // a broken first overflow pointer fails only the overflowing value, as in SQLite. 34 columns give a 36 byte header,
+    // and 512 byte pages keep 39 bytes of this payload on the leaf page.
+    [Fact]
+    public void Overflow_ChainEndsEarly_LocalHeaderStillReads()
+    {
+        DbPatcher p = new DbPatcher(SqliteParity.Build($@"
+PRAGMA page_size = 512;
+CREATE TABLE t ({string.Join(", ", Enumerable.Range(0, 34).Select(i => $"c{i}"))});
+INSERT INTO t (c0, c33) VALUES (1, printf('%.*c', 500, 'v'));"));
+        p.SetOverflowPointer(2, 0, 0);
+
+        SqliteParity.AssertSqliteReads(p.Data, "t", "c0");
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(p.Data));
+        Sqlite3Row row = db.GetTable("t").EnumerateRows().Single();
+        Assert.True(row.TryGetOrdinal(0, out long value));
+        Assert.Equal(1L, value);
+
+        SqliteCorruptException ex = Assert.Throws<SqliteCorruptException>(() => row.TryGetOrdinal(33, out string _));
+        Assert.Equal("CELL-13", ex.Check);
+    }
 
     // CELL-16: SQLite never follows the last overflow page's next pointer, so a bad one reads on
     [Fact]
@@ -772,13 +848,13 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     }
 
     /// <summary>
-    /// Deep's left interior page points back to the root. As in SQLite, the depth limit is what stops the cycle: root
-    /// and left page alternate, so the walk gives up at the root's first child pointer.
+    /// Deep's left interior page's first child pointer leads back to the root. As in SQLite, the depth limit is what
+    /// stops the cycle: root and left page alternate before any leaf, so the walk gives up after 20 levels.
     /// </summary>
     [Fact]
     public void Corruption_OtherTablesStillReadLikeSqlite()
     {
-        byte[] data = new DbPatcher(Base).SetRightMostPointer(DeepLeft, DeepRoot).Data;
+        byte[] data = new DbPatcher(Base).SetChildPointer(DeepLeft, 0, DeepRoot).Data;
 
         Exception ex = RunBounded(() =>
         {
