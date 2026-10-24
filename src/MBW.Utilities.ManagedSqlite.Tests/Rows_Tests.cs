@@ -106,4 +106,33 @@ INSERT INTO b SELECT x, 'b' || x FROM seq;")));
         Assert.Equal(Enumerable.Range(1, 300).Select(x => "a" + x), interleavedA);
         Assert.Equal(Enumerable.Range(1, 300).Select(x => "b" + x), interleavedB);
     }
+
+    /// <summary>
+    /// Once <see cref="Sqlite3Row.ColumnData"/> is read, the typed reads serve its values, with the same results as
+    /// before: each reads only its own type, and TryGetDouble an INTEGER too
+    /// </summary>
+    [Fact]
+    public void TypedReadsServeColumnDataOnceRead()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+CREATE TABLE tbl (a, b, c, d, e);
+INSERT INTO tbl VALUES (42, 1.5, 'text', x'0102', NULL);")));
+
+        Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
+        Assert.Equal(new object[] { 42L, 1.5, "text", new byte[] { 1, 2 }, null }, row.ColumnData);
+
+        Assert.True(row.TryGetInt64(0, out long integer));
+        Assert.Equal(42, integer);
+        Assert.True(row.TryGetDouble(0, out double widened));
+        Assert.Equal(42.0, widened);
+        Assert.True(row.TryGetDouble(1, out double real));
+        Assert.Equal(1.5, real);
+        Assert.True(row.TryGetString(2, out string text));
+        Assert.Equal("text", text);
+
+        Assert.False(row.TryGetInt64(1, out _));
+        Assert.False(row.TryGetString(3, out _));
+        Assert.False(row.TryGetDouble(4, out _));
+        Assert.False(row.TryGetInt64(5, out _));
+    }
 }

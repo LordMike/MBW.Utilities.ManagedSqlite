@@ -100,6 +100,55 @@ public sealed class Sqlite3Row
         return isBlob;
     }
 
+    /// <summary>
+    /// The value of field <paramref name="index"/> of the record when it is stored as an INTEGER, without boxing it as
+    /// <see cref="TryGetOrdinal(ushort, out object?)"/> does. Like that method, this decodes the record only up to
+    /// that field. False when the record has fewer fields, or the field holds NULL or another type: nothing is
+    /// converted.
+    /// </summary>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
+    public bool TryGetInt64(ushort index, out long value)
+    {
+        if (_columnData == null)
+            return _record.TryGetInt64(index, this, out value);
+
+        bool isInteger = index < _columnData.Length && _columnData[index] is long;
+        value = isInteger ? (long)_columnData[index]! : 0;
+        return isInteger;
+    }
+
+    /// <summary>
+    /// The value of field <paramref name="index"/> of the record when it is stored as a REAL or an INTEGER, without
+    /// boxing it. An INTEGER is read too because SQLite stores a REAL without a fractional part as an INTEGER in a
+    /// column of REAL affinity. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up
+    /// to that field. False when the record has fewer fields, or the field holds NULL, TEXT or a BLOB.
+    /// </summary>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
+    public bool TryGetDouble(ushort index, out double value)
+    {
+        if (_columnData == null)
+            return _record.TryGetDouble(index, this, out value);
+
+        object? stored = index < _columnData.Length ? _columnData[index] : null;
+        value = stored switch { double real => real, long integer => integer, _ => 0 };
+        return stored is double or long;
+    }
+
+    /// <summary>
+    /// The value of field <paramref name="index"/> of the record when it is stored as TEXT, decoded in the database's
+    /// encoding. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up to that field.
+    /// False when the record has fewer fields, or the field holds NULL or another type: nothing is converted.
+    /// </summary>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
+    public bool TryGetString(ushort index, [NotNullWhen(true)] out string? value)
+    {
+        if (_columnData == null)
+            return _record.TryGetString(index, this, out value);
+
+        value = index < _columnData.Length ? _columnData[index] as string : null;
+        return value != null;
+    }
+
     public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
     {
         value = default;
