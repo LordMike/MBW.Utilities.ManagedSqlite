@@ -20,7 +20,9 @@ namespace System
         }
     }
 }
+#endif
 
+#if !NETCOREAPP3_0_OR_GREATER
 namespace System.Runtime.CompilerServices
 {
     /// <summary>Gives a parameter the source text of another parameter's argument.</summary>
