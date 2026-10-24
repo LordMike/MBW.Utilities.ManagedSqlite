@@ -83,6 +83,8 @@ public class Journal_Tests
         // The second transaction's first frame fails its checksum, so it and every later frame are ignored
         { "a WAL frame with a bad checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Patch(db + "-wal", 32 + WalFrameSize(db) + 24 + 100, 0x55), true },
         { "a WAL cut inside its last frame", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three'); INSERT INTO t (b) VALUES ('four');", db => Truncate(db + "-wal", new FileInfo(db + "-wal").Length - 10), true },
+        // About 380 frames of 4096 bytes, so the log takes two reads: about 1 MB, then the rest
+        { "a long WAL cut inside its last frame", Wal + Checkpoint + ManyRows + ManyRows + ManyRows + "INSERT INTO t (b) VALUES ('three');", db => Truncate(db + "-wal", new FileInfo(db + "-wal").Length - 10), true },
         { "a WAL with no commit frame", Wal + Checkpoint + ManyRows, db => Truncate(db + "-wal", 32 + WalFrameSize(db) * 2), false },
         { "a WAL with a bad header checksum", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three');", db => Patch(db + "-wal", 16, 0x55), false },
         { "a WAL with big-endian checksums", Wal + Checkpoint + ManyRows, db => RewriteWalChecksums(db + "-wal", bigEndian: true), true },
