@@ -93,8 +93,7 @@ public sealed class Sqlite3Row
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that column</exception>
     public bool TryGetOrdinal(SqlTableColumn column, out object? value)
     {
-        if (column == null)
-            throw new ArgumentNullException(nameof(column));
+        ArgumentNullException.ThrowIfNull(column);
 
         SqlTableDefinition tableDefinition = Table.GetTableDefinition();
         if (!tableDefinition.TryGetColumn(column.Name, out SqlTableColumn? own) || own != column)
