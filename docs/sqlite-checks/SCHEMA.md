@@ -158,4 +158,4 @@ Legend: Strict-required = **Yes** (SQLite always fails), **Optional** (only inte
 
 ## 3. Open gaps
 
-None. Every gap the survey listed is closed; the README lists the checks and what the reader does for each.
+None. The README lists each check and what the reader does for it.

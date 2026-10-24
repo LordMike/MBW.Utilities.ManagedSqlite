@@ -169,6 +169,6 @@ Legend for "Ours": `Sql/` = `src/MBW.Utilities.ManagedSqlite/Sql/`, `Core/` = `s
 
 ## 3. Open gaps
 
-None. Table SQL is parsed by a port of SQLite's parser and checked as build.c checks it at init, so every gap the
-survey listed is closed; the README lists the checks and what the reader does for each. The DEFAULTs the reader does
+None. Table SQL is parsed by a port of SQLite's parser and checked as build.c checks it at init. The README lists each
+check and what the reader does for it. The DEFAULTs the reader does
 not evaluate are a REC gap (see REC.md).
