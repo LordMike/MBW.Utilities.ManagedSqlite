@@ -109,7 +109,7 @@ INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
         Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
 
         Assert.Equal(converts, row.TryGetValueByName("v", out T value));
-        Assert.Equal(converts ? SqliteParity.ReadWithSqlite<T>(data, "tbl") : default, value);
+        Assert.Equal(converts ? SqliteParity.ReadFirstValueWithSqlite<T>(data, "tbl") : default, value);
     }
 
     /// <summary>

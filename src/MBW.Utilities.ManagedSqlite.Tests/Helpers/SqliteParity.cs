@@ -247,7 +247,7 @@ internal static class SqliteParity
     /// real SQLite reads it as <typeparamref name="T"/> (Microsoft.Data.Sqlite's GetFieldValue, over
     /// sqlite3_column_int64 and sqlite3_column_double), and NULL as <c>default</c>
     /// </summary>
-    public static T ReadWithSqlite<T>(byte[] data, string table)
+    public static T ReadFirstValueWithSqlite<T>(byte[] data, string table)
     {
         using SqliteConnection connection = Open(data);
         using SqliteCommand command = connection.CreateCommand();
