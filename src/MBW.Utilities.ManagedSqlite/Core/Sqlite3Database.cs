@@ -213,7 +213,7 @@ public sealed class Sqlite3Database : IDisposable
             if (wal != null)
                 CheckStream(wal, nameof(wal));
 
-            // A caller error, checked here so the open does not report it as damage
+            // A caller error: the reader tests only for Lenient, so an undefined value would quietly read as Strict
             if (settings != null && settings.Validation is not (SqliteValidation.Strict or SqliteValidation.Lenient))
                 throw new ArgumentOutOfRangeException(nameof(settings), settings.Validation, "settings.Validation must be Strict or Lenient");
 
