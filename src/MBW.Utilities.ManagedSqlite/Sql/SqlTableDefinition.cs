@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -58,8 +59,11 @@ public sealed class SqlTableDefinition
     /// <summary>
     /// Finds a column by name. Like SQLite, the name is matched ignoring the case of ASCII letters only.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     public bool TryGetColumn(string name, [NotNullWhen(true)] out SqlTableColumn? column)
     {
+        ArgumentNullException.ThrowIfNull(name);
+
         return _columnIndex.TryGetValue(name, out column);
     }
 }
