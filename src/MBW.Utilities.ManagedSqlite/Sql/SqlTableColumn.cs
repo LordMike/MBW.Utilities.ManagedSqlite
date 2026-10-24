@@ -2,6 +2,9 @@
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
 
+/// <summary>
+/// A column of a table, as its CREATE TABLE statement declares it
+/// </summary>
 public sealed class SqlTableColumn
 {
     /// <summary>
@@ -9,14 +12,28 @@ public sealed class SqlTableColumn
     /// </summary>
     public int Ordinal { get; }
 
+    /// <summary>
+    /// The column's name, as declared, without quotes
+    /// </summary>
     public string Name { get; }
+
     /// <summary>
     /// The declared type's words, each unquoted, joined by one space, without a size: "VARCHAR" for VARCHAR(255),
     /// "double precision" as written, and "" for a column with no type
     /// </summary>
     public string TypeName { get; }
+
+    /// <summary>
+    /// The CLR type of the column's affinity, which SQLite derives from the declared type: long for INTEGER, string for
+    /// TEXT, byte[] for BLOB (and no type), double for REAL, and long for NUMERIC. SQLite stores any type in any column,
+    /// so a value can have another type, and a NUMERIC column can hold reals or text. See the README for the full
+    /// mapping.
+    /// </summary>
     public Type DetectedType { get; }
 
+    /// <summary>
+    /// True when the column is part of the table's PRIMARY KEY, declared on the column or in a table constraint
+    /// </summary>
     public bool IsPartOfPrimaryKey { get; internal set; }
 
     /// <summary>
