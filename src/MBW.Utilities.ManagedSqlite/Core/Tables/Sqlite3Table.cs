@@ -151,7 +151,7 @@ public sealed class Sqlite3Table
         Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
 
         // A WITHOUT ROWID table's row is parsed when the schema is read, so its definition is there
-        PrimaryKeyOrder? order = PrimaryKeyOrder.Create(SchemaDefinition.Table!, _reader.TextEncoding);
+        PrimaryKeyOrder? order = PrimaryKeyOrder.Create(SchemaRow.Table!, _reader.TextEncoding);
 
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)RootPage))
         {
@@ -168,7 +168,7 @@ public sealed class Sqlite3Table
             // whose key uses a collation that is not built into SQLite is not checked.
             if (order != null)
                 Checks.Relaxable(order.IsInOrder(payload), _reader.Settings, "INTEG-33",
-                    $"row not in PRIMARY KEY order for {SchemaDefinition.Name}: its key does not sort after the key of the row before it",
+                    $"row not in PRIMARY KEY order for {SchemaRow.Name}: its key does not sort after the key of the row before it",
                     page.Page, "index b-tree");
 
             // There is no rowid
