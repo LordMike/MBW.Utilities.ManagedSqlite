@@ -93,7 +93,7 @@ INSERT INTO tbl VALUES (7, 'seven', X'0102FF');")));
 
         foreach (SqlTableColumn column in table.GetTableDefinition().Columns)
         {
-            object expected = column.IsVirtualGenerated ? "no value" : SqliteParity.ReadWithSqlite<object>(data, $"SELECT {column.Name} FROM tbl");
+            object expected = column.IsVirtualGenerated ? "no value" : SqliteParity.ReadFirstValueWithSqlite<object>(data, $"SELECT {column.Name} FROM tbl");
             Assert.Equal(expected, row.TryGetOrdinal(column, out object value) ? value : "no value");
         }
     }
@@ -148,7 +148,7 @@ INSERT INTO tbl VALUES (1);")));
         Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
 
         Assert.Equal(converts, row.TryGetValueByName("v", out T value));
-        Assert.Equal(converts ? SqliteParity.ReadWithSqlite<T>(data, "SELECT v FROM tbl") : default, value);
+        Assert.Equal(converts ? SqliteParity.ReadFirstValueWithSqlite<T>(data, "SELECT v FROM tbl") : default, value);
     }
 
     /// <summary>
