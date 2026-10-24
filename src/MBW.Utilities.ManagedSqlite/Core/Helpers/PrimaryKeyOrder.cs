@@ -149,7 +149,7 @@ internal sealed class PrimaryKeyOrder
         try
         {
             int pos = record.Offset;
-            long headerSize = ByteArrayReader.ReadVarInt(data, end, ref pos);
+            long headerSize = ReadVarInt(data, end, ref pos);
             if (headerSize > record.Count)
                 return false;
 
@@ -164,7 +164,7 @@ internal sealed class PrimaryKeyOrder
                 if (pos >= headerEnd)
                     continue;
 
-                long serialType = ByteArrayReader.ReadVarInt(data, headerEnd, ref pos);
+                long serialType = ReadVarInt(data, headerEnd, ref pos);
                 long length = SerialTypeLength(serialType);
                 if (length > end - body)
                     return false;
@@ -230,7 +230,7 @@ internal sealed class PrimaryKeyOrder
         try
         {
             int idx = record.Offset;
-            long headerSize = ByteArrayReader.ReadVarInt(data, end, ref idx);
+            long headerSize = ReadVarInt(data, end, ref idx);
             if (headerSize > record.Count)
                 return 0;
 
@@ -242,7 +242,7 @@ internal sealed class PrimaryKeyOrder
                 if (idx >= headerEnd)
                     return 0;
 
-                long serialType = ByteArrayReader.ReadVarInt(data, headerEnd, ref idx);
+                long serialType = ReadVarInt(data, headerEnd, ref idx);
                 int rc = CompareField(data, d, end, serialType, i);
 
                 if (rc != 0)
@@ -270,7 +270,7 @@ internal sealed class PrimaryKeyOrder
     /// </summary>
     private int CompareField(byte[] data, int d, int end, long serialType, int i)
     {
-        Field rhs = _key[i];
+        ref readonly Field rhs = ref _key[i];
         int pos = d;
 
         switch (rhs.Kind)
@@ -395,18 +395,8 @@ internal sealed class PrimaryKeyOrder
     /// <summary>
     /// memcmp over the shorter length, then the shorter sorts first, as the record compare and binCollFunc do
     /// </summary>
-    private static int CompareBinary(byte[] a, int aOffset, int aLength, byte[] b, int bOffset, int bLength)
-    {
-        int count = Math.Min(aLength, bLength);
-        for (int k = 0; k < count; k++)
-        {
-            int diff = a[aOffset + k] - b[bOffset + k];
-            if (diff != 0)
-                return diff;
-        }
-
-        return aLength - bLength;
-    }
+    private static int CompareBinary(byte[] a, int aOffset, int aLength, byte[] b, int bOffset, int bLength) =>
+        new ReadOnlySpan<byte>(a, aOffset, aLength).SequenceCompareTo(new ReadOnlySpan<byte>(b, bOffset, bLength));
 
     /// <summary>
     /// sqlite3IntFloatCompare in vdbeaux.c: negative, zero or positive as <paramref name="i"/> is less than, equal to or
@@ -445,6 +435,17 @@ internal sealed class PrimaryKeyOrder
 
     private static double ReadReal(byte[] data, int end, ref int pos) =>
         BitConverter.Int64BitsToDouble(ByteArrayReader.ReadInteger(data, end, ref pos, 8));
+
+    /// <summary>
+    /// A varint, read without a call when it is one byte, as the header sizes and serial types of a key nearly always are
+    /// </summary>
+    private static long ReadVarInt(byte[] data, int length, ref int pos)
+    {
+        if (pos < length && data[pos] < 0x80)
+            return data[pos++];
+
+        return ByteArrayReader.ReadVarInt(data, length, ref pos);
+    }
 
     /// <summary>
     /// sqlite3VdbeSerialTypeLen in vdbeaux.c
