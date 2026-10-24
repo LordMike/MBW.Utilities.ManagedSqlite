@@ -77,6 +77,12 @@ public sealed class Sqlite3SchemaRow
     internal ParsedTable? Table { get; set; }
 
     /// <summary>
+    /// The definition <see cref="SqlExtensions.GetTableDefinition(Sqlite3SchemaRow)"/> builds from <see cref="Table"/>,
+    /// once it is first asked for. A field, so it can be stored with <see cref="System.Threading.Interlocked"/>.
+    /// </summary>
+    internal Sql.SqlTableDefinition? Definition;
+
+    /// <summary>
     /// In <see cref="SqliteValidation.Lenient"/>, the error SQLite would have failed the schema with at this row; null
     /// when the row loaded. The other rows load on, and this row made nothing (<see cref="Sqlite3SchemaKind.None"/>),
     /// so its table cannot be opened.

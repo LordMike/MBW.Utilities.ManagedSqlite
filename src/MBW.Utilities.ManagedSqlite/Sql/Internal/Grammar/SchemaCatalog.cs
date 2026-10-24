@@ -10,6 +10,12 @@ namespace MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 /// </summary>
 internal sealed class SchemaCatalog
 {
+    /// <summary>
+    /// The stack of the last statement parsed, cleared, so parsing the schema's statements one after the other does
+    /// not allocate a stack for each. A parse holds it while it runs, so a parse inside a parse makes its own.
+    /// </summary>
+    internal SchemaParser.StackEntry[]? ParserStack;
+
     internal sealed class CatalogTable
     {
         public readonly string Name;

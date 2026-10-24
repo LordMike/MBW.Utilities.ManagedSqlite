@@ -19,10 +19,16 @@ namespace MBW.Utilities.ManagedSqlite.Core;
 /// tables are found with <see cref="GetTable"/>, <see cref="TryGetTable"/> and <see cref="GetTables"/>. Dispose it to
 /// close its files.
 /// </summary>
+/// <remarks>
+/// The database can be used from several threads at once. What it learns at open never changes after, each call
+/// allocates what it reads into, and each stream is read under a lock, so nothing else may read or move the streams
+/// while the database is open. An enumeration of <see cref="Sqlite3Table.EnumerateRows()"/>, and the rows it returns,
+/// belong to the thread that runs it. In Lenient, <see cref="Sqlite3Settings.OnValidationIssue"/> is called on the
+/// reading thread.
+/// </remarks>
 public sealed class Sqlite3Database : IDisposable
 {
     private readonly ReaderBase _reader;
-    private Dictionary<string, object>? _propertyStore;
 
     private readonly Sqlite3MasterTable _masterTable;
     private readonly Sqlite3SchemaRow _masterSchemaRow;
@@ -385,8 +391,8 @@ public sealed class Sqlite3Database : IDisposable
 
     private Sqlite3Table OpenTable(Sqlite3SchemaRow tbl)
     {
-        // Parsed to check it and learn its kind, in the reader's page buffer: the table reads it again when its rows are read
-        BTreePage root = BTreePage.Parse(_reader, tbl.RootPage, buffer: _reader.PageBuffer);
+        // Parsed to check it and learn its kind, into an array the table keeps for reading its rows
+        BTreePage root = BTreePage.Parse(_reader, tbl.RootPage);
 
         // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
         // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
@@ -418,15 +424,6 @@ public sealed class Sqlite3Database : IDisposable
     /// Indexes, views, triggers and rows that made nothing are left out.
     /// </summary>
     public IEnumerable<Sqlite3SchemaRow> GetTables() => GetSchema().Where(s => s.IsTable);
-
-    internal T GetProperty<T>(string key, Func<T> creator) where T : class
-    {
-        _propertyStore ??= new Dictionary<string, object>();
-        if (!_propertyStore.TryGetValue(key, out var val))
-            _propertyStore[key] = val = creator();
-
-        return (T)val;
-    }
 
     /// <summary>
     /// Disposes the database's files: the streams it was opened from, unless they were passed with

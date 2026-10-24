@@ -152,9 +152,8 @@ INSERT INTO tbl VALUES (1);")));
     }
 
     /// <summary>
-    /// Two enumerations of one database share its reader and its page buffer, so reading a row of one table between
-    /// two rows of another must not change what either returns. 512 byte pages put the 300 rows of each table on many
-    /// leaf pages.
+    /// Two enumerations of one database share its reader, so reading a row of one table between two rows of another must
+    /// not change what either returns. 512 byte pages put the 300 rows of each table on many leaf pages.
     /// </summary>
     [Fact]
     public void InterleavedEnumerationsReadTheSameRows()
@@ -304,7 +303,7 @@ INSERT INTO tbl VALUES (1, 'one'), (2, 'two');")));
     }
 
     /// <summary>
-    /// A row reads its overflow pages only when a value on them is read, through the reader's shared page buffer, so a
+    /// A row reads its overflow pages only when a value on them is read, into its enumeration's overflow buffer, so a
     /// row kept after the enumeration moved on still reads its own values, after other rows read theirs. The text ends,
     /// and the number after it is, on the last overflow page, which ColumnData reads for both.
     /// </summary>
