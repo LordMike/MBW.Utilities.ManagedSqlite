@@ -1,13 +1,7 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <!-- Common NuGet properties -->
-  <PropertyGroup>
-    <Authors>LordMike</Authors>
-  </PropertyGroup>
-
   <!-- Package -->
   <PropertyGroup>
-    <AssemblyTitle>TMDb Library</AssemblyTitle>
     <Product>MBW.Utilities.ManagedSqlite</Product>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/LordMike/MBW.Utilities.ManagedSqlite</PackageProjectUrl>
