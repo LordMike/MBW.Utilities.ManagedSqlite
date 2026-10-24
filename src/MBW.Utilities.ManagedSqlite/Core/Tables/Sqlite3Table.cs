@@ -124,10 +124,10 @@ public sealed class Sqlite3Table
                 //   if( keyCanBeEqual ? (info.nKey > maxKey) : (info.nKey >= maxKey) ){
                 //     checkAppendMsg(pCheck, "Rowid %lld out of order", info.nKey);
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L10985 (checkTreePage)
-                // A plain read in SQLite returns the rows as they lie. Here a repeated or decreasing rowid fails Strict:
-                // it also catches a b-tree whose pages share a subtree, which a scan would otherwise walk once per
-                // pointer to it, exponentially often within 20 levels. Lenient reports it and returns the row as SQLite
-                // does.
+                // A plain read in SQLite returns the rows as they lie. Here a repeated or decreasing rowid fails Strict,
+                // which also stops a b-tree whose pages share a subtree at its first repeated row; a scan would otherwise
+                // walk that subtree once per pointer to it, exponentially often within 20 levels. Lenient reports each
+                // repetition and returns the rows as SQLite does, so it walks such a tree as long as SQLite would.
                 Checks.Relaxable(first || rowId > previous, _reader.Settings, "INTEG-14",
                     $"rowid {rowId} follows rowid {previous}, so the table's rows are out of order", leaf.Page, "table b-tree");
                 first = false;
