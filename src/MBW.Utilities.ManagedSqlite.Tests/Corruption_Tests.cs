@@ -393,6 +393,38 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     [Fact]
     public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0), "PAGE-15");
 
+    /// <summary>
+    /// INTEG-14: both of Deep's root pointers lead to its left interior page, so a scan reaches that page's rows twice.
+    /// SQLite returns them twice and finds the damage only in integrity_check. Strict fails at the first repeated rowid.
+    /// Lenient reports it and reads as SQLite does.
+    /// </summary>
+    [Theory]
+    [InlineData(SqliteValidation.Strict)]
+    [InlineData(SqliteValidation.Lenient)]
+    public void SharedSubtree_RowIdsOutOfOrder(SqliteValidation validation)
+    {
+        Func<byte[], byte[]> patch = data => new DbPatcher(data).SetRightMostPointer(DeepRoot, DeepLeft).Data;
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
+        if (validation == SqliteValidation.Strict)
+        {
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(patch(Base)), settings);
+            SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Deep")));
+            Assert.Equal("INTEG-14", corrupt.Check);
+
+            // The first repeated row is the first one of the shared subtree, met again
+            Assert.Equal(DeepFirstLeaf, corrupt.Page);
+            Assert.Empty(issues);
+        }
+        else
+        {
+            SqliteParity.AssertSameAsSqlite(Script, patch, settings);
+            Assert.Contains("INTEG-14", issues);
+            Assert.All(issues, check => Assert.Equal("INTEG-14", check));
+        }
+    }
+
     // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read
     [Fact]
     public void SchemaRootPage_Zero() => AssertCorrupt("page number", p => SetDeepRootPageInSchema(p, 0), "PAGE-15");
@@ -779,13 +811,13 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     }
 
     /// <summary>
-    /// Deep's left interior page points back to the root. As in SQLite, the depth limit is what stops the cycle: root
-    /// and left page alternate, so the walk gives up at the root's first child pointer.
+    /// Deep's left interior page's first child pointer leads back to the root. As in SQLite, the depth limit is what
+    /// stops the cycle: root and left page alternate before any leaf, so the walk gives up after 20 levels.
     /// </summary>
     [Fact]
     public void Corruption_OtherTablesStillReadLikeSqlite()
     {
-        byte[] data = new DbPatcher(Base).SetRightMostPointer(DeepLeft, DeepRoot).Data;
+        byte[] data = new DbPatcher(Base).SetChildPointer(DeepLeft, 0, DeepRoot).Data;
 
         Exception ex = RunBounded(() =>
         {

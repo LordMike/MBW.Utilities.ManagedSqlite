@@ -110,11 +110,29 @@ public sealed class Sqlite3Table
         // Created inside the iterator, so each enumeration has its own field table
         Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
 
+        bool first = true;
+        long previous = 0;
+
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
             for (int i = 0; i < leaf.CellCount; i++)
             {
                 BTreePage.PayloadCell cell = leaf.GetCell(i, out long rowId);
+
+                // INTEG-14: a scan yields rowids in strictly increasing order. SQLite checks this only in integrity_check,
+                // checkTreePage in btree.c:
+                //   if( keyCanBeEqual ? (info.nKey > maxKey) : (info.nKey >= maxKey) ){
+                //     checkAppendMsg(pCheck, "Rowid %lld out of order", info.nKey);
+                // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L10985 (checkTreePage)
+                // A plain read in SQLite returns the rows as they lie. Here a repeated or decreasing rowid fails Strict,
+                // which also stops a b-tree whose pages share a subtree at its first repeated row; a scan would otherwise
+                // walk that subtree once per pointer to it, exponentially often within 20 levels. Lenient reports each
+                // repetition and returns the rows as SQLite does, so it walks such a tree as long as SQLite would.
+                Checks.Relaxable(first || rowId > previous, _reader.Settings, "INTEG-14",
+                    $"rowid {rowId} follows rowid {previous}, so the table's rows are out of order", leaf.Page, "table b-tree");
+                first = false;
+                previous = rowId;
+
                 ArraySegment<byte> payload = ReadPayload(leaf, rowId, cell);
 
                 yield return new Sqlite3Row(this, rowId, NewRecord(leaf.Page, payload, shared));
