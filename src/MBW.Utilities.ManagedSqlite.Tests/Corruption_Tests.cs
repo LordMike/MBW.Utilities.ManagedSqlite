@@ -433,20 +433,23 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     /// INTEG-33 against SQLite's integrity_check: real SQLite stores the rows of t in the order of the
     /// <paramref name="stored"/> columns, then the schema says <paramref name="read"/>, which can sort them differently.
     /// A Lenient read reports one INTEG-33 for each row that integrity_check finds "not in PRIMARY KEY order", and
-    /// reads the rows as SQLite does. <paramref name="outOfOrder"/> says whether SQLite finds any.
+    /// reads the rows as SQLite does. <paramref name="outOfOrder"/> says whether SQLite finds any. The rows cover:
+    /// NOCASE folding ASCII letters ('B' after 'a', 'A' equal to 'a', which is out of order too) and stopping at a 0
+    /// byte; RTRIM dropping trailing spaces; a key of every type, in SQLite's order of numbers, text, then blobs; an
+    /// INTEGER against a REAL, compared exactly; a REAL column, whose INTEGERs compare as REALs; a second key column
+    /// that decides in its own sort order; NOCASE comparing UTF-16 text as UTF-8 (U+4100 sorts before 'A' as UTF-16le
+    /// bytes, after it as UTF-8); and BINARY comparing UTF-16 text as stored (U+0101 before 'b').
     /// </summary>
     [Theory]
-    // NOCASE folds ASCII letters, so 'B' sorts after 'a', and 'A' equals 'a', which is out of order too
     [InlineData("UTF-8", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "('B'), ('a')", true)]
     [InlineData("UTF-8", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "('A'), ('a')", true)]
-    // RTRIM drops trailing spaces
+    [InlineData("UTF-8", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "('a' || char(0) || 'a'), ('a' || char(0) || 'b')", true)]
     [InlineData("UTF-8", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE RTRIM", "('a'), ('a  ')", true)]
-    // Without affinity, the key holds every type, in SQLite's order: numbers compared exactly, then text, then blobs
-    [InlineData("UTF-8", "k PRIMARY KEY", "k PRIMARY KEY", "(-1), (0.5), (1), (9007199254740993), (9.1e15), ('a'), (x'00')", false)]
-    // The second key column decides when the first is equal, in its own sort order
+    [InlineData("UTF-8", "k PRIMARY KEY", "k PRIMARY KEY", "(-1), (0.5), (1), ('a'), (x'00')", false)]
+    [InlineData("UTF-8", "k PRIMARY KEY", "k PRIMARY KEY", "(9007199254740992.0), (9007199254740993)", false)]
+    [InlineData("UTF-8", "k REAL PRIMARY KEY", "k REAL PRIMARY KEY", "(1), (1.5), (2)", false)]
     [InlineData("UTF-8", "a, b, PRIMARY KEY (a, b)", "a, b, PRIMARY KEY (a, b DESC)", "(1, 1), (1, 2), (2, 1)", true)]
-    // NOCASE compares UTF-16 text as UTF-8, and BINARY compares the bytes as stored, so U+0101 sorts before 'b' in UTF-16le
-    [InlineData("UTF-16le", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "('B'), ('a')", true)]
+    [InlineData("UTF-16le", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "(char(0x4100)), ('A')", true)]
     [InlineData("UTF-16le", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY", "('b'), ('ā')", false)]
     public void PrimaryKeyOrder_SameAsIntegrityCheck(string encoding, string stored, string read, string values, bool outOfOrder)
     {
