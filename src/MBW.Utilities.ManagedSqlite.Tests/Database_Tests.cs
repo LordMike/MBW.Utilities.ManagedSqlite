@@ -3,7 +3,6 @@ using System.IO;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
@@ -29,7 +28,7 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     {
         using Sqlite3Database db = Open();
 
-        Assert.Equal(storedName, db.GetTable(lookup).SchemaDefinition.Name);
+        Assert.Equal(storedName, db.GetTable(lookup).SchemaRow.Name);
     }
 
     [Theory]

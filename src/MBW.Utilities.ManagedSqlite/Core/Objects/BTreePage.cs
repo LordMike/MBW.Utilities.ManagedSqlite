@@ -84,13 +84,13 @@ internal abstract class BTreePage
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5472 (moveToChild)
         switch (header.Type)
         {
-            case BTreeType.InteriorIndexBtreePage:
-            case BTreeType.LeafIndexBtreePage:
+            case BTreeType.InteriorIndexBTreePage:
+            case BTreeType.LeafIndexBTreePage:
                 Checks.Strict(parent != BTreeKind.Table, "PAGE-22",
                     $"index b-tree page (type {(byte)header.Type}) inside a table b-tree", page, "b-tree page header");
                 break;
-            case BTreeType.InteriorTableBtreePage:
-            case BTreeType.LeafTableBtreePage:
+            case BTreeType.InteriorTableBTreePage:
+            case BTreeType.LeafTableBTreePage:
                 Checks.Strict(parent != BTreeKind.Index, "PAGE-22",
                     $"table b-tree page (type {(byte)header.Type}) inside an index b-tree", page, "b-tree page header");
                 break;
@@ -105,10 +105,10 @@ internal abstract class BTreePage
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L2261 (btreeInitPage)
         switch (header.Type)
         {
-            case BTreeType.InteriorIndexBtreePage:
-            case BTreeType.LeafIndexBtreePage:
+            case BTreeType.InteriorIndexBTreePage:
+            case BTreeType.LeafIndexBTreePage:
                 return new BTreeIndexPage(reader, page, header, data, cellPointers);
-            case BTreeType.InteriorTableBtreePage:
+            case BTreeType.InteriorTableBTreePage:
                 return new BTreeInteriorTablePage(reader, page, header, data, cellPointers);
             default:
                 return new BTreeLeafTablePage(reader, page, header, data, cellPointers);

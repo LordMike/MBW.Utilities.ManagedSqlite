@@ -30,7 +30,7 @@ public sealed class Sqlite3Table
     /// <summary>
     /// The table's row in the schema table, <c>sqlite_master</c>
     /// </summary>
-    public Sqlite3SchemaRow SchemaDefinition { get; }
+    public Sqlite3SchemaRow SchemaRow { get; }
 
     /// <summary>
     /// True when the table's root page is an index b-tree page, which is how SQLite stores a WITHOUT ROWID table. A
@@ -45,7 +45,7 @@ public sealed class Sqlite3Table
     /// <param name="table"></param>
     internal Sqlite3Table(ReaderBase reader, BTreePage rootPage, Sqlite3SchemaRow table)
     {
-        SchemaDefinition = table;
+        SchemaRow = table;
         _reader = reader;
         IsWithoutRowId = rootPage is BTreeIndexPage;
 
@@ -57,7 +57,7 @@ public sealed class Sqlite3Table
     /// The root page, read once into an array that the table keeps, so a table that fits on its root page reads its
     /// rows without reading or allocating a page again
     /// </summary>
-    private BTreePage RootPage => _rootPage ??= BTreePage.Parse(_reader, SchemaDefinition.RootPage);
+    private BTreePage RootPage => _rootPage ??= BTreePage.Parse(_reader, SchemaRow.RootPage);
 
     /// <summary>
     /// Enumerates the table's rows in the order SQLite stores them: rowid order, or primary key order for a WITHOUT

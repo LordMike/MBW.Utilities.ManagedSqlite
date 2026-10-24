@@ -28,7 +28,7 @@ internal readonly struct BTreeHeader
         CellContentBegin = ByteArrayReader.ReadUInt16(page, length, ref pos);
         CellContentFragmentedFreeBytes = ByteArrayReader.ReadByte(page, length, ref pos);
 
-        if (Type == BTreeType.InteriorIndexBtreePage || Type == BTreeType.InteriorTableBtreePage)
+        if (Type == BTreeType.InteriorIndexBTreePage || Type == BTreeType.InteriorTableBTreePage)
             RightMostPointer = ByteArrayReader.ReadUInt32(page, length, ref pos);
         else
             RightMostPointer = 0;
