@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
+using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
@@ -162,26 +163,33 @@ public sealed class Sqlite3Row
     }
 
     /// <summary>
-    /// The value of field <paramref name="index"/> of the record, as <see cref="TryGetOrdinal(ushort, out object?)"/>
-    /// reads it, converted to <typeparamref name="T"/> with <see cref="Convert.ChangeType(object, Type)"/>. False when
-    /// the record has fewer fields, or the value is NULL.
+    /// The value of field <paramref name="index"/> of the record, as <typeparamref name="T"/>. False when the record
+    /// has fewer fields (as <see cref="TryGetOrdinal(ushort, out object?)"/>), or the value does not convert:
+    /// <list type="bullet">
+    /// <item>NULL converts to <c>default</c>: null for a reference type or <see cref="Nullable{T}"/>, 0 for a number,
+    /// as <c>sqlite3_column_int</c> reads NULL.</item>
+    /// <item>A value that already is <typeparamref name="T"/>, or the type a <see cref="Nullable{T}"/> wraps, is
+    /// returned as it is.</item>
+    /// <item>An INTEGER converts to <see cref="double"/>, <see cref="float"/> or <see cref="decimal"/>, to
+    /// <see cref="bool"/> (true when not 0), and to a narrower integer type when it fits.</item>
+    /// <item>A REAL converts to an integer type or <see cref="bool"/> as SQLite does, truncated toward zero
+    /// (3.5 is 3, -3.5 is -3), when the result fits; to <see cref="float"/> and <see cref="decimal"/> when it fits.
+    /// A REAL converts to <see cref="decimal"/> as .NET does, rounded to 15 significant digits.</item>
+    /// <item>TEXT and BLOB convert to nothing else, and nothing converts to them: text is not parsed as a number, in
+    /// any culture, and numbers are not formatted.</item>
+    /// <item>Other types, such as enums, <see cref="char"/> or <see cref="ReadOnlyMemory{T}"/>, are not converted
+    /// to; read a blob without a copy with <see cref="TryGetBlob"/>.</item>
+    /// </list>
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
-    /// <exception cref="InvalidCastException">The value cannot be converted to <typeparamref name="T"/></exception>
-    /// <exception cref="FormatException">The value is text that does not parse as <typeparamref name="T"/></exception>
-    /// <exception cref="OverflowException">The value is out of the range of <typeparamref name="T"/></exception>
-    public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
+    public bool TryGetOrdinal<T>(ushort index, out T? value)
     {
-        value = default;
-
-        if (!TryGetOrdinal(index, out object? tmp))
+        if (!TryGetOrdinal(index, out object? stored))
+        {
+            value = default;
             return false;
+        }
 
-        // TODO: Is null a success case?
-        if (tmp == null)
-            return false;
-
-        value = (T)Convert.ChangeType(tmp, typeof(T));
-        return true;
+        return ValueConverter.TryConvert(stored, out value);
     }
 }

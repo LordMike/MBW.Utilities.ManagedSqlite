@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Sql;
@@ -135,30 +134,26 @@ public static class SqlExtensions
     }
 
     /// <summary>
-    /// The value of the row's column named <paramref name="columnName"/>, as
-    /// <see cref="TryGetValueByName(Sqlite3Row, string, out object?)"/> reads it, converted to
-    /// <typeparamref name="T"/> with <see cref="Convert.ChangeType(object, Type)"/>. False also when the value is NULL.
+    /// The value of the column named <paramref name="columnName"/>, read as <see cref="TryGetValueByName(Sqlite3Row, string, out object?)"/>
+    /// reads it, as <typeparamref name="T"/>. False when the table has no such column, it has no value (a VIRTUAL
+    /// generated column, or a DEFAULT this library does not evaluate), or the value does not convert. The conversions
+    /// are those of <see cref="Sqlite3Row.TryGetOrdinal{T}(ushort, out T)"/>: NULL is <c>default</c>, INTEGER and REAL
+    /// convert into each other as in SQLite (a REAL truncated toward zero) when the result fits, and TEXT and BLOB
+    /// convert to nothing else.
     /// </summary>
     /// <exception cref="SqliteCorruptException">As for <see cref="TryGetValueByName(Sqlite3Row, string, out object?)"/></exception>
-    /// <exception cref="InvalidCastException">The value cannot be converted to <typeparamref name="T"/></exception>
-    /// <exception cref="FormatException">The value is text that does not parse as <typeparamref name="T"/></exception>
-    /// <exception cref="OverflowException">The value is out of the range of <typeparamref name="T"/></exception>
     /// <exception cref="ArgumentNullException"><paramref name="row"/> or <paramref name="columnName"/> is null</exception>
-    public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, [MaybeNullWhen(false)] out T value)
+    public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, out T? value)
     {
         ArgumentNullException.ThrowIfNull(row);
         ArgumentNullException.ThrowIfNull(columnName);
 
-        value = default;
-
-        if (!row.TryGetValueByName(columnName, out object? tmp))
+        if (!row.TryGetValueByName(columnName, out object? stored))
+        {
+            value = default;
             return false;
+        }
 
-        // TODO: Is null a success case?
-        if (tmp == null)
-            return false;
-
-        value = (T)Convert.ChangeType(tmp, typeof(T));
-        return true;
+        return ValueConverter.TryConvert(stored, out value);
     }
 }
