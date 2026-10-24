@@ -81,10 +81,11 @@ public sealed class Sqlite3Row
 
     /// <summary>
     /// The value of <paramref name="column"/>, a column of this row's table definition, read as SQLite reads it: a
-    /// rowid alias reads <see cref="RowId"/>, a record too short to hold the column (a row written before ALTER TABLE
-    /// ADD COLUMN) reads its DEFAULT, and an INTEGER in a column with REAL affinity reads as a REAL. The column's field
-    /// is found whatever the table's record order. False for a VIRTUAL generated column, which SQLite computes and
-    /// does not store, and for a DEFAULT this library does not evaluate.
+    /// long, double, string, byte[], or null for NULL. A rowid alias reads <see cref="RowId"/>, a record too short to
+    /// hold the column (a row written before ALTER TABLE ADD COLUMN) reads its DEFAULT, and an INTEGER in a column with
+    /// REAL affinity reads as a REAL. The column's field is found whatever the table's record order. False for a
+    /// VIRTUAL generated column, which SQLite computes and does not store, and for a DEFAULT this library does not
+    /// evaluate. See the README for how declared types map to affinities.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="column"/> is null</exception>
     /// <exception cref="ArgumentException"><paramref name="column"/> is not a column of this row's table definition,
