@@ -135,7 +135,8 @@ public class SchemaBenchmarks
     public Sqlite3Table ManagedOpenTable() => _db.GetTable(TestDatabases.TableName);
 
     /// <summary>
-    /// Opens a fresh database and parses a table's definition, which in Strict loads and checks the whole schema first
+    /// Opens a fresh database and builds a table's definition. The schema was already parsed and checked at open, so
+    /// this adds only building the definition on top of the open
     /// </summary>
     [Benchmark, BenchmarkCategory("TableDefinition")]
     public int ManagedTableDefinition()

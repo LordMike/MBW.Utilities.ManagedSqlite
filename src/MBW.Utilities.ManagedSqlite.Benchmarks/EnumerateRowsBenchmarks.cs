@@ -106,7 +106,7 @@ public class EnumerateRowsBenchmarks
     private static readonly string[] Columns = { "id", "i", "r", "t", "b" };
 
     /// <summary>
-    /// Every column read by name through the Sql package, as the native side's SELECT names them
+    /// Every column read by name through <c>TryGetValueByName</c>, as the native side's SELECT names them
     /// </summary>
     [Benchmark]
     public int ManagedByName()
