@@ -18,8 +18,8 @@ public sealed class SqliteCorruptException : SqliteException
     public string? Structure { get; }
 
     /// <summary>
-    /// The ID of the consistency check that failed, such as "PAGE-21", from the SQLite check survey of issue #58, when
-    /// known.
+    /// The ID of the consistency check that failed, such as "PAGE-21", from the
+    /// <see href="https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md">SQLite check survey</see>, when known.
     /// </summary>
     public string? Check { get; }
 
