@@ -10,8 +10,8 @@ using Xunit;
 namespace MBW.Utilities.ManagedSqlite.Tests;
 
 /// <summary>
-/// The table definition's API, and what the parser does with SQL that SQLite would not store. Syntax SQLite does
-/// store is compared with SQLite in <see cref="SqlCreateTable_Tests"/>.
+/// The table definition's API and the SqlExtensions that read through it, and what the parser does with SQL that
+/// SQLite would not store. Syntax SQLite does store is compared with SQLite in <see cref="SqlCreateTable_Tests"/>.
 /// </summary>
 public class SqlTableDefinition_Tests
 {
@@ -29,10 +29,10 @@ public class SqlTableDefinition_Tests
     }
 
     /// <summary>
-    /// A null argument is the caller's error, and names the parameter
+    /// A null argument to the SqlExtensions methods is the caller's error, and names the parameter
     /// </summary>
     [Fact]
-    public void NullArgumentsThrow()
+    public void SqlExtensionsNullArgumentsThrow()
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(
             "CREATE TABLE t(a TEXT); INSERT INTO t VALUES ('x');")));
@@ -45,7 +45,14 @@ public class SqlTableDefinition_Tests
         Assert.Equal("columnName", Assert.Throws<ArgumentNullException>(() => row.TryGetValueByName(null!, out _)).ParamName);
         Assert.Equal("row", Assert.Throws<ArgumentNullException>(() => ((Sqlite3Row)null!).TryGetValueByName<string>("a", out _)).ParamName);
         Assert.Equal("columnName", Assert.Throws<ArgumentNullException>(() => row.TryGetValueByName<string>(null!, out _)).ParamName);
-        Assert.Equal("name", Assert.Throws<ArgumentNullException>(() => table.GetTableDefinition().TryGetColumn(null!, out _)).ParamName);
+    }
+
+    [Fact]
+    public void TryGetColumnNullNameThrows()
+    {
+        Assert.True(SqlParser.TryParse("CREATE TABLE t (a TEXT)", out SqlTableDefinition definition));
+
+        Assert.Equal("name", Assert.Throws<ArgumentNullException>(() => definition.TryGetColumn(null!, out _)).ParamName);
     }
 
     [Fact]

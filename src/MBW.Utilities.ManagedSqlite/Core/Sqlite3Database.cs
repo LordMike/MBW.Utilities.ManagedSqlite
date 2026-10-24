@@ -222,7 +222,7 @@ public sealed class Sqlite3Database : IDisposable
 
             // A caller error, checked here so the open does not report it as damage
             if (settings != null && settings.Validation is not (SqliteValidation.Strict or SqliteValidation.Lenient))
-                throw new ArgumentOutOfRangeException(nameof(settings), settings.Validation, "Validation must be Strict or Lenient");
+                throw new ArgumentOutOfRangeException(nameof(settings), settings.Validation, "settings.Validation must be Strict or Lenient");
 
             main = new StreamFileView(database, leaveOpen);
             journalView = journal != null ? new StreamFileView(journal, leaveOpen) : null;
