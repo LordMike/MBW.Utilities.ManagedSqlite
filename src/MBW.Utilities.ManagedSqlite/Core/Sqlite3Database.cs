@@ -13,6 +13,11 @@ using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core;
 
+/// <summary>
+/// A SQLite 3 database, opened for reading with <see cref="FromPath"/> or one of the <c>FromStream</c> methods. Its
+/// tables are found with <see cref="GetTable"/>, <see cref="TryGetTable"/> and <see cref="GetTables"/>. Dispose it to
+/// close its files.
+/// </summary>
 public sealed class Sqlite3Database : IDisposable
 {
     private readonly ReaderBase _reader;
@@ -28,6 +33,10 @@ public sealed class Sqlite3Database : IDisposable
 
     internal DatabaseHeader Header => _reader.Header;
 
+    /// <summary>
+    /// The encoding that text values are read with: the header's text encoding field, read as SQLite reads it (the low
+    /// two bits, where 0 means UTF-8), or <see cref="Sqlite3Settings.FallbackEncoding"/> when the field is 0
+    /// </summary>
     public SqliteEncoding TextEncoding => _reader.TextEncoding;
 
     internal Sqlite3Settings Settings => _reader.Settings;
@@ -50,25 +59,18 @@ public sealed class Sqlite3Database : IDisposable
     /// </summary>
     internal Sqlite3Database(IFileView main, IFileView? journal, IFileView? wal, Sqlite3Settings settings)
     {
+        // A copy, so the caller changing the settings later can't change how this database reads
+        _reader = ReaderBase.Open(main, journal, wal, settings.Clone());
+
         try
         {
-            // A copy, so the caller changing the settings later can't change how this database reads
-            _reader = ReaderBase.Open(main, journal, wal, settings.Clone());
-
-            try
-            {
-                _masterTable = OpenMasterTable(out _masterSchemaRow);
-                _tablesByName = IndexTables(_masterTable.Tables, out _errorsByName);
-            }
-            catch
-            {
-                DisposeQuietly(_reader);
-                throw;
-            }
+            _masterTable = OpenMasterTable(out _masterSchemaRow);
+            _tablesByName = IndexTables(_masterTable.Tables, out _errorsByName);
         }
-        catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
+        catch
         {
-            throw new SqliteCorruptException("unable to read the database header or schema", innerException: e);
+            DisposeQuietly(_reader);
+            throw;
         }
     }
 
@@ -296,7 +298,8 @@ public sealed class Sqlite3Database : IDisposable
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
-    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
+    /// page is malformed, or is a b-tree page of the other kind than its SQL declares (PAGE-18)</exception>
     public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -317,7 +320,8 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     /// <exception cref="KeyNotFoundException">No table with that name exists</exception>
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
-    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
+    /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
+    /// page is malformed, or is a b-tree page of the other kind than its SQL declares (PAGE-18)</exception>
     public Sqlite3Table GetTable(string name)
     {
         Sqlite3SchemaRow? tbl = FindTable(name);
@@ -379,9 +383,29 @@ public sealed class Sqlite3Database : IDisposable
     {
         // Parsed to check it and learn its kind, in the reader's page buffer: the table reads it again when its rows are read
         BTreePage root = BTreePage.Parse(_reader, tbl.RootPage, buffer: _reader.PageBuffer);
+
+        // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
+        // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
+        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
+        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
+        // SQLite reports it on the table's first row read; here the root is read when the table is opened, as are
+        // the root page's other checks.
+        // A table row that failed to parse has an Error, which FindTable threw before the table got here
+        bool sqlWithoutRowId = tbl.Table!.Has(ParsedTable.TF_WithoutRowid);
+        Checks.Strict(sqlWithoutRowId == root is BTreeIndexPage, "PAGE-18",
+            $"the SQL of table {tbl.Name} declares {(sqlWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(root is BTreeIndexPage ? "an index" : "a table")} b-tree page",
+            tbl.RootPage, "b-tree page header");
+
         return new Sqlite3Table(_reader, root, tbl);
     }
 
+    /// <summary>
+    /// Every row of the schema table, <c>sqlite_master</c>, in the order it is stored. Despite the name, that is not
+    /// only tables: indexes, views and triggers have rows too, see <see cref="Sqlite3SchemaRow.Type"/>. The schema
+    /// table's own row is not among them. The rows are read once, when the database is opened. In
+    /// <see cref="SqliteValidation.Lenient"/>, a row that failed to load is included, and its table cannot be opened.
+    /// </summary>
     public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
 
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
@@ -393,6 +417,10 @@ public sealed class Sqlite3Database : IDisposable
         return (T)val;
     }
 
+    /// <summary>
+    /// Disposes the database's files: the streams it was opened from, unless they were passed with
+    /// <c>leaveOpen</c>, or the files <see cref="FromPath"/> opened. Its tables must not be read afterwards.
+    /// </summary>
     public void Dispose()
     {
         _reader.Dispose();
