@@ -94,14 +94,15 @@ public sealed class Sqlite3Table
     /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
     public IEnumerable<Sqlite3Row> EnumerateRows(bool shareRowBuffers)
     {
-        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
-
         // A WITHOUT ROWID table is stored in an index b-tree
-        return IsWithoutRowId ? EnumerateWithoutRowIdRows(shared) : EnumerateRowIdRows(shared);
+        return IsWithoutRowId ? EnumerateWithoutRowIdRows(shareRowBuffers) : EnumerateRowIdRows(shareRowBuffers);
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateRowIdRows(Sqlite3Record.SharedFields? shared)
+    private IEnumerable<Sqlite3Row> EnumerateRowIdRows(bool shareRowBuffers)
     {
+        // Created inside the iterator, so each enumeration has its own field table
+        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
             for (int i = 0; i < leaf.CellCount; i++)
@@ -119,8 +120,11 @@ public sealed class Sqlite3Table
         return shared == null ? new Sqlite3Record(page, payload) : new Sqlite3Record(page, payload, shared);
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(Sqlite3Record.SharedFields? shared)
+    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(bool shareRowBuffers)
     {
+        // Created inside the iterator, so each enumeration has its own field table
+        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)RootPage))
         {
             BTreeIndexPage page = entry.Key;
