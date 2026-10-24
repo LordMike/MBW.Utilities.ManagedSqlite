@@ -4,9 +4,9 @@ using System.Diagnostics.CodeAnalysis;
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 /// <summary>
-/// A row of a table, from <see cref="Sqlite3Table.EnumerateRows"/>. Values are read by their position in the stored
+/// A row of a table, from <see cref="Sqlite3Table.EnumerateRows()"/>. Values are read by their position in the stored
 /// record with <see cref="TryGetOrdinal(ushort, out object?)"/> and <see cref="ColumnData"/>, or by column name with
-/// <see cref="Sql.SqlExtensions.TryGetValueByName(Sqlite3Row, string, out object?)"/>.
+/// <see cref="SqlExtensions.TryGetValueByName(Sqlite3Row, string, out object?)"/>.
 /// </summary>
 public sealed class Sqlite3Row
 {

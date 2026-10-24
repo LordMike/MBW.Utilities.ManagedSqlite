@@ -5,7 +5,7 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 /// <summary>
 /// A row of the schema table, <c>sqlite_master</c>: a table, index, view or trigger, and the statement that created it.
-/// A table's columns are read from its statement with <see cref="Sql.SqlExtensions.GetTableDefinition(Sqlite3SchemaRow)"/>.
+/// A table's columns are read from its statement with <see cref="SqlExtensions.GetTableDefinition(Sqlite3SchemaRow)"/>.
 /// </summary>
 public sealed class Sqlite3SchemaRow
 {

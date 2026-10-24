@@ -10,8 +10,8 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
 /// <summary>
 /// A table of the database, opened with <see cref="Sqlite3Database.GetTable"/> or
-/// <see cref="Sqlite3Database.TryGetTable"/>. Its rows are read with <see cref="EnumerateRows"/>, and its columns with
-/// <see cref="Sql.SqlExtensions.GetTableDefinition(Sqlite3Table)"/>.
+/// <see cref="Sqlite3Database.TryGetTable"/>. Its rows are read with <see cref="EnumerateRows()"/>, and its columns with
+/// <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/>.
 /// </summary>
 public sealed class Sqlite3Table
 {
