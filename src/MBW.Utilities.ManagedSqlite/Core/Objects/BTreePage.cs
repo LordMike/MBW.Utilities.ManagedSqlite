@@ -232,15 +232,16 @@ internal abstract class BTreePage
         // M is always ((U-12)*32/255)-23.
         int M = (U - 12) * 32 / 255 - 23;
 
-        // Let K be M+((P-M)%(U-4)).
-        int K = (int)(M + ((P - M) % (U - 4)));
-
-        // If P<=X then all P bytes of payload are stored directly on the btree page without overflow.
-        // If P>X and K<=X then the first K bytes of P are stored on the btree page and the remaining P-K bytes are stored on overflow pages.
-        // If P>X and K>X then the first M bytes of P are stored on the btree page and the remaining P-M bytes are stored on overflow pages.
+        // If P<=X then all P bytes of payload are stored directly on the btree page without overflow. Most cells are, so
+        // this comes before K, whose 64-bit modulo they never need.
         if (P <= X)
             return (uint)P;
 
+        // Let K be M+((P-M)%(U-4)).
+        int K = (int)(M + ((P - M) % (U - 4)));
+
+        // If P>X and K<=X then the first K bytes of P are stored on the btree page and the remaining P-K bytes are stored on overflow pages.
+        // If P>X and K>X then the first M bytes of P are stored on the btree page and the remaining P-M bytes are stored on overflow pages.
         return (uint)(K <= X ? K : M);
     }
 }
