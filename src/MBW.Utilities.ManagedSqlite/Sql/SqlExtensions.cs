@@ -1,21 +1,37 @@
 ﻿using System;
 using System.Collections.Generic;
 using MBW.Utilities.ManagedSqlite.Core;
+using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
-using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql;
 
-namespace MBW.Utilities.ManagedSqlite.Sql;
+// The extensions live in the namespace of the types they extend, so a using for Sqlite3Row brings them along. Keep
+// them here, not in the namespace of their folder.
+#pragma warning disable IDE0130 // Namespace does not match folder structure
+// ReSharper disable once CheckNamespace
+namespace MBW.Utilities.ManagedSqlite.Core.Tables;
+#pragma warning restore IDE0130
 
+/// <summary>
+/// Reads a table's columns from its CREATE TABLE statement, and a row's values by column name
+/// </summary>
 public static class SqlExtensions
 {
     private const string SqlCacheKey = "SqlCache";
 
+    /// <summary>
+    /// The columns of the table that the row's CREATE TABLE statement made. The statement was parsed when the database
+    /// was opened.
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="schema"/> is null</exception>
     /// <exception cref="InvalidOperationException">The row is not a table (a view, index or trigger)</exception>
     /// <exception cref="NotSupportedException">The row is a virtual table</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row failed to load</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
     {
+        ArgumentNullException.ThrowIfNull(schema);
+
         // Only a table has a table definition, so asking for one elsewhere is the caller's error, not damage. The row's
         // statement decides, as in SQLite; Strict has made sure the type agrees (SCHEMA-26).
         if (schema.Error != null)
@@ -37,24 +53,20 @@ public static class SqlExtensions
         return definition;
     }
 
-    /// <exception cref="SqliteCorruptException">The SQL declares the table WITHOUT ROWID and its root page is a table
-    /// b-tree page, or the other way around</exception>
+    /// <summary>
+    /// The columns of the table, from its CREATE TABLE statement, see
+    /// <see cref="GetTableDefinition(Sqlite3SchemaRow)"/>
+    /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="table"/> is null</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
-        // A definition that was read without error reads the same again: the schema and the checks below don't change
+        ArgumentNullException.ThrowIfNull(table);
+
+        // The table's root page was checked against its SQL (PAGE-18) when the table was opened
         if (table.SqlDefinition != null)
             return table.SqlDefinition;
 
         SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
-
-        // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
-        // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
-        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
-        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
-        Checks.Strict(definition.IsWithoutRowId == table.IsWithoutRowId, "PAGE-18",
-            $"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
-            table.SchemaDefinition.RootPage, "b-tree page header");
 
         table.SqlDefinition = definition;
         return definition;
@@ -62,12 +74,16 @@ public static class SqlExtensions
 
     /// <summary>
     /// The value of the column named <paramref name="columnName"/>, read as
-    /// <see cref="Sqlite3Row.TryGetOrdinal(SqlTableColumn, out object?)"/> reads it. False when the table has no such
-    /// column, or the column has no value.
+    /// <see cref="Sqlite3Row.TryGetOrdinal(SqlTableColumn, out object?)"/> reads it. The name is matched as in SQLite,
+    /// ignoring the case of ASCII letters only. False when the table has no such column, or the column has no value.
     /// </summary>
     /// <exception cref="SqliteCorruptException">The record is malformed up to that column</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> or <paramref name="columnName"/> is null</exception>
     public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
     {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(columnName);
+
         SqlTableDefinition tableDefinition = row.Table.GetTableDefinition();
         if (!tableDefinition.TryGetColumn(columnName, out SqlTableColumn? column))
         {
@@ -86,9 +102,13 @@ public static class SqlExtensions
     /// convert into each other as in SQLite (a REAL truncated toward zero) when the result fits, and TEXT and BLOB
     /// convert to nothing else.
     /// </summary>
-    /// <exception cref="SqliteCorruptException">The record is malformed up to that column</exception>
+    /// <exception cref="SqliteCorruptException">As for <see cref="TryGetValueByName(Sqlite3Row, string, out object?)"/></exception>
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> or <paramref name="columnName"/> is null</exception>
     public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, out T? value)
     {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(columnName);
+
         if (!row.TryGetValueByName(columnName, out object? stored))
         {
             value = default;

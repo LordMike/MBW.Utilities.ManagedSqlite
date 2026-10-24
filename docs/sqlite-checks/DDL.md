@@ -15,7 +15,7 @@ Other parts are deferred until the object is used: view bodies, trigger bodies a
 
 Every other parse error and semantic error still fires, and `sqlite3CheckObjectName` additionally checks that `type`/`name`/`tbl_name` agree with the parsed statement. Any one such error goes to `corruptSchema()`, which sets `SQLITE_CORRUPT` with the message "malformed database schema (NAME) - MSG", and `sqlite3InitOne` then discards the whole schema. So one bad index, view, trigger or table makes every statement on the database fail. Only `PRAGMA writable_schema=ON` (`SQLITE_NoSchemaError`) gets past this. Parsing stops after the first complete statement, so text after its `;` is never tokenized.
 
-Our side is different. The Core library never parses SQL. `MBW.Utilities.ManagedSqlite.Sql` parses CREATE TABLE lazily in `GetTableDefinition`, using a lenient token-grouping parser, and throws `InvalidOperationException` when it fails. We never parse INDEX, VIEW or TRIGGER SQL. Virtual tables are recognised by a text prefix plus rootpage 0.
+Our side matches it. When the database is opened, every schema row's SQL (tables, indexes, views, triggers and virtual tables) is parsed by a port of SQLite's own parser (its Lemon tables, tokenizer and grammar actions) and checked as build.c checks it at init. A failure raises `SqliteCorruptException` with SQLite's message; in Lenient the Relaxable checks are reported instead.
 
 Every row marked "verified" was run on real SQLite (3.45.1 through Python, with the rows written via `writable_schema`, opened both rw and ro) and on our parser through a harness at `review/sqlite-checks/repro/ddl/` (`cases.txt`, `cases2.txt`, `t.py`, `t3.py`, `H/`).
 
@@ -167,23 +167,7 @@ Legend for "Ours": `Sql/` = `src/MBW.Utilities.ManagedSqlite/Sql/`, `Core/` = `s
 - `assert( !db->init.busy || CORRUPT_DB )` on the IF NOT EXISTS / already-exists paths: [build.c:1288](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1288), [:4090](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L4090), [trigger.c:210](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/trigger.c#L210).
 - `assert( argc==5 )` and `assert( db->init.busy )` in `sqlite3InitCallback` ([prepare.c:101,133](https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L101)).
 
-## 3. Most important gaps
+## 3. Open gaps
 
-**SQLite rejects (the whole database fails to load), but we accept:**
-1. **No whole-schema validation (DDL-14).** One malformed object of any kind makes SQLite refuse every statement. We only fail the one table, and only when its definition is requested. Malformed indexes, views and triggers never surface (DDL-65..82). Deferring is allowed by the policy, but "never" is not. Under Strict we need a decision: validate every schema row at open, or at least at first table open.
-2. **Table-level semantic errors we never check:** more than one PK (48), a PK on an unknown column or an expression (49, 50), WITHOUT ROWID with no PK (61), AUTOINCREMENT misuse (53, 60), STRICT type names (59), unknown table options or a bad `WITHOUT x` (29), generated-column errors (34, 43, 54, 62), non-constant DEFAULT (42), FK arity (47), duplicate tables (08), sqlite_schema `name`/`type`/`tbl_name` not matching the SQL (03), leading whitespace or a comment before `CREATE` (01).
-3. **Syntax laxness:** reserved words as names (18), empty column list or trailing comma (27), a number as the table name (25), illegal tokens such as `1abc`, `x'0'`, a lone `!` (20, 21, 24), non-numeric type arguments (30).
-
-**SQLite accepts, but we reject or misread (more urgent: these give wrong data or unreadable tables):**
-1. **Wrong values: table constraints without separating commas (DDL-28).** `UNIQUE(b) PRIMARY KEY(a)` or `CHECK(..) PRIMARY KEY(a)` hides the PK, so the INTEGER PK alias reads NULL and WITHOUT ROWID columns come out permuted (verified).
-2. **Wrong values: WITHOUT ROWID PK dedup ignores collation (DDL-63).** `PRIMARY KEY(a, a COLLATE nocase)` shifts every non-PK column by one (verified).
-3. **Wrong values: `DEFERRABLE` is missing from `ColumnConstraintKeywords` (DDL-33),** so the INTEGER PRIMARY KEY alias is lost (verified).
-4. **We reject what SQLite accepts:**
-   - `CREATE TEMP TABLE` and `IF NOT EXISTS` (06, 07)
-   - any text after the first `;`, and an embedded NUL (11, 12)
-   - column names that differ only in non-ASCII case, such as `é`/`É` (37, Unicode vs ASCII folding)
-   - `DEFAULT (?)` (22)
-   - a sqlite_schema `type` written as `TABLE` (03)
-   - a BOM at a token start, which we keep in the name (16)
-5. **Error type:** a parse failure throws `InvalidOperationException`; SQLite's equivalent is `SQLITE_CORRUPT` ("malformed database schema"), so ours should become `SqliteCorruptException` (DDL-14).
-6. **Tolerances we already match (keep them):** CHECK constraints are not validated (SQLite drops them on read-only opens, DDL-46); unknown collations, functions and modules are allowed (45, 68, 70, 83); view and trigger bodies are not resolved (77, 82).
+None. Table SQL is parsed by a port of SQLite's parser and checked as build.c checks it at init. The README lists each
+check and what the reader does for it. The DEFAULTs the reader does not evaluate are a REC gap (see REC.md).

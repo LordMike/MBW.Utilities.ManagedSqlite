@@ -183,4 +183,123 @@ INSERT INTO b SELECT x, 'b' || x FROM seq;")));
         Assert.Equal(Enumerable.Range(1, 300).Select(x => "a" + x), interleavedA);
         Assert.Equal(Enumerable.Range(1, 300).Select(x => "b" + x), interleavedB);
     }
+
+    /// <summary>
+    /// Once <see cref="Sqlite3Row.ColumnData"/> is read, the typed reads serve its values, with the same results as
+    /// before: each reads only its own type, and TryGetDouble an INTEGER too
+    /// </summary>
+    [Fact]
+    public void TypedReadsServeColumnDataOnceRead()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+CREATE TABLE tbl (a, b, c, d, e);
+INSERT INTO tbl VALUES (42, 1.5, 'text', x'0102', NULL);")));
+
+        Sqlite3Row row = db.GetTable("tbl").EnumerateRows().Single();
+        Assert.Equal(new object[] { 42L, 1.5, "text", new byte[] { 1, 2 }, null }, row.ColumnData);
+
+        Assert.True(row.TryGetInt64(0, out long integer));
+        Assert.Equal(42, integer);
+        Assert.True(row.TryGetDouble(0, out double widened));
+        Assert.Equal(42.0, widened);
+        Assert.True(row.TryGetDouble(1, out double real));
+        Assert.Equal(1.5, real);
+        Assert.True(row.TryGetString(2, out string text));
+        Assert.Equal("text", text);
+
+        Assert.False(row.TryGetInt64(1, out _));
+        Assert.False(row.TryGetString(3, out _));
+        Assert.False(row.TryGetDouble(4, out _));
+        Assert.False(row.TryGetInt64(5, out _));
+    }
+
+    /// <summary>
+    /// With shared row buffers, a row is readable only while it is the latest: an earlier row throws rather than read
+    /// fields a later row wrote. A row that read ColumnData in the loop keeps its values, and the last row stays
+    /// readable after the loop.
+    /// </summary>
+    [Fact]
+    public void SharedRowBuffersFailReadsOfEarlierRows()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+CREATE TABLE tbl (a, b);
+INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');")));
+
+        List<Sqlite3Row> rows = new List<Sqlite3Row>();
+        foreach (Sqlite3Row row in db.GetTable("tbl").EnumerateRows(shareRowBuffers: true))
+        {
+            Assert.True(row.TryGetInt64(0, out _));
+            if (rows.Count == 1)
+                _ = row.ColumnData;
+            rows.Add(row);
+        }
+
+        Assert.Throws<InvalidOperationException>(() => rows[0].TryGetInt64(0, out _));
+        Assert.Throws<InvalidOperationException>(() => rows[0].TryGetOrdinal(1, out _));
+        Assert.Throws<InvalidOperationException>(() => rows[0].ColumnData);
+        Assert.Equal(new object[] { 2L, "two" }, rows[1].ColumnData);
+        Assert.True(rows[2].TryGetString(1, out string last));
+        Assert.Equal("three", last);
+    }
+
+    /// <summary>
+    /// Each enumeration of one <c>EnumerateRows(shareRowBuffers: true)</c> result has its own field table, so a nested
+    /// enumeration of it leaves the outer row readable.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("WITHOUT ROWID")]
+    public void SharedRowBuffersArePerEnumeration(string options)
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build($@"
+CREATE TABLE tbl (a PRIMARY KEY, b) {options};
+INSERT INTO tbl VALUES (1, 'one'), (2, 'two');")));
+
+        IEnumerable<Sqlite3Row> rows = db.GetTable("tbl").EnumerateRows(shareRowBuffers: true);
+        foreach (Sqlite3Row outer in rows)
+        {
+            Assert.True(outer.TryGetInt64(0, out long key));
+            Assert.Equal(2, rows.Count(inner => inner.TryGetInt64(0, out _)));
+
+            Assert.True(outer.TryGetInt64(0, out long again));
+            Assert.Equal(key, again);
+        }
+    }
+
+    /// <summary>
+    /// A row as wide as SQLite allows (SQLITE_MAX_COLUMN, 2000 columns), with a long TEXT last so its serial type takes
+    /// two header bytes. Every column reads, with and without shared row buffers. The parity dump, which adds a typeof
+    /// per column, can't read a table this wide from SQLite, so the values are those the script wrote.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WidestRowReads(bool shareRowBuffers)
+    {
+        string longText = new string('v', 100);
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(
+            $"CREATE TABLE t ({string.Join(", ", Enumerable.Range(0, 2000).Select(i => $"c{i}"))});" +
+            $"INSERT INTO t VALUES ({string.Join(", ", Enumerable.Range(0, 1999))}, '{longText}');" +
+            $"INSERT INTO t VALUES ({string.Join(", ", Enumerable.Range(0, 1999).Select(i => ~i))}, '{longText}');")));
+
+        int rows = 0;
+        foreach (Sqlite3Row row in db.GetTable("t").EnumerateRows(shareRowBuffers))
+        {
+            bool first = rows++ == 0;
+
+            // In order, so the header is parsed one field per read, and completed by the last
+            for (ushort i = 0; i < 1999; i++)
+            {
+                Assert.True(row.TryGetInt64(i, out long value));
+                Assert.Equal(first ? i : ~i, value);
+            }
+
+            Assert.True(row.TryGetString(1999, out string text));
+            Assert.Equal(longText, text);
+
+            Assert.False(row.TryGetOrdinal(2000, out _));
+        }
+
+        Assert.Equal(2, rows);
+    }
 }

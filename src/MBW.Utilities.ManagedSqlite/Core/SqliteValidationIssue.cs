@@ -11,6 +11,9 @@ public sealed class SqliteValidationIssue
     /// </summary>
     public string Check { get; }
 
+    /// <summary>
+    /// What was wrong, in words
+    /// </summary>
     public string Message { get; }
 
     /// <summary>
@@ -31,5 +34,8 @@ public sealed class SqliteValidationIssue
         Structure = structure;
     }
 
+    /// <summary>
+    /// The check's ID and the message, as "HDR-14: ..."
+    /// </summary>
     public override string ToString() => $"{Check}: {Message}";
 }
