@@ -1,16 +1,17 @@
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
-  <!-- Common NuGet properties -->
-  <PropertyGroup>
-    <Authors>LordMike</Authors>
-  </PropertyGroup>
-
   <!-- Package -->
   <PropertyGroup>
-    <AssemblyTitle>TMDb Library</AssemblyTitle>
     <Product>MBW.Utilities.ManagedSqlite</Product>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageProjectUrl>https://github.com/LordMike/MBW.Utilities.ManagedSqlite</PackageProjectUrl>
+  </PropertyGroup>
+
+  <!-- CI builds fail on warnings, so a warning cannot land unnoticed; local builds still only report them -->
+  <!-- CI builds also normalise source paths in the PDBs, for SourceLink and deterministic builds -->
+  <PropertyGroup Condition="'$(GITHUB_ACTIONS)' == 'true'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
   </PropertyGroup>
 
   <PropertyGroup>

@@ -1,6 +1,7 @@
 using System;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Sql;
+using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Microsoft.Data.Sqlite;
 using Xunit;
 
@@ -29,7 +30,7 @@ public class SqlAffinity_Tests
     public void DetectedTypeMatchesSqliteAffinity(string declaredType)
     {
         string sql = $"CREATE TABLE t (c {declaredType})";
-        Assert.True(SqlParser.TryParse(sql, out SqlTableDefinition definition));
+        Assert.True(SqlParserHelper.TryParse(sql, out SqlTableDefinition definition));
         Assert.True(definition.TryGetColumn("c", out SqlTableColumn c));
 
         Assert.Equal(SqliteAffinityType(sql, "c"), c.DetectedType);
