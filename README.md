@@ -27,15 +27,16 @@ using (Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db"))
     // Note that this library does not do SQL selects, it's a raw parser
     IEnumerable<Sqlite3Row> rows = tbl.EnumerateRows();
     
-    // Get the data of column 0 on row 0
+    // Get the data of column 1 (the second column, Name) on the first row, as it is stored in the record
     Sqlite3Row row = rows.First();
-    object data = row.ColumnData[0];
+    object? data = row.ColumnData[1];
 
-    // TryGetValueByName() reads a column by name, and also detects row-id substitutes
-    row.TryGetValueByName("Id", out var myId); // This actually reads the row id behind the scenes, if Id is an Integer Primary Key
-    
-    // Read it as a C# type: NULL reads as default, and INTEGER and REAL convert into each other as in SQLite
-    row.TryGetOrdinal<int>(0, out int myInteger);
+    // TryGetValueByName() reads a column by name, as SQLite does. An INTEGER PRIMARY KEY column is an alias of the
+    // row id, which the record stores as NULL, so ColumnData[0] is null for Id; by name, Id reads the row id.
+    row.TryGetValueByName("Id", out object? myId);
+
+    // Read column 1 as a C# type: NULL reads as default, and INTEGER and REAL convert into each other as in SQLite
+    row.TryGetOrdinal<string>(1, out string? myName);
 }
 ```
 
@@ -54,6 +55,33 @@ Pick the factory that matches the files you have.
 | The database file and its `-journal` file (rollback modes) | `Sqlite3Database.FromStreamWithJournal(database, journal)` |
 
 The stream factories dispose the streams with the database, unless you pass `leaveOpen: true`. Streams must be readable and seekable.
+
+### Settings and validation
+
+Every factory takes an optional `Sqlite3Settings`:
+
+```csharp
+Sqlite3Settings settings = new Sqlite3Settings
+{
+    Validation = SqliteValidation.Lenient,
+    OnValidationIssue = issue => Console.WriteLine(issue) // e.g. "HDR-14: ..."
+};
+
+using Sqlite3Database db = Sqlite3Database.FromPath("MyDb.db", settings);
+```
+
+* **`Validation`** sets how strictly the file is checked. `Strict`, the default, fails exactly where SQLite fails. `Lenient` reads on past damage that SQLite rejects but that leaves the data intact, such as an unknown file format version. Damage that could give wrong values fails in both modes.
+* **`OnValidationIssue`** is called for each check that `Lenient` reads past.
+* **`FallbackEncoding`** is the text encoding to use when the header's encoding field is 0, which SQLite never writes. The default is UTF-8, as in SQLite. A wrong encoding reads text as garbage.
+
+### Errors
+
+All of the library's own exceptions derive from `SqliteException`:
+
+* **`SqliteCorruptException`**: the file is malformed. `Check` names the consistency check that failed (the IDs are listed in [docs/sqlite-checks](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md)), and `Page` and `Structure` say where, when known. Damage is reported where SQLite reports it: a malformed header or schema fails the open (in Lenient, a schema row that fails to load fails only the open of its table), a damaged b-tree fails the table's open or its row enumeration, and a bad value fails only the read of that value.
+* **`SqliteInvalidEncodingException`**: the settings' `FallbackEncoding` is not a text encoding. This fails the open.
+
+Lookups throw the usual .NET exceptions: `GetTable` throws `KeyNotFoundException` for a name that is no table, and `NotSupportedException` for a virtual table. `GetTableDefinition()` on a schema row of a view, index or trigger throws `InvalidOperationException`, and on a virtual table `NotSupportedException`, since its module declares the columns.
 
 ### Journal modes
 
@@ -76,9 +104,7 @@ The library assumes nothing else uses the files while a database is open:
 
 ## Notes
 
-* This is not an ADO.Net substitute, it will not support SQL statements or use indexes - it will only provide access to the data in a database.
-* All the SQL parsing logic is basic, it will work in most cases. You're welcome to present cases where it does not work.
-* Interestingly, SQLite3 allows _any_ value in _any_ column. So you may get different types out of the raw files, should you encounter an app that does this.
+* `GetTableDefinition()` also works on a `Sqlite3SchemaRow` from `GetTables()`, so a table's columns can be read without opening the table. It throws as described under [Errors](#errors).
 
 ## Known limitations
 
@@ -101,6 +127,14 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 * **A WAL with a different page size than the database fails in Strict.** It can only belong to another database. SQLite reads it without an error, leaving part of each page undefined; Lenient ignores the WAL.
 * **Rowids out of order fail in Strict.** In a sound table they always increase. SQLite returns the rows as they lie and finds the damage only in `PRAGMA integrity_check`; Strict throws `SqliteCorruptException` (check `INTEG-14`) at the first rowid that does not increase, also in `sqlite_schema` when the database is opened, and Lenient reports it and reads on. In Strict this also stops a corrupt b-tree whose pages share a subtree at its first repeated row; Lenient walks the shared subtree once for each pointer to it, as SQLite does, and reports each repetition.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
+
+## Development
+
+* Build with `dotnet build -c Release` and test with `dotnet test -c Release`. The tests use real SQLite (Microsoft.Data.Sqlite) as the oracle: most cases build a database with SQLite and compare what both read.
+* Benchmarks against SQLite: see [the benchmarks README](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/src/MBW.Utilities.ManagedSqlite.Benchmarks/README.md).
+* Conventions for code and tests, for people and agents alike: [AGENTS.md](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/AGENTS.md) and [.agents/writing-code.md](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/.agents/writing-code.md).
+* Every consistency check SQLite makes, and whether this library makes it: [docs/sqlite-checks](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md).
+* The schema parser's tables are generated from SQLite's own `parse.c` by [tools/SqliteGrammarGenerator](https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/tools/SqliteGrammarGenerator/Program.cs); its header comment says how to run it for a new SQLite version.
 
 ## SQLite3 Docs
 * Format changes: https://www.sqlite.org/formatchng.html
