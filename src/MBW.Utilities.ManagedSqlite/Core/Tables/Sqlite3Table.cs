@@ -162,7 +162,7 @@ public sealed class Sqlite3Table
             // INTEG-33: a scan yields the rows in strictly increasing PRIMARY KEY order, the WITHOUT ROWID form of
             // INTEG-14. SQLite checks this only in integrity_check, see PrimaryKeyOrder.IsInOrder:
             //   zErr = sqlite3MPrintf(db, "row not in PRIMARY KEY order for %s", pTab->zName);
-            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pragma.c#L1887 (sqlite3Pragma, integrity_check)
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pragma.c#L1890 (sqlite3Pragma, integrity_check)
             // As for INTEG-14, a repeated or decreasing key fails Strict, which stops a b-tree whose pages share a
             // subtree at its first repeated row. Lenient reports each one and returns the rows as SQLite does. A table
             // whose key uses a collation that is not built into SQLite is not checked.

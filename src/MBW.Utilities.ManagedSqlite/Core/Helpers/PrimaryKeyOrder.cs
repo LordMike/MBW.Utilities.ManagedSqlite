@@ -71,9 +71,10 @@ internal sealed class PrimaryKeyOrder
         if (pk == null || pk.Columns.Count == 0)
             return null;
 
-        // The key's KeyInfo, sqlite3KeyInfoOfIndex in build.c: a collation and sort order per key column, which is
-        // the column's own collation unless the PRIMARY KEY names one
+        // The key's KeyInfo, sqlite3KeyInfoOfIndex in build.c: a collation and sort order per key column. The
+        // collation is the one the PRIMARY KEY names, else the column's own, else BINARY, as sqlite3CreateIndex picks it.
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L5653 (sqlite3KeyInfoOfIndex)
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L4251 (sqlite3CreateIndex)
         int count = pk.Columns.Count;
         Collation[] collations = new Collation[count];
         bool[] descending = new bool[count];
@@ -83,6 +84,7 @@ internal sealed class PrimaryKeyOrder
         {
             // Collation names are matched ignoring case, as sqlite3FindCollSeq does. The three built-in collations are
             // registered in openDatabase in main.c.
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/callback.c#L159 (sqlite3FindCollSeq)
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/main.c#L3551 (openDatabase)
             string name = pk.Collations[i];
             if (AsciiCaseInsensitiveComparer.Instance.Equals(name, "BINARY"))
@@ -217,7 +219,7 @@ internal sealed class PrimaryKeyOrder
     /// sqlite3VdbeRecordCompareWithSkip in vdbeaux.c, with default_rc = -1 as OP_IdxGT sets it: negative when
     /// <paramref name="record"/> sorts before or equal to the key, positive when after, and 0 when the record is
     /// malformed. OP_IdxGT then adds 1 and takes the record to be in order when the result is above 0, so equal keys are
-    /// out of order, and so is nothing when the record is malformed: OP_IdxGT does not look at the errCode.
+    /// out of order, and a malformed record (0) is in order: OP_IdxGT does not look at the errCode.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L6828 (OP_IdxGT)
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4733 (sqlite3VdbeRecordCompareWithSkip)
     /// SQLite reads a record's bytes past its end from the page's padding; here a record that runs short is malformed.
@@ -393,7 +395,9 @@ internal sealed class PrimaryKeyOrder
     private static int FoldAscii(byte c) => c is >= (byte)'A' and <= (byte)'Z' ? c + 32 : c;
 
     /// <summary>
-    /// memcmp over the shorter length, then the shorter sorts first, as the record compare and binCollFunc do
+    /// memcmp over the shorter length, then the shorter sorts first, as sqlite3VdbeRecordCompareWithSkip and binCollFunc
+    /// do
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/main.c#L1044 (binCollFunc)
     /// </summary>
     private static int CompareBinary(byte[] a, int aOffset, int aLength, byte[] b, int bOffset, int bLength) =>
         new ReadOnlySpan<byte>(a, aOffset, aLength).SequenceCompareTo(new ReadOnlySpan<byte>(b, bOffset, bLength));
@@ -423,7 +427,8 @@ internal sealed class PrimaryKeyOrder
     }
 
     /// <summary>
-    /// The integer of serial type 1 to 6, 8 or 9 (vdbeRecordDecodeInt in vdbeaux.c)
+    /// The integer of serial type 1 to 6, 8 or 9
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L4678 (vdbeRecordDecodeInt)
     /// </summary>
     private static long ReadInteger(byte[] data, int end, ref int pos, long serialType)
     {
@@ -448,7 +453,8 @@ internal sealed class PrimaryKeyOrder
     }
 
     /// <summary>
-    /// sqlite3VdbeSerialTypeLen in vdbeaux.c
+    /// The length of a field of the serial type
+    /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbeaux.c#L3988 (sqlite3VdbeSerialTypeLen)
     /// </summary>
     private static long SerialTypeLength(long serialType) => serialType switch
     {
