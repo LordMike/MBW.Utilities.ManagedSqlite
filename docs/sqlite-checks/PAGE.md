@@ -63,10 +63,9 @@ Strict-required: Yes = SQLite always fails; Optional = only integrity_check / ce
 
 SQLite rejects, we accept:
 1. **PAGE-21**: a child page with 0 cells (leaf or interior) is always CORRUPT in SQLite; we read it as empty.
-2. ~~**PAGE-18**~~: closed; page 1 and user-table roots are both checked (see the table above).
-3. **PAGE-19**: an interior root with 0 cells that is not page 1 is CORRUPT in SQLite; we follow its right-most pointer.
-4. **PAGE-03**: `nCell > (pageSize-8)/6` is CORRUPT in SQLite; our bound is "pointer array fits in the page", about 3x looser.
-5. **PAGE-14**: our page-count limit is `max(file pages, header size)`; SQLite uses the header size when valid (else file size), so pointers between the header size and the file size are CORRUPT in SQLite and accepted by us.
+2. **PAGE-19**: an interior root with 0 cells that is not page 1 is CORRUPT in SQLite; we follow its right-most pointer.
+3. **PAGE-03**: `nCell > (pageSize-8)/6` is CORRUPT in SQLite; our bound is "pointer array fits in the page", about 3x looser.
+4. **PAGE-14**: our page-count limit is `max(file pages, header size)`; SQLite uses the header size when valid (else file size), so pointers between the header size and the file size are CORRUPT in SQLite and accepted by us.
 
 We reject, SQLite accepts (Lenient candidates):
 1. **PAGE-11/12**: cell-pointer range and cell-extends-past-usable-area checks; SQLite does these only with `cell_size_check=ON`. We also run them for every cell when the page is loaded, so one bad cell fails the whole page (and earlier rows on that page are not returned), while SQLite fails only when it reaches that cell, and only if the payload read itself goes out of bounds.
