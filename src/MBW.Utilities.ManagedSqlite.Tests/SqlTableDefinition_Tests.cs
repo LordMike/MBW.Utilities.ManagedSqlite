@@ -21,7 +21,7 @@ public class SqlTableDefinition_Tests
     [Fact]
     public void TryGetColumnIgnoresAsciiCaseOnly()
     {
-        Assert.True(SqlParser.TryParse("CREATE TABLE t (id INTEGER, é TEXT)", out SqlTableDefinition definition));
+        Assert.True(SqlParserHelper.TryParse("CREATE TABLE t (id INTEGER, é TEXT)", out SqlTableDefinition definition));
 
         Assert.True(definition.TryGetColumn("ID", out SqlTableColumn c));
         Assert.Equal("id", c.Name);
@@ -50,7 +50,7 @@ public class SqlTableDefinition_Tests
     [Fact]
     public void TryGetColumnNullNameThrows()
     {
-        Assert.True(SqlParser.TryParse("CREATE TABLE t (a TEXT)", out SqlTableDefinition definition));
+        Assert.True(SqlParserHelper.TryParse("CREATE TABLE t (a TEXT)", out SqlTableDefinition definition));
 
         Assert.Equal("name", Assert.Throws<ArgumentNullException>(() => definition.TryGetColumn(null!, out _)).ParamName);
     }
@@ -82,7 +82,7 @@ public class SqlTableDefinition_Tests
     [InlineData("ALTER TABLE t ADD COLUMN x INT DEFAULT 1")]
     public void UnparseableReturnsFalse(string sql)
     {
-        Assert.False(SqlParser.TryParse(sql, out SqlTableDefinition definition));
+        Assert.False(SqlParserHelper.TryParse(sql, out SqlTableDefinition definition));
         Assert.Null(definition);
     }
 
