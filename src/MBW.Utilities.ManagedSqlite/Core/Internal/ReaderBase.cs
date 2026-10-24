@@ -414,7 +414,8 @@ internal sealed class ReaderBase : IDisposable
 
     /// <summary>
     /// The buffer <see cref="ReadPage(uint)"/> reads into. Other readers of short-lived pages may read into it too, on
-    /// the same terms.
+    /// the same terms, through <see cref="ReadPage(uint, byte[])"/>, which counts the read in
+    /// <see cref="PageBufferGeneration"/>.
     /// </summary>
     internal byte[] PageBuffer => _pageBuffer ??= new byte[PageSize];
 
