@@ -1,17 +1,28 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
-using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
-using MBW.Utilities.ManagedSqlite.Core.Tables;
+using MBW.Utilities.ManagedSqlite.Sql;
 
-namespace MBW.Utilities.ManagedSqlite.Sql;
+// The extensions live in the namespace of the types they extend, so a using for Sqlite3Row brings them along. Keep
+// them here, not in the namespace of their folder.
+#pragma warning disable IDE0130 // Namespace does not match folder structure
+// ReSharper disable once CheckNamespace
+namespace MBW.Utilities.ManagedSqlite.Core.Tables;
+#pragma warning restore IDE0130
 
+/// <summary>
+/// Reads a table's columns from its CREATE TABLE statement, and a row's values by column name
+/// </summary>
 public static class SqlExtensions
 {
     private const string SqlCacheKey = "SqlCache";
 
+    /// <summary>
+    /// The columns of the table that the row's CREATE TABLE statement made. The statement was parsed when the database
+    /// was opened.
+    /// </summary>
     /// <exception cref="InvalidOperationException">The row is not a table (a view, index or trigger)</exception>
     /// <exception cref="NotSupportedException">The row is a virtual table</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row failed to load</exception>
@@ -38,29 +49,36 @@ public static class SqlExtensions
         return definition;
     }
 
-    /// <exception cref="SqliteCorruptException">The SQL declares the table WITHOUT ROWID and its root page is a table
-    /// b-tree page, or the other way around</exception>
+    /// <summary>
+    /// The columns of the table, from its CREATE TABLE statement, see
+    /// <see cref="GetTableDefinition(Sqlite3SchemaRow)"/>
+    /// </summary>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
-        // A definition that was read without error reads the same again: the schema and the checks below don't change
+        // The table's root page was checked against its SQL (PAGE-18) when the table was opened
         if (table.SqlDefinition != null)
             return table.SqlDefinition;
 
         SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
 
-        // PAGE-18: a table cursor needs a table b-tree root, and a WITHOUT ROWID (index) cursor an index b-tree root,
-        // so a record is never decoded with the other kind's column order. moveToRoot in btree.c:
-        //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
-        //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
-        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
-        Checks.Strict(definition.IsWithoutRowId == table.IsWithoutRowId, "PAGE-18",
-            $"the SQL of table {table.SchemaDefinition.Name} declares {(definition.IsWithoutRowId ? "WITHOUT ROWID" : "a rowid table")}, but its root page is {(table.IsWithoutRowId ? "an index" : "a table")} b-tree page",
-            table.SchemaDefinition.RootPage, "b-tree page header");
-
         table.SqlDefinition = definition;
         return definition;
     }
 
+    /// <summary>
+    /// The value of the row's column named <paramref name="columnName"/>, read as SQLite reads it: a long, double,
+    /// string, byte[], or null for NULL. The name is matched as in SQLite, ignoring the case of ASCII letters only.
+    /// False when the table has no such column, the column is a VIRTUAL generated column, which has no stored value, or
+    /// the record is too short to hold the column and its DEFAULT is one this library does not evaluate.
+    /// </summary>
+    /// <remarks>
+    /// Like SQLite, the record is decoded only up to this column. A column that aliases the rowid (an <c>INTEGER
+    /// PRIMARY KEY</c>) reads <see cref="Sqlite3Row.RowId"/>, as the record holds NULL for it. A record too short to hold
+    /// the column, such as one written before <c>ALTER TABLE ADD COLUMN</c>, reads the column's DEFAULT, or NULL when
+    /// it has none. A whole number in a column with REAL affinity reads as a double, as SQLite may store such values as
+    /// integers to save space. See the README for how declared types map to affinities.
+    /// </remarks>
+    /// <exception cref="SqliteCorruptException">The record is malformed up to the column</exception>
     public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
     {
         value = null;
@@ -106,6 +124,15 @@ public static class SqlExtensions
         return true;
     }
 
+    /// <summary>
+    /// The value of the row's column named <paramref name="columnName"/>, as
+    /// <see cref="TryGetValueByName(Sqlite3Row, string, out object?)"/> reads it, converted to
+    /// <typeparamref name="T"/> with <see cref="Convert.ChangeType(object, Type)"/>. False also when the value is NULL.
+    /// </summary>
+    /// <exception cref="SqliteCorruptException">As for <see cref="TryGetValueByName(Sqlite3Row, string, out object?)"/></exception>
+    /// <exception cref="InvalidCastException">The value cannot be converted to <typeparamref name="T"/></exception>
+    /// <exception cref="FormatException">The value is text that does not parse as <typeparamref name="T"/></exception>
+    /// <exception cref="OverflowException">The value is out of the range of <typeparamref name="T"/></exception>
     public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, [MaybeNullWhen(false)] out T value)
     {
         value = default;
