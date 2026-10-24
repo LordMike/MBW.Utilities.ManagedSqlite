@@ -164,4 +164,41 @@ INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');")));
         Assert.True(rows[2].TryGetString(1, out string last));
         Assert.Equal("three", last);
     }
+
+    /// <summary>
+    /// A row as wide as SQLite allows (SQLITE_MAX_COLUMN, 2000 columns), with a long TEXT last so its serial type takes
+    /// two header bytes. Every column reads, with and without shared row buffers. The parity dump, which adds a typeof
+    /// per column, can't read a table this wide from SQLite, so the values are those the script wrote.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WidestRowReads(bool shareRowBuffers)
+    {
+        string longText = new string('v', 100);
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(
+            $"CREATE TABLE t ({string.Join(", ", Enumerable.Range(0, 2000).Select(i => $"c{i}"))});" +
+            $"INSERT INTO t VALUES ({string.Join(", ", Enumerable.Range(0, 1999))}, '{longText}');" +
+            $"INSERT INTO t VALUES ({string.Join(", ", Enumerable.Range(0, 1999).Select(i => ~i))}, '{longText}');")));
+
+        int rows = 0;
+        foreach (Sqlite3Row row in db.GetTable("t").EnumerateRows(shareRowBuffers))
+        {
+            bool first = rows++ == 0;
+
+            // In order, so the header is parsed one field per read, and completed by the last
+            for (ushort i = 0; i < 1999; i++)
+            {
+                Assert.True(row.TryGetInt64(i, out long value));
+                Assert.Equal(first ? i : ~i, value);
+            }
+
+            Assert.True(row.TryGetString(1999, out string text));
+            Assert.Equal(longText, text);
+
+            Assert.False(row.TryGetOrdinal(2000, out _));
+        }
+
+        Assert.Equal(2, rows);
+    }
 }
