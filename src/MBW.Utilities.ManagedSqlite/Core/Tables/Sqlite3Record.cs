@@ -216,9 +216,11 @@ internal struct Sqlite3Record
             _headerSize = (int)headerSize;
             _headerPos = pos - _start;
             _nextOffset = (int)headerSize;
-            // Each serial type takes at least one byte of the header, after the header size itself
+            // Sized once for the whole record: each serial type takes at least one byte of the header, after the header
+            // size itself, so the parse never names more fields than this. The first parse reads one serial type even
+            // when there is no room for one, so the table holds at least one.
             if (keep && headerSize > 0)
-                _fields = new int[2 * Math.Min(8, Math.Max(1, headerSize - _headerPos))];
+                _fields = new int[2 * Math.Max(1, headerSize - _headerPos)];
 
             // REC-04, CELL-22: a header size of 0 is a record of no fields, so every column reads as its default or NULL.
             // SQLite parses one serial type past the (empty) header, finds the record corrupt, and then forgives it:
@@ -247,18 +249,6 @@ internal struct Sqlite3Record
         bool overread = false;
         do
         {
-            // Grow to at least double, and straight to field p2 when that is further, so reading a late column of a wide
-            // table makes one larger array instead of a row of discarded doubled ones. Neither goes past the fields the
-            // rest of the header can hold, as each serial type takes at least one byte.
-            if (_fields != null && 2 * i + 2 > _fields.Length)
-            {
-                // _fields holds two ints per field, so a field count of _fields.Length doubles it. Both bounds are at
-                // least i + 1, as i <= p2 here.
-                long most = i + Math.Max(1, _headerSize - headerPos);
-                long fields = Math.Min(Math.Max(_fields.Length, (long)p2 + 1), most);
-                Array.Resize(ref _fields, 2 * (int)fields);
-            }
-
             // A serial type that runs past the payload runs past the header too, which the checks below reject
             int pos = _start + headerPos;
             bool read = TryReadVarInt32(_data, _start + _length, ref pos, out long serialType);
