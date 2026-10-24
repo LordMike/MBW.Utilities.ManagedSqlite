@@ -85,7 +85,8 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     }
 
     /// <summary>
-    /// Runs the action with a timeout, and returns the exception it threw, if any
+    /// Runs the action with a timeout, and returns the exception it threw, if any. A
+    /// <see cref="SqliteCorruptException"/> must name the check that failed.
     /// </summary>
     private static Exception RunBounded(Action action)
     {
@@ -98,6 +99,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         }
         catch (AggregateException e)
         {
+            if (e.InnerException is SqliteCorruptException corrupt)
+                Assert.NotNull(corrupt.Check);
+
             return e.InnerException;
         }
 
@@ -344,18 +348,22 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     /// <summary>
     /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
-    /// an interior table page. The root page alone can't tell, so GetTableDefinition, which knows the SQL, checks it.
+    /// an interior table page. Opening the table compares the root page with the SQL, in either mode.
     /// </summary>
     [Theory]
-    [InlineData("Small", 0x0A)]
-    [InlineData("Keyed", 0x05)]
-    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType)
+    [InlineData("Small", 0x0A, SqliteValidation.Strict)]
+    [InlineData("Keyed", 0x05, SqliteValidation.Strict)]
+    [InlineData("Small", 0x0A, SqliteValidation.Lenient)]
+    [InlineData("Keyed", 0x05, SqliteValidation.Lenient)]
+    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType, SqliteValidation validation)
     {
         byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
 
-        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
-        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
+        List<string> issues = new();
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) });
+        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table)).Check);
+        Assert.Empty(issues);
     }
 
     // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold, in either mode. Their pointers would

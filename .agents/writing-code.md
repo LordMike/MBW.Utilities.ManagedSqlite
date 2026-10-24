@@ -15,7 +15,8 @@ running SQLite, not from intuition.
 - A file SQLite reads must read here with the same values. A file SQLite rejects must be rejected here, at the same point
   (database open, table open, or the row), unless the next section says otherwise.
 - Out of scope: writing, running SQL (including views), and indexes as a lookup structure. WAL and rollback journals are
-  added by separate work, against the check list in `docs/sqlite-checks/WALJ.md`.
+  read (`FromStreamWithWal`, `FromStreamWithJournal`, and `FromPath`, which picks up a `-wal` or `-journal` file next to
+  the database); their checks are listed in `docs/sqlite-checks/WALJ.md`.
 - Virtual tables are listed, but reading one throws `NotSupportedException`.
 - When behaviour is unclear, write a parity test first (see "Tests") and let SQLite decide.
 
@@ -39,8 +40,9 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
 
 - **Comment density follows the surrounding code.** Code that mirrors SQLite is the exception: it gets the plentiful
   comments described above.
-- **Construction:** prefer static factories (e.g. `ReaderBase.Open`) over public constructors. The WAL work replaces
-  `Sqlite3Database`'s public constructor with factories. Keep parsed state `readonly`.
+- **Construction:** prefer static factories (e.g. `ReaderBase.Open`) over public constructors. `Sqlite3Database` is
+  opened through `FromPath`, `FromStreamWithNoJournal`, `FromStreamWithWal` and `FromStreamWithJournal`; its constructor
+  is internal. Keep parsed state `readonly`.
 - **Nullable annotations:** the libraries are annotated. Where the compiler cannot see that a value is non-null, use
   `!` alone. Don't add a `Debug.Assert` next to it or custom guard helpers.
 - **Enum widths:** make enums as small as possible (`BTreeKind : byte`). An enum that mirrors an on-disk field keeps that
@@ -123,9 +125,9 @@ PageCount = headerSizeValid && Checks.Relaxable(header.DatabaseSizeInPages <= fi
 ```
 
 Rules:
-- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. The
-  exceptions are the entry-point wrappers that turn an unexpected exception into a `SqliteCorruptException` with an
-  inner exception.
+- **Never `throw new SqliteCorruptException` directly.** Go through `Checks`, so every failure carries its ID. Nothing
+  turns other exceptions into `SqliteCorruptException`: an `IndexOutOfRangeException` or similar from damaged bytes is a
+  missing check, so add one where SQLite makes it, rather than catching the exception.
 - **Pass the message as an interpolated string straight into the call.** The `CheckMessage` handler builds it only when
   the check fails, so a passing check allocates nothing. Don't build the message first.
 - **The check ID is the survey ID.** A check with no ID gets a new row in the right area table, with the next free
@@ -160,7 +162,7 @@ Each check gets parity tests in the corruption suite (`Tests/Corruption_Tests.cs
 - [ ] SQLite does this check on the read path (cited by pinned link and function)
 - [ ] Strict vs Relaxable chosen by the table above, and the Lenient fallback cannot produce wrong values
 - [ ] The comment has the ID, the quoted condition and the link
-- [ ] The ID is listed in `docs/sqlite-checks/README.md` (the survey tables' *Ours* column is a snapshot from before #58)
+- [ ] The ID is listed in `docs/sqlite-checks/README.md` (the survey tables' *Ours* column is not kept current)
 - [ ] Parity tests for Strict, and for Lenient if Relaxable
 
 

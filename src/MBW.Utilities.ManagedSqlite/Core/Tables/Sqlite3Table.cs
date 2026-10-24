@@ -8,6 +8,11 @@ using MBW.Utilities.ManagedSqlite.Core.Objects;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
+/// <summary>
+/// A table of the database, opened with <see cref="Sqlite3Database.GetTable"/> or
+/// <see cref="Sqlite3Database.TryGetTable"/>. Its rows are read with <see cref="EnumerateRows()"/>, and its columns with
+/// <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/>.
+/// </summary>
 public sealed class Sqlite3Table
 {
     private readonly ReaderBase _reader;
@@ -22,13 +27,15 @@ public sealed class Sqlite3Table
 
     private BTreePage? _rootPage;
 
+    /// <summary>
+    /// The table's row in the schema table, <c>sqlite_master</c>
+    /// </summary>
     public Sqlite3SchemaRow SchemaDefinition { get; }
 
     /// <summary>
     /// True when the table's root page is an index b-tree page, which is how SQLite stores a WITHOUT ROWID table. A
-    /// rowid table's root page is a table b-tree page. This comes from the root page alone, without parsing the
-    /// schema SQL, so it can't tell when the two disagree, which SQLite reports as corrupt. GetTableDefinition checks
-    /// that when it pairs a table with its definition.
+    /// rowid table's root page is a table b-tree page. A root page that disagrees with the schema SQL is reported as
+    /// corrupt when the table is opened, as SQLite does when it reads the table.
     /// </summary>
     public bool IsWithoutRowId { get; }
 
@@ -94,33 +101,15 @@ public sealed class Sqlite3Table
     /// <exception cref="SqliteCorruptException">The table's b-tree or one of its records is malformed</exception>
     public IEnumerable<Sqlite3Row> EnumerateRows(bool shareRowBuffers)
     {
-        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
-        using IEnumerator<Sqlite3Row> rows = EnumerateRowsInternal(shared).GetEnumerator();
-
-        while (true)
-        {
-            try
-            {
-                if (!rows.MoveNext())
-                    yield break;
-            }
-            catch (Exception e) when (CorruptionHelper.IsCorruptionShaped(e))
-            {
-                throw new SqliteCorruptException($"unable to read the rows of table {SchemaDefinition.Name}", structure: "table b-tree", innerException: e);
-            }
-
-            yield return rows.Current;
-        }
-    }
-
-    private IEnumerable<Sqlite3Row> EnumerateRowsInternal(Sqlite3Record.SharedFields? shared)
-    {
         // A WITHOUT ROWID table is stored in an index b-tree
-        return IsWithoutRowId ? EnumerateWithoutRowIdRows(shared) : EnumerateRowIdRows(shared);
+        return IsWithoutRowId ? EnumerateWithoutRowIdRows(shareRowBuffers) : EnumerateRowIdRows(shareRowBuffers);
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateRowIdRows(Sqlite3Record.SharedFields? shared)
+    private IEnumerable<Sqlite3Row> EnumerateRowIdRows(bool shareRowBuffers)
     {
+        // Created inside the iterator, so each enumeration has its own field table
+        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+
         foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
         {
             for (int i = 0; i < leaf.CellCount; i++)
@@ -138,8 +127,11 @@ public sealed class Sqlite3Table
         return shared == null ? new Sqlite3Record(page, payload) : new Sqlite3Record(page, payload, shared);
     }
 
-    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(Sqlite3Record.SharedFields? shared)
+    private IEnumerable<Sqlite3Row> EnumerateWithoutRowIdRows(bool shareRowBuffers)
     {
+        // Created inside the iterator, so each enumeration has its own field table
+        Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)RootPage))
         {
             BTreeIndexPage page = entry.Key;
