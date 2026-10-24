@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.ExceptionServices;
 using System.Text;
+using System.Threading;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
@@ -31,9 +32,10 @@ internal sealed class ReaderBase : IDisposable
     private readonly Encoding _encoding;
 
     /// <summary>
-    /// Set once Lenient has reported the partial last page (HDR-17), so it is reported once, not on every read of it
+    /// 1 once Lenient has reported the partial last page (HDR-17), so it is reported once, not on every read of it. Set
+    /// with <see cref="Interlocked.Exchange(ref int, int)"/>, so two threads reading the page at once report it once.
     /// </summary>
-    private bool _partialPageReported;
+    private int _partialPageReported;
 
     public DatabaseHeader Header { get; }
 
@@ -438,12 +440,10 @@ internal sealed class ReaderBase : IDisposable
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3088 (readDbPage)
             // Those zeros are not the file's data, so SQLite then returns damaged values without an error. Strict is
             // stricter than SQLite here and fails; Lenient reads the zeros as SQLite does.
-            if (!_partialPageReported)
-            {
+            // Strict fails on every read of the page; Lenient reports it on the first
+            if (Settings.Validation == SqliteValidation.Strict || Interlocked.Exchange(ref _partialPageReported, 1) == 0)
                 Checks.Relaxable(false, Settings, "HDR-17",
                     $"page {page} is cut short by the end of the file ({read} of {PageSize} bytes)", page, "file length");
-                _partialPageReported = true;
-            }
 
             Array.Clear(buffer, read, (int)PageSize - read);
         }
