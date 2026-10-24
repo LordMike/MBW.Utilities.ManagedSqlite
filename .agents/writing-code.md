@@ -50,8 +50,8 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
 - **Targets:** the library targets netstandard2.0, net9.0 and net10.0 with `LangVersion latest`. Newer compiler
   features (such as interpolated string handlers) and types (`System.Threading.Lock`) are polyfilled for
   netstandard2.0 under `Internal/Compat/`, next to `NullableAttributes.cs`, behind an `#if` that drops them where .NET
-  has them. The net9.0 and net10.0 builds are trimmable and AOT-compatible. The tests run on net10.0, so they test the
-  net10.0 build.
+  has them. The net9.0 and net10.0 builds are trimmable and AOT-compatible. The tests run once per build: net8.0 tests
+  the netstandard2.0 build, net9.0 and net10.0 their own, all on the .NET 10 runtime.
 - **Errors:** damaged files surface as `SqliteCorruptException`, raised through `Checks` (next section). Damage to the
   tree (pages, cells, a payload's size and local bytes) fails the row enumerator. A record is decoded lazily, as
   SQLite's OP_Column does: damage in its header or values fails the accessor that reads that field (`TryGetOrdinal`,
