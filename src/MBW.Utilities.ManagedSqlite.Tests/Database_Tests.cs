@@ -202,10 +202,13 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
     /// <summary>
     /// One open database read from several threads at once: lookups, definitions, and enumerations of the same and of
     /// different tables, across interior pages, overflow chains and a WITHOUT ROWID table, all read what a single
-    /// thread reads. The stream is read with a seek and a read, so the threads take turns on it.
+    /// thread reads, from a MemoryStream and from the file FromPath opens. Each stream is read with a seek and a read, so
+    /// the threads take turns on it.
     /// </summary>
-    [Fact]
-    public void ConcurrentReadsMatchASingleThread()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConcurrentReadsMatchASingleThread(bool fromFile)
     {
         byte[] data = SqliteParity.Build(@"
 CREATE TABLE big (id INTEGER PRIMARY KEY, t TEXT);
@@ -220,7 +223,21 @@ WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v + 1 FROM n WHERE v < 1000) I
         using (Sqlite3Database single = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
             expected = tables.ToDictionary(name => name, name => single.GetTable(name).EnumerateRows().Select(row => row.ColumnData).ToList());
 
-        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+        if (!fromFile)
+        {
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+            ReadInParallel(db, tables, expected);
+            return;
+        }
+
+        using SqliteParity.SnapshotDirectory snapshot = new SqliteParity.SnapshotDirectory();
+        File.WriteAllBytes(snapshot.Database, data);
+        using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database))
+            ReadInParallel(db, tables, expected);
+    }
+
+    private static void ReadInParallel(Sqlite3Database db, string[] tables, Dictionary<string, List<IReadOnlyList<object>>> expected)
+    {
         Parallel.For(0, 600, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(4, Environment.ProcessorCount) }, i =>
         {
             string name = tables[i % tables.Length];

@@ -2,7 +2,9 @@
 
   <PropertyGroup>
     <IsPackable>true</IsPackable>
-    <TargetFrameworks>netstandard2.0</TargetFrameworks>
+    <!-- net9.0 brings System.Threading.Lock, net10.0 is the framework the tests and tools run on (DefaultTargetFramework);
+         netstandard2.0 covers everything else -->
+    <TargetFrameworks>netstandard2.0;net9.0;net10.0</TargetFrameworks>
     <Nullable>enable</Nullable>
     <Description>SQLite3 library in managed C# that can read sqlite db files: the binary database, its tables and rows, and the table definitions from the schema's CREATE statements.</Description>
     <PackageTags>sqlite;sqlite3;database;db;reader;read-only;managed;parser;file-format</PackageTags>
@@ -18,7 +20,13 @@
     <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
   </ItemGroup>
 
-  <ItemGroup>
+  <PropertyGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net9.0'))">
+    <!-- Also makes it trimmable -->
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+
+  <!-- Span and BinaryPrimitives are part of .NET itself -->
+  <ItemGroup Condition="!$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net9.0'))">
     <PackageReference Include="System.Memory" Version="4.6.3" />
   </ItemGroup>
 
