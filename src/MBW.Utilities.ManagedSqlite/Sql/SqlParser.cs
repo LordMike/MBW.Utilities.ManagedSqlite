@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Text;
+using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Sql;
@@ -12,9 +13,9 @@ namespace MBW.Utilities.ManagedSqlite.Sql;
 internal static class SqlParser
 {
     /// <summary>
-    /// Describes a table SQLite built from its CREATE TABLE
+    /// Describes a table SQLite built from its CREATE TABLE, in a database of text encoding <paramref name="encoding"/>
     /// </summary>
-    public static SqlTableDefinition Build(ParsedTable table)
+    public static SqlTableDefinition Build(ParsedTable table, SqliteEncoding encoding)
     {
         SqlTableDefinition definition = new SqlTableDefinition(table.Name);
         definition.IsWithoutRowId = table.Has(ParsedTable.TF_WithoutRowid);
@@ -42,7 +43,7 @@ internal static class SqlParser
                 virtualColumns++;
             else
             {
-                column.HasKnownDefault = ColumnDefault.TryEvaluate(parsed.Default, parsed.Affinity, out object? value);
+                column.HasKnownDefault = ColumnDefault.TryEvaluate(parsed.Default, parsed.Affinity, encoding, out object? value);
                 column.DefaultValue = value;
             }
 

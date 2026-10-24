@@ -93,8 +93,8 @@ public class SqlTableDefinition_Tests
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(
             "CREATE TABLE t(a); CREATE VIEW v AS SELECT a FROM t; CREATE VIRTUAL TABLE f USING fts5(a);")));
 
-        Assert.Throws<InvalidOperationException>(() => db.GetTables().Single(s => s.Name == "v").GetTableDefinition());
-        Assert.Throws<NotSupportedException>(() => db.GetTables().Single(s => s.Name == "f").GetTableDefinition());
+        Assert.Throws<InvalidOperationException>(() => db.GetSchema().Single(s => s.Name == "v").GetTableDefinition());
+        Assert.Throws<NotSupportedException>(() => db.GetSchema().Single(s => s.Name == "f").GetTableDefinition());
     }
 
     // A CREATE TABLE IF NOT EXISTS of a name a row before it took makes no table, in SQLite too, so the name reads the
@@ -107,7 +107,7 @@ public class SqlTableDefinition_Tests
 
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
-        Assert.Throws<InvalidOperationException>(() => db.GetTables().Last().GetTableDefinition());
+        Assert.Throws<InvalidOperationException>(() => db.GetSchema().Last().GetTableDefinition());
         Assert.Equal("a", db.GetTable("t").GetTableDefinition().Columns.Single().Name);
     }
 }

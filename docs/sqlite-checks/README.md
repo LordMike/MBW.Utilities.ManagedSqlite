@@ -44,6 +44,7 @@ The code for each of these carries its ID in a comment.
 | CELL-13, CELL-16 | An overflow chain that ends early is corrupt; the last overflow page's next pointer is never read |
 | REC-03, REC-04, REC-05, REC-10, CELL-21, CELL-22, CELL-23 | Records are decoded lazily, up to the field read, with OP_Column's checks |
 | REC-21 | A rowid alias column reads the rowid even when the record is short |
+| REC-36 | UTF-16 text of an odd number of bytes drops the last byte, as sqlite3VdbeMemTranslate does |
 | CELL-38 | The reader's own bound: a payload no larger than the database's pages could hold |
 | SCHEMA-11, SCHEMA-13, SCHEMA-15, SCHEMA-17, SCHEMA-19, SCHEMA-22, SCHEMA-26, SCHEMA-58, DDL-58 | Schema rows are read as sqlite3InitCallback reads them: each value as text, cut at a NUL, and the open fails where SQLite's schema load does |
 | SCHEMA-26, DDL-03 | Relaxable: a row's type must agree with its statement (SCHEMA-26), and its name and tbl_name with the statement's names (DDL-03) |
@@ -56,7 +57,7 @@ The code for each of these carries its ID in a comment.
 | DDL-03, DDL-65, DDL-66, DDL-68, DDL-69, DDL-71, DDL-72 | Strict: CREATE INDEX as sqlite3CreateIndex runs it at init: a table loaded before it that is not a view or virtual table, the row's name and tbl_name, terms and a partial WHERE resolved against the table, and a root page no other index of the table has |
 | DDL-36, DDL-74, DDL-75, DDL-77, DDL-79, DDL-80, DDL-81, DDL-82 | Strict: views, triggers and virtual tables are checked as SQLite checks them at init: their headers against the schema, their bodies for syntax, the trigger-step errors of the parser and cross-database references; their names are not resolved, and virtual table modules are not looked up |
 | DDL-46 | CHECK constraints are dropped, as SQLite drops them for a read-only database |
-| REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity; a DEFAULT with a CAST is not evaluated. A STORED generated column reads its expression the same way, as SQLite does (sqlite3ColumnDefault on the generation expression) |
+| REC-11, REC-32 | A record too short for a column reads the column's DEFAULT by name, evaluated as sqlite3ValueFromExpr does, with the column's affinity, a CAST included; a DEFAULT that makes a real into text is not evaluated. A STORED generated column reads its expression the same way, as SQLite does (sqlite3ColumnDefault on the generation expression) |
 
 A Strict check on a schema row's statement fails the open in Strict. In Lenient it is reported at open, and only that row's table cannot be opened.
 
