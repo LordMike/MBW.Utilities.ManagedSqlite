@@ -193,7 +193,8 @@ public sealed class Sqlite3Table
 
         // CELL-38: a payload can't be larger than the pages that could hold it, nor larger than the largest array. This is
         // the reader's own bound, not SQLite's: SQLite fails such a payload when its overflow chain ends early (CELL-13),
-        // but this reader allocates a value's array before it reads the value's overflow pages, so the bound keeps a
+        // but this reader allocates a value's array before it reads the value's overflow pages (a value over 1 MiB only
+        // once the chain reaches its last page, which a chain that loops back on itself always does), so the bound keeps a
         // damaged size from allocating up to 2 GB.
         long maxPayload = Math.Min(int.MaxValue, cell.DataSizeInCell + _reader.PageCount * (usableSize - 4));
         Checks.Strict(cell.DataSize <= maxPayload, "CELL-38", $"payload size {cell.DataSize} of {RowName(rowId)} is larger than the database",
