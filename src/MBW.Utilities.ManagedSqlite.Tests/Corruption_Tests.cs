@@ -394,35 +394,76 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0), "PAGE-15");
 
     /// <summary>
-    /// INTEG-14: both of Deep's root pointers lead to its left interior page, so a scan reaches that page's rows twice.
-    /// SQLite returns them twice and finds the damage only in integrity_check. Strict fails at the first repeated rowid.
-    /// Lenient reports it and reads as SQLite does.
+    /// INTEG-14 and INTEG-33: both of the root's pointers lead to its first child, so a scan reaches that subtree's rows
+    /// twice: Deep's left interior page, or Keyed's first leaf. SQLite returns them twice and finds the damage only in
+    /// integrity_check. Strict fails at the first repeated row, by rowid in Deep and by PRIMARY KEY in Keyed, a WITHOUT
+    /// ROWID table. Lenient reports it and reads as SQLite does.
     /// </summary>
     [Theory]
-    [InlineData(SqliteValidation.Strict)]
-    [InlineData(SqliteValidation.Lenient)]
-    public void SharedSubtree_RowIdsOutOfOrder(SqliteValidation validation)
+    [InlineData("Deep", "INTEG-14", SqliteValidation.Strict)]
+    [InlineData("Deep", "INTEG-14", SqliteValidation.Lenient)]
+    [InlineData("Keyed", "INTEG-33", SqliteValidation.Strict)]
+    [InlineData("Keyed", "INTEG-33", SqliteValidation.Lenient)]
+    public void SharedSubtree_RowsOutOfOrder(string table, string check, SqliteValidation validation)
     {
-        Func<byte[], byte[]> patch = data => new DbPatcher(data).SetRightMostPointer(DeepRoot, DeepLeft).Data;
+        (uint root, uint child, uint firstLeaf) = table == "Deep" ? (DeepRoot, DeepLeft, DeepFirstLeaf) : (KeyedRoot, KeyedFirstLeaf, KeyedFirstLeaf);
+        Func<byte[], byte[]> patch = data => new DbPatcher(data).SetRightMostPointer(root, child).Data;
 
         List<string> issues = new List<string>();
         Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
         if (validation == SqliteValidation.Strict)
         {
             using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(patch(Base)), settings);
-            SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Deep")));
-            Assert.Equal("INTEG-14", corrupt.Check);
+            SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, table)));
+            Assert.Equal(check, corrupt.Check);
 
             // The first repeated row is the first one of the shared subtree, met again
-            Assert.Equal(DeepFirstLeaf, corrupt.Page);
+            Assert.Equal(firstLeaf, corrupt.Page);
             Assert.Empty(issues);
         }
         else
         {
             SqliteParity.AssertSameAsSqlite(Script, patch, settings);
-            Assert.Contains("INTEG-14", issues);
-            Assert.All(issues, check => Assert.Equal("INTEG-14", check));
+            Assert.Contains(check, issues);
+            Assert.All(issues, issue => Assert.Equal(check, issue));
         }
+    }
+
+    /// <summary>
+    /// INTEG-33 against SQLite's integrity_check: real SQLite stores the rows of t in the order of the
+    /// <paramref name="stored"/> columns, then the schema says <paramref name="read"/>, which can sort them differently.
+    /// A Lenient read reports one INTEG-33 for each row that integrity_check finds "not in PRIMARY KEY order", and
+    /// reads the rows as SQLite does. <paramref name="outOfOrder"/> says whether SQLite finds any.
+    /// </summary>
+    [Theory]
+    // NOCASE folds ASCII letters, so 'B' sorts after 'a', and 'A' equals 'a', which is out of order too
+    [InlineData("UTF-8", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "('B'), ('a')", true)]
+    [InlineData("UTF-8", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "('A'), ('a')", true)]
+    // RTRIM drops trailing spaces
+    [InlineData("UTF-8", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE RTRIM", "('a'), ('a  ')", true)]
+    // Without affinity, the key holds every type, in SQLite's order: numbers compared exactly, then text, then blobs
+    [InlineData("UTF-8", "k PRIMARY KEY", "k PRIMARY KEY", "(-1), (0.5), (1), (9007199254740993), (9.1e15), ('a'), (x'00')", false)]
+    // The second key column decides when the first is equal, in its own sort order
+    [InlineData("UTF-8", "a, b, PRIMARY KEY (a, b)", "a, b, PRIMARY KEY (a, b DESC)", "(1, 1), (1, 2), (2, 1)", true)]
+    // NOCASE compares UTF-16 text as UTF-8, and BINARY compares the bytes as stored, so U+0101 sorts before 'b' in UTF-16le
+    [InlineData("UTF-16le", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY COLLATE NOCASE", "('B'), ('a')", true)]
+    [InlineData("UTF-16le", "k TEXT PRIMARY KEY", "k TEXT PRIMARY KEY", "('b'), ('ā')", false)]
+    public void PrimaryKeyOrder_SameAsIntegrityCheck(string encoding, string stored, string read, string values, bool outOfOrder)
+    {
+        byte[] data = SqliteParity.Build($"PRAGMA encoding = '{encoding}'; CREATE TABLE t ({stored}) WITHOUT ROWID; INSERT INTO t VALUES {values};",
+            $"UPDATE sqlite_schema SET sql = 'CREATE TABLE t ({read}) WITHOUT ROWID' WHERE name = 't'");
+        List<string> expected = SqliteParity.IntegrityCheck(data);
+        Assert.All(expected, message => Assert.Equal("row not in PRIMARY KEY order for t", message));
+        Assert.Equal(outOfOrder, expected.Count > 0);
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings settings = new Sqlite3Settings { Validation = SqliteValidation.Lenient, OnValidationIssue = i => issues.Add(i.Check) };
+        using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), settings))
+            ReadTable(db, "t");
+        Assert.Equal(expected.Count, issues.Count);
+        Assert.All(issues, issue => Assert.Equal("INTEG-33", issue));
+
+        SqliteParity.AssertSameAsSqlite(data, settings);
     }
 
     // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read

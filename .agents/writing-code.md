@@ -68,11 +68,12 @@ relaxes only the checks where the data that follows is still intact.
 
 1. **Find the SQLite code that does the same check.** The survey was made against SQLite 3.53.4. Look it up in the survey tables in `docs/sqlite-checks/` by area: HDR (file header),
    PAGE (b-tree pages), CELL (cells and overflow), REC (records), SCHEMA (sqlite_schema rows), DDL (CREATE statements),
-   INTEG (`integrity_check` only, not for the read path except INTEG-14), WALJ (WAL and journals).
+   INTEG (`integrity_check` only, not for the read path except INTEG-14 and INTEG-33), WALJ (WAL and journals).
 2. **If SQLite has no such check, don't add one.** That holds even when the data looks wrong; for example, SQLite reads
    reserved serial types 10 and 11 as NULL. Checks that SQLite runs only in `PRAGMA integrity_check`, `quick_check` or
-   with `cell_size_check=ON` don't belong on the read path either. The one exception is INTEG-14 (rowids in order), a
-   Relaxable check that stops a b-tree whose pages share a subtree from being walked exponentially often.
+   with `cell_size_check=ON` don't belong on the read path either. The exceptions are INTEG-14 (rowids in order) and INTEG-33
+   (WITHOUT ROWID primary keys in order), Relaxable checks that stop a b-tree whose pages share a subtree from being
+   walked exponentially often.
 3. **Prove it against real SQLite.** Patch a database in the parity tests and confirm that SQLite (Microsoft.Data.Sqlite)
    fails, or reads on, at the same place.
 

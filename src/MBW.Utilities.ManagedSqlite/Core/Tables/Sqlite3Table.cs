@@ -150,11 +150,26 @@ public sealed class Sqlite3Table
         // Created inside the iterator, so each enumeration has its own field table
         Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
 
+        // A WITHOUT ROWID table's row is parsed when the schema is read, so its definition is there
+        PrimaryKeyOrder? order = PrimaryKeyOrder.Create(SchemaDefinition.Table!, _reader.TextEncoding);
+
         foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)RootPage))
         {
             BTreeIndexPage page = entry.Key;
             BTreePage.PayloadCell cell = page.GetCell(entry.Value);
             ArraySegment<byte> payload = ReadPayload(page, null, cell);
+
+            // INTEG-33: a scan yields the rows in strictly increasing PRIMARY KEY order, the WITHOUT ROWID form of
+            // INTEG-14. SQLite checks this only in integrity_check, see PrimaryKeyOrder.IsInOrder:
+            //   zErr = sqlite3MPrintf(db, "row not in PRIMARY KEY order for %s", pTab->zName);
+            // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pragma.c#L1887 (sqlite3Pragma, integrity_check)
+            // As for INTEG-14, a repeated or decreasing key fails Strict, which stops a b-tree whose pages share a
+            // subtree at its first repeated row. Lenient reports each one and returns the rows as SQLite does. A table
+            // whose key uses a collation that is not built into SQLite is not checked.
+            if (order != null)
+                Checks.Relaxable(order.IsInOrder(payload), _reader.Settings, "INTEG-33",
+                    $"row not in PRIMARY KEY order for {SchemaDefinition.Name}: its key does not sort after the key of the row before it",
+                    page.Page, "index b-tree");
 
             // There is no rowid
             yield return new Sqlite3Row(this, 0, NewRecord(page.Page, payload, shared));

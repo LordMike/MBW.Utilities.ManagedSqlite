@@ -63,7 +63,10 @@ internal static class SqliteParity
     /// </summary>
     public static void AssertSameAsSqlite(string script, Func<byte[], byte[]> patch, Sqlite3Settings settings) => AssertSameAsSqlite(patch(Build(script)), settings);
 
-    private static void AssertSameAsSqlite(byte[] data, Sqlite3Settings settings = null)
+    /// <summary>
+    /// The database file <paramref name="data"/>, with the library opening it with <paramref name="settings"/>
+    /// </summary>
+    public static void AssertSameAsSqlite(byte[] data, Sqlite3Settings settings = null)
     {
         string expected;
         using (SqliteConnection connection = Open(data))
@@ -229,6 +232,17 @@ internal static class SqliteParity
         }
 
         Assert.Equal(expected.ToString(), actual.ToString());
+    }
+
+    /// <summary>
+    /// The messages of real SQLite's <c>PRAGMA integrity_check</c> on the database file <paramref name="data"/>, which
+    /// are none when it finds the database ok
+    /// </summary>
+    public static List<string> IntegrityCheck(byte[] data)
+    {
+        using SqliteConnection connection = Open(data);
+        List<string> messages = Query(connection, "PRAGMA integrity_check").Select(r => (string)r[0]).ToList();
+        return messages.SequenceEqual(new[] { "ok" }) ? new List<string>() : messages;
     }
 
     /// <summary>

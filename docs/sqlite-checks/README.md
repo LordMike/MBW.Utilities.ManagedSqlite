@@ -12,7 +12,7 @@ a stable ID (such as `PAGE-21`) that the code, its comments, `SqliteCorruptExcep
 | REC | [REC.md](REC.md) | Records: header, serial types, values |
 | SCHEMA | [SCHEMA.md](SCHEMA.md) | `sqlite_schema` rows |
 | DDL | [DDL.md](DDL.md) | CREATE statements in the schema |
-| INTEG | [INTEG.md](INTEG.md) | Checks only `PRAGMA integrity_check` makes, which do not belong on the read path, except INTEG-14 |
+| INTEG | [INTEG.md](INTEG.md) | Checks only `PRAGMA integrity_check` makes, which do not belong on the read path, except INTEG-14 and INTEG-33 |
 | WALJ | [WALJ.md](WALJ.md) | WAL and rollback journal checks, for the WAL and journal work |
 
 The area tables list SQLite 3.53.4's checks. Their *Ours* column is not kept current: the tables below say what the
@@ -38,6 +38,7 @@ The code for each of these carries its ID in a comment.
 | PAGE-18 | Page 1 must be a table b-tree page, and a table's root page the b-tree kind its SQL declares (checked when the table is opened) |
 | PAGE-19, PAGE-21 | Empty interior roots and empty child pages are corrupt; Lenient reports and walks on |
 | INTEG-14 | A rowid table's rows, `sqlite_schema` included, must come in strictly increasing rowid order. SQLite checks this only in integrity_check: Strict fails (stricter than SQLite), which also stops a b-tree whose pages share a subtree at its first repeated row; Lenient reports each repetition and returns the rows as SQLite does |
+| INTEG-33 | A WITHOUT ROWID table's rows must come in strictly increasing PRIMARY KEY order, compared as SQLite's record compare does, with the key's BINARY, NOCASE or RTRIM collations and DESC orders (a table with any other collation is not checked). Strict and Lenient as for INTEG-14 |
 | CELL-01, CELL-02 | Payload sizes keep their low 32 bits |
 | CELL-10, CELL-11 | A payload must stay in its page's usable area when read through accessPayload; one that is all on its page may run into the reserved bytes |
 | CELL-13, CELL-16 | An overflow chain that ends early is corrupt; the last overflow page's next pointer is never read |
