@@ -19,9 +19,15 @@ public sealed class Sqlite3Row
     public Sqlite3Table Table { get; }
 
     /// <summary>
-    /// The row's rowid. A row of a WITHOUT ROWID table has none, and reads 0 here.
+    /// The row's rowid. A row of a WITHOUT ROWID table has none, and reads 0 here, which is also a valid rowid; see
+    /// <see cref="HasRowId"/>.
     /// </summary>
     public long RowId { get; }
+
+    /// <summary>
+    /// False for a row of a WITHOUT ROWID table, which has no rowid, so <see cref="RowId"/> means nothing
+    /// </summary>
+    public bool HasRowId => !Table.IsWithoutRowId;
 
     /// <summary>
     /// Not readonly: reading a value moves the record's parse state on, in place. Cleared once
