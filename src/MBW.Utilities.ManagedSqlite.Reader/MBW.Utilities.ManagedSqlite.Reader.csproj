@@ -5,6 +5,7 @@
   <PropertyGroup>
     <TargetFramework>$(DefaultTargetFramework)</TargetFramework>
     <OutputType>Exe</OutputType>
+    <Nullable>enable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,12 +14,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MBW.Utilities.ManagedSqlite\MBW.Utilities.ManagedSqlite.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <None Update="Test.db">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
   </ItemGroup>
 
 </Project>
