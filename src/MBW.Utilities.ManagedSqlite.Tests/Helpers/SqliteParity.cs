@@ -243,6 +243,22 @@ internal static class SqliteParity
     }
 
     /// <summary>
+    /// The first value of the first row <paramref name="sql"/> returns from the database file <paramref name="data"/>,
+    /// as real SQLite reads it as <typeparamref name="T"/> (Microsoft.Data.Sqlite's GetFieldValue, over
+    /// sqlite3_column_int64 and sqlite3_column_double), and NULL as <c>default</c>
+    /// </summary>
+    public static T ReadFirstValueWithSqlite<T>(byte[] data, string sql)
+    {
+        using SqliteConnection connection = Open(data);
+        using SqliteCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        using SqliteDataReader reader = command.ExecuteReader();
+        Assert.True(reader.Read());
+        return reader.IsDBNull(0) ? default : reader.GetFieldValue<T>(0);
+    }
+
+    /// <summary>
     /// Asserts that real SQLite loads the schema of the database file <paramref name="data"/> and reads the rows of
     /// <paramref name="table"/>, or only their <paramref name="columns"/>
     /// </summary>
@@ -407,20 +423,32 @@ internal static class SqliteParity
             .Select(row =>
             {
                 object[] values = stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray();
-                AssertBlobsSameAsValues(row, stored, definition.RowIdColumn?.Name);
+                AssertTypedReadsSameAsValues(row, stored, definition.RowIdColumn?.Name);
                 return (table.IsWithoutRowId ? null : (long?)row.RowId, values);
             })
             .ToList();
+
+        // Rows that share one field table read the same values, when each is read inside the loop
+        int index = 0;
+        foreach (Sqlite3Row row in table.EnumerateRows(shareRowBuffers: true))
+        {
+            Assert.True(index < rows.Count, "the rows that share a field table outnumber the others");
+            Assert.Equal(rows[index++].Item2, stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray());
+            AssertTypedReadsSameAsValues(row, stored, definition.RowIdColumn?.Name);
+        }
+        Assert.Equal(rows.Count, index);
 
         return new Table(name, definition.RowIdColumn?.Name, columns, rows);
     }
 
     /// <summary>
-    /// <see cref="Sqlite3Row.TryGetBlob"/> returns the bytes <see cref="Sqlite3Row.TryGetOrdinal(ushort, out object)"/>
-    /// returns for each BLOB field of the <paramref name="stored"/> columns, and false for every other field. The rowid
+    /// The typed reads (<see cref="Sqlite3Row.TryGetInt64"/>, <see cref="Sqlite3Row.TryGetDouble"/>,
+    /// <see cref="Sqlite3Row.TryGetString"/> and <see cref="Sqlite3Row.TryGetBlob"/>) return what
+    /// <see cref="Sqlite3Row.TryGetOrdinal(ushort, out object)"/> returns for each field of the <paramref name="stored"/>
+    /// columns that holds their type, and false for every other field. TryGetDouble also reads INTEGERs. The rowid
     /// alias is skipped: it reads the rowid, so its field is never decoded, as in SQLite.
     /// </summary>
-    private static void AssertBlobsSameAsValues(Sqlite3Row row, List<string> stored, string rowIdAlias)
+    private static void AssertTypedReadsSameAsValues(Sqlite3Row row, List<string> stored, string rowIdAlias)
     {
         for (ushort i = 0; i < stored.Count; i++)
         {
@@ -428,9 +456,21 @@ internal static class SqliteParity
                 continue;
 
             bool exists = row.TryGetOrdinal(i, out object value);
-            bool isBlob = row.TryGetBlob(i, out ReadOnlyMemory<byte> blob);
-            Assert.Equal(exists && value is byte[], isBlob);
-            if (isBlob)
+
+            Assert.Equal(exists && value is long, row.TryGetInt64(i, out long integer));
+            if (value is long)
+                Assert.Equal((long)value, integer);
+
+            Assert.Equal(exists && value is double or long, row.TryGetDouble(i, out double real));
+            if (value is double or long)
+                Assert.Equal(Convert.ToDouble(value), real);
+
+            Assert.Equal(exists && value is string, row.TryGetString(i, out string text));
+            if (value is string)
+                Assert.Equal((string)value, text);
+
+            Assert.Equal(exists && value is byte[], row.TryGetBlob(i, out ReadOnlyMemory<byte> blob));
+            if (value is byte[])
                 Assert.Equal((byte[])value, blob.ToArray());
         }
     }

@@ -60,22 +60,10 @@ Legend for "Strict-required?": **Yes** = SQLite always fails when the code path 
 - `btreeInitPage`: an empty page has `cellContent == usableSize` (assert only).
 - `assertParentIndex` in `moveToParent` (skipped when CORRUPT_DB).
 
-## 3. Most important gaps
+## 3. Open gaps
 
-Count: 37 checks catalogued (plus 6 debug-only). Parity gaps: 11 (4 where SQLite rejects and we accept, 7 where we reject and SQLite accepts). Integrity-only items are not counted as gaps.
-
-**SQLite rejects, we accept**
-1. **CELL-14**: an overflow page number above the header's page count but inside the file. SQLite bounds by `nPage` (the header count when valid). We bound by `max(file pages, header count)` (`ReaderBase.cs:62`). Fix together with HDR: use SQLite's nPage rule.
-2. **CELL-21**: a record header larger than 98307 bytes is CORRUPT in SQLite (vdbe.c:3072). Easy to add in `Sqlite3Table.DecodeRecord`.
-3. **CELL-24**: a column longer than SQLITE_LIMIT_LENGTH (1e9) gives SQLITE_TOOBIG. This is not corruption; decide by policy.
-4. **CELL-19**: in autovacuum DBs SQLite can fail (or follow the ptrmap) on a corrupt ptrmap entry while skipping overflow pages. A sequential full-row read never takes this path, so it can be ignored.
-
-**We reject, SQLite accepts (must relax for parity, or keep only behind Strict-beyond-SQLite)**
-1. **CELL-08 / CELL-09 / CELL-11**: cell-pointer range and "cell extends past usable size" checks are `cell_size_check`/integrity_check-only in SQLite. On a default read, SQLite masks offsets and lets a local record sit in the reserved bytes as long as it is inside the page. We always reject (`BTreePage.cs:108-110`, `BTreeLeafTablePage.cs:48-50`, `BTreeIndexPage.cs:50-52`). These are prime Lenient candidates. Strict should arguably keep only "local payload past the *page* end when that byte is actually needed" (CELL-10/11).
-2. **CELL-16**: a garbage or out-of-range next pointer on the *last* overflow page. SQLite reads it and ignores it. We follow it (`SqliteDataStream.cs:67-73`) and throw from `SeekPage`. This is a real false positive. Fix: move to the next page only when `_fullLengthRemaining > 0`.
-3. **CELL-22**: a record header size of 0 makes SQLite return all-NULL/default columns. We throw (`Sqlite3Table.cs:177`).
-4. **CELL-01 / CELL-02**: SQLite truncates the payload-size varint to u32 (and the 9th byte gives 7 bits). We reject sizes ≥ 2^32 or negative. This only matters for non-canonical or corrupt encodings.
-5. **CELL-23**: SQLite checks header/payload consistency only for header entries up to the requested column. We validate the whole header, so a record with extra trailing fields whose sizes don't add up is rejected by us but readable by `SELECT <schema columns>` in SQLite. Cross-ref RECORD.
-6. **CELL-04**: an interior table cell's key varint that runs off the page end. SQLite never parses it on a scan. We parse it eagerly and throw.
-
-Already at parity and worth keeping: CELL-03, 05, 06, 13, 15, 17, 20 and 26. Ordering checks (CELL-27..32) are integrity_check-only in SQLite, so Strict must not enforce them.
+**SQLite rejects, we accept:**
+1. **CELL-19:** in an autovacuum database SQLite fails a column read that skips whole overflow pages when the ptrmap
+   entry it looks up is corrupt. We follow each overflow page's own next pointer and never read the ptrmap (HDR-28).
+2. **CELL-24:** a value longer than SQLITE_LIMIT_LENGTH (1,000,000,000 bytes) gives SQLITE_TOOBIG; we read it
+   (REC-17). This is not corruption, and needs a file over 1 GB.

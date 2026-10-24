@@ -52,6 +52,15 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     }
 
     [Fact]
+    public void TableLookupNullNameThrows()
+    {
+        using Sqlite3Database db = Open();
+
+        Assert.Equal("name", Assert.Throws<ArgumentNullException>(() => db.GetTable(null!)).ParamName);
+        Assert.Equal("name", Assert.Throws<ArgumentNullException>(() => db.TryGetTable(null!, out _)).ParamName);
+    }
+
+    [Fact]
     public void VirtualTableIsListedButNotRead()
     {
         using Sqlite3Database db = Open();
@@ -100,6 +109,15 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     {
         using Stream _stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
         Assert.Throws<SqliteInvalidEncodingException>(() => Sqlite3Database.FromStreamWithNoJournal(_stream, new Sqlite3Settings { FallbackEncoding = (SqliteEncoding)7 }));
+    }
+
+    // So is a Validation that is neither Strict nor Lenient
+    [Fact]
+    public void Validation_UndefinedValueFails()
+    {
+        using Stream stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
+        ArgumentOutOfRangeException e = Assert.Throws<ArgumentOutOfRangeException>(() => Sqlite3Database.FromStreamWithNoJournal(stream, new Sqlite3Settings { Validation = (SqliteValidation)7 }));
+        Assert.Equal("settings", e.ParamName);
     }
 
     [Theory]
