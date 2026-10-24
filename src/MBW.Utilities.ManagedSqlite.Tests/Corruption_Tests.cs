@@ -816,11 +816,12 @@ INSERT INTO t (c0, c33) VALUES (1, printf('%.*c', 500, 'v'));"));
 
     // CELL-13 for a value over 1 MiB: the chain is followed to the value's last page before its array is allocated, so
     // a chain that ends halfway fails without allocating the size the header claims
-    [Fact]
-    public void Overflow_ChainEndsEarly_LargeValueNotAllocated()
+    [Theory]
+    [InlineData("zeroblob(4000000)", false)]
+    [InlineData("printf('%.*c', 4000000, 'v')", true)]
+    public void Overflow_ChainEndsEarly_LargeValueNotAllocated(string value, bool text)
     {
-        const string script = "CREATE TABLE t (a INTEGER, b BLOB); INSERT INTO t VALUES (1, zeroblob(4000000));";
-        DbPatcher p = new DbPatcher(SqliteParity.Build(script));
+        DbPatcher p = new DbPatcher(SqliteParity.Build($"CREATE TABLE t (a INTEGER, b); INSERT INTO t VALUES (1, {value});"));
         List<uint> chain = p.GetOverflowChain(2, 0);
         p.SetOverflowNextPointer(chain[chain.Count / 2], 0);
         SqliteParity.AssertSqliteReportsCorrupt(p.Data, "t");
@@ -830,8 +831,9 @@ INSERT INTO t (c0, c33) VALUES (1, printf('%.*c', 500, 'v'));"));
         Sqlite3Row row = db.GetTable("t").EnumerateRows().Single();
 
         long before = GC.GetAllocatedBytesForCurrentThread();
-        Assert.Equal("CELL-13", Assert.Throws<SqliteCorruptException>(() => row.TryGetBlob(1, out _)).Check);
-        Assert.True(GC.GetAllocatedBytesForCurrentThread() - before < 1_000_000);
+        Action read = text ? () => row.TryGetString(1, out _) : () => row.TryGetBlob(1, out _);
+        Assert.Equal("CELL-13", Assert.Throws<SqliteCorruptException>(read).Check);
+        Assert.InRange(GC.GetAllocatedBytesForCurrentThread() - before, 0, 1_000_000);
     }
 
     // CELL-16: SQLite never follows the last overflow page's next pointer, so a bad one reads on

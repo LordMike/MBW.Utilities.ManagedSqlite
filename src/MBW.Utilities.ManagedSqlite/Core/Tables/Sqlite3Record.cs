@@ -545,7 +545,8 @@ internal struct Sqlite3Record
         // A value past the local bytes is read from the overflow pages, as OP_Column reads it when the local bytes do
         // not hold it ("if( pC->szRow>=aOffset[p2+1] ){ ... }else{ ... sqlite3VdbeMemFromBtree(...)"), and only then.
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/vdbe.c#L3192 (OP_Column)
-        // A BLOB is read straight into its array, and a TEXT into a pooled buffer that is decoded; a number goes
+        // A BLOB is read straight into its array, and a TEXT up to 1 MiB into a pooled buffer that is decoded (a larger one
+        // into an array of its own, see ReadPayload); a number goes
         // through the chain's few bytes of scratch, see NumberBytes.
         int size = (int)SerialTypeSize(serialType);
         if (serialType >= 12 && offset + size > Local)
@@ -631,7 +632,9 @@ internal struct Sqlite3Record
         // The size comes from the record header, which damage can make far larger than the overflow chain that holds
         // it, up to the CELL-38 bound. SQLite allocates such a value whole (sqlite3VdbeMemFromBtree) and then fails
         // CELL-13 where the chain ends. Here a value over 1 MiB first follows the chain to the page of its last byte,
-        // so a chain that ends early fails before the array is allocated.
+        // so a chain that ends early fails before the array is allocated. An intact value's pages are then read twice,
+        // once by this walk and once by the copy (the chain keeps only the last page read), which is the price of the
+        // check for values this large.
         if (size > WholeValueBytes)
         {
             ReaderBase reader = row.Table.Reader;
