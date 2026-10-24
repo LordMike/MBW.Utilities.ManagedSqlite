@@ -166,6 +166,30 @@ INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');")));
     }
 
     /// <summary>
+    /// Each enumeration of one <c>EnumerateRows(shareRowBuffers: true)</c> result has its own field table, so a nested
+    /// enumeration of it leaves the outer row readable.
+    /// </summary>
+    [Theory]
+    [InlineData("")]
+    [InlineData("WITHOUT ROWID")]
+    public void SharedRowBuffersArePerEnumeration(string options)
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build($@"
+CREATE TABLE tbl (a PRIMARY KEY, b) {options};
+INSERT INTO tbl VALUES (1, 'one'), (2, 'two');")));
+
+        IEnumerable<Sqlite3Row> rows = db.GetTable("tbl").EnumerateRows(shareRowBuffers: true);
+        foreach (Sqlite3Row outer in rows)
+        {
+            Assert.True(outer.TryGetInt64(0, out long key));
+            Assert.Equal(2, rows.Count(inner => inner.TryGetInt64(0, out _)));
+
+            Assert.True(outer.TryGetInt64(0, out long again));
+            Assert.Equal(key, again);
+        }
+    }
+
+    /// <summary>
     /// A row as wide as SQLite allows (SQLITE_MAX_COLUMN, 2000 columns), with a long TEXT last so its serial type takes
     /// two header bytes. Every column reads, with and without shared row buffers. The parity dump, which adds a typeof
     /// per column, can't read a table this wide from SQLite, so the values are those the script wrote.
