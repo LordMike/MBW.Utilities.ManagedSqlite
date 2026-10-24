@@ -23,11 +23,14 @@ public static class SqlExtensions
     /// The columns of the table that the row's CREATE TABLE statement made. The statement was parsed when the database
     /// was opened.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="schema"/> is null</exception>
     /// <exception cref="InvalidOperationException">The row is not a table (a view, index or trigger)</exception>
     /// <exception cref="NotSupportedException">The row is a virtual table</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row failed to load</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
     {
+        ArgumentNullException.ThrowIfNull(schema);
+
         // Only a table has a table definition, so asking for one elsewhere is the caller's error, not damage. The row's
         // statement decides, as in SQLite; Strict has made sure the type agrees (SCHEMA-26).
         if (schema.Error != null)
@@ -53,8 +56,11 @@ public static class SqlExtensions
     /// The columns of the table, from its CREATE TABLE statement, see
     /// <see cref="GetTableDefinition(Sqlite3SchemaRow)"/>
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="table"/> is null</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
+        ArgumentNullException.ThrowIfNull(table);
+
         // The table's root page was checked against its SQL (PAGE-18) when the table was opened
         if (table.SqlDefinition != null)
             return table.SqlDefinition;
@@ -79,8 +85,12 @@ public static class SqlExtensions
     /// integers to save space. See the README for how declared types map to affinities.
     /// </remarks>
     /// <exception cref="SqliteCorruptException">The record is malformed up to the column</exception>
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> or <paramref name="columnName"/> is null</exception>
     public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
     {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(columnName);
+
         value = null;
 
         SqlTableDefinition tableDefinition = row.Table.GetTableDefinition();
@@ -133,8 +143,12 @@ public static class SqlExtensions
     /// <exception cref="InvalidCastException">The value cannot be converted to <typeparamref name="T"/></exception>
     /// <exception cref="FormatException">The value is text that does not parse as <typeparamref name="T"/></exception>
     /// <exception cref="OverflowException">The value is out of the range of <typeparamref name="T"/></exception>
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> or <paramref name="columnName"/> is null</exception>
     public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, [MaybeNullWhen(false)] out T value)
     {
+        ArgumentNullException.ThrowIfNull(row);
+        ArgumentNullException.ThrowIfNull(columnName);
+
         value = default;
 
         if (!row.TryGetValueByName(columnName, out object? tmp))

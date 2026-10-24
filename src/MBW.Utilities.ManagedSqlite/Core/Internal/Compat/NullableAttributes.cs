@@ -13,6 +13,12 @@ namespace System.Diagnostics.CodeAnalysis
         public bool ReturnValue { get; }
     }
 
+    /// <summary>The parameter is not null when the method returns, even if its type allows it.</summary>
+    [AttributeUsage(AttributeTargets.Parameter | AttributeTargets.Property | AttributeTargets.Field | AttributeTargets.ReturnValue)]
+    internal sealed class NotNullAttribute : Attribute
+    {
+    }
+
     /// <summary>When the method returns <see cref="ReturnValue"/>, the parameter may be null even if its type does not allow it.</summary>
     [AttributeUsage(AttributeTargets.Parameter)]
     internal sealed class MaybeNullWhenAttribute : Attribute
