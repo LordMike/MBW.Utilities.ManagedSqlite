@@ -171,11 +171,11 @@ INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');")));
     /// </summary>
     [Theory]
     [InlineData("")]
-    [InlineData(" WITHOUT ROWID")]
+    [InlineData("WITHOUT ROWID")]
     public void SharedRowBuffersArePerEnumeration(string options)
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build($@"
-CREATE TABLE tbl (a PRIMARY KEY, b){options};
+CREATE TABLE tbl (a PRIMARY KEY, b) {options};
 INSERT INTO tbl VALUES (1, 'one'), (2, 'two');")));
 
         IEnumerable<Sqlite3Row> rows = db.GetTable("tbl").EnumerateRows(shareRowBuffers: true);
