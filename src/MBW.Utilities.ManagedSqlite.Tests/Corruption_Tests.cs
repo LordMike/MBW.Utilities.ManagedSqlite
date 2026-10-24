@@ -5,7 +5,6 @@ using System.Linq;
 using System.Threading.Tasks;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
 using Xunit;
@@ -52,7 +51,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     private static uint RootPage(string table)
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(Base));
-        return db.GetTable(table).SchemaDefinition.RootPage;
+        return db.GetTable(table).SchemaRow.RootPage;
     }
 
     /// <summary>
@@ -74,7 +73,7 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     {
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
 
-        foreach (Sqlite3SchemaRow schema in db.GetTables().Where(s => s.Type == "table").ToList())
+        foreach (Sqlite3SchemaRow schema in db.GetTables().ToList())
             ReadTable(db, schema.Name);
     }
 
@@ -632,7 +631,7 @@ CREATE VIRTUAL TABLE f USING fts5(c);
             byte[] data = SqliteParity.Build(Script, 8);
             uint root;
             using (Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
-                root = db.GetTable("Small").SchemaDefinition.RootPage;
+                root = db.GetTable("Small").SchemaRow.RootPage;
 
             DbPatcher p = new DbPatcher(data);
             int record = p.GetRecordOffset(root, 0, out long payloadSize);

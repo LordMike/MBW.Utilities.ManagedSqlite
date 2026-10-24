@@ -7,7 +7,6 @@ using MBW.Utilities.ManagedSqlite.Sql;
 // The extensions live in the namespace of the types they extend, so a using for Sqlite3Row brings them along. Keep
 // them here, not in the namespace of their folder.
 #pragma warning disable IDE0130 // Namespace does not match folder structure
-// ReSharper disable once CheckNamespace
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 #pragma warning restore IDE0130
 
@@ -46,7 +45,7 @@ public static class SqlExtensions
         // The table was parsed when the schema was loaded
         Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
         if (!definitionCache.TryGetValue(schema, out SqlTableDefinition? definition))
-            definitionCache[schema] = definition = SqlParser.Build(schema.Table!);
+            definitionCache[schema] = definition = SqlParser.Build(schema.Table!, schema.Database.TextEncoding);
 
         return definition;
     }
@@ -64,7 +63,7 @@ public static class SqlExtensions
         if (table.SqlDefinition != null)
             return table.SqlDefinition;
 
-        SqlTableDefinition definition = table.SchemaDefinition.GetTableDefinition();
+        SqlTableDefinition definition = table.SchemaRow.GetTableDefinition();
 
         table.SqlDefinition = definition;
         return definition;

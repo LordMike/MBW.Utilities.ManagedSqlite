@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.IO;
+using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -274,25 +275,25 @@ public sealed class Sqlite3Database : IDisposable
     private Sqlite3MasterTable OpenMasterTable(out Sqlite3SchemaRow schemaRow)
     {
         // Parse table on Page 1, the sqlite_master table
-        BTreePage rootBtree = BTreePage.Parse(_reader, 1);
+        BTreePage rootBTree = BTreePage.Parse(_reader, 1);
 
         // PAGE-18: the schema table is a rowid table, read with a table cursor, so page 1 must be a table b-tree page.
         // moveToRoot in btree.c:
         //   if( pRoot->isInit==0 || (pCur->pKeyInfo==0)!=pRoot->intKey ){
         //     return SQLITE_CORRUPT_PAGE(pCur->pPage);
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L5609 (moveToRoot)
-        Checks.Strict(rootBtree is not BTreeIndexPage, "PAGE-18", $"page 1 is an index b-tree page, but holds the schema table",
+        Checks.Strict(rootBTree is not BTreeIndexPage, "PAGE-18", $"page 1 is an index b-tree page, but holds the schema table",
             1, "b-tree page header");
 
         // Fake the schema for the sqlite_master table
         const string schemaSql = "CREATE TABLE sqlite_master (type TEXT, name TEXT, tbl_name TEXT, rootpage INTEGER, sql TEXT);";
-        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBtree.Page, schemaSql)
+        schemaRow = new Sqlite3SchemaRow(this, "table", "sqlite_master", "sqlite_master", rootBTree.Page, schemaSql)
         {
-            IsTable = true,
+            Kind = Sqlite3SchemaKind.Table,
             Table = SchemaParser.ParseCreateTable(schemaSql, "sqlite_master", _reader.Settings)
         };
 
-        Sqlite3Table table = new Sqlite3Table(_reader, rootBtree, schemaRow);
+        Sqlite3Table table = new Sqlite3Table(_reader, rootBTree, schemaRow);
         return new Sqlite3MasterTable(this, _reader, table);
     }
 
@@ -404,12 +405,19 @@ public sealed class Sqlite3Database : IDisposable
     }
 
     /// <summary>
-    /// Every row of the schema table, <c>sqlite_master</c>, in the order it is stored. Despite the name, that is not
-    /// only tables: indexes, views and triggers have rows too, see <see cref="Sqlite3SchemaRow.Type"/>. The schema
-    /// table's own row is not among them. The rows are read once, when the database is opened. In
-    /// <see cref="SqliteValidation.Lenient"/>, a row that failed to load is included, and its table cannot be opened.
+    /// Every row of the schema table (<c>sqlite_schema</c>), in its row order, which is the order SQLite loads them,
+    /// whatever their kind: tables, virtual tables, indexes, views and triggers, and in
+    /// <see cref="SqliteValidation.Lenient"/> rows that failed to load. Each row's
+    /// <see cref="Sqlite3SchemaRow.Kind"/> says what its statement made. The schema table itself is not a row.
     /// </summary>
-    public IEnumerable<Sqlite3SchemaRow> GetTables() => _masterTable.Tables;
+    public IEnumerable<Sqlite3SchemaRow> GetSchema() => _masterTable.Tables;
+
+    /// <summary>
+    /// The rows of <see cref="GetSchema"/> that made a table: ordinary tables, which include a virtual table's shadow
+    /// tables, and virtual tables, which <see cref="GetTable"/> cannot read (see <see cref="Sqlite3SchemaRow.IsVirtual"/>).
+    /// Indexes, views, triggers and rows that made nothing are left out.
+    /// </summary>
+    public IEnumerable<Sqlite3SchemaRow> GetTables() => GetSchema().Where(s => s.IsTable);
 
     internal T GetProperty<T>(string key, Func<T> creator) where T : class
     {

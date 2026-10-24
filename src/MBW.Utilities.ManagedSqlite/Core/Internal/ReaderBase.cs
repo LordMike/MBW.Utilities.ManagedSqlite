@@ -5,7 +5,6 @@ using System.Runtime.ExceptionServices;
 using System.Text;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
-using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Headers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -478,6 +477,15 @@ internal sealed class ReaderBase : IDisposable
 
     internal string DecodeString(byte[] buffer, int offset, int count)
     {
+        // REC-36: UTF-16 text of an odd number of bytes drops the last byte when SQLite translates it to UTF-8.
+        // sqlite3VdbeMemTranslate in utf.c:
+        //   pMem->n &= ~1;
+        // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/utf.c#L297 (sqlite3VdbeMemTranslate)
+        // Only that path masks; the swap between UTF-16LE and UTF-16BE keeps the odd byte. The reader always decodes
+        // to a .NET string, as sqlite3_column_text translates to UTF-8, so it always masks.
+        if (TextEncoding != SqliteEncoding.UTF8)
+            count &= ~1;
+
         return _encoding.GetString(buffer, offset, count);
     }
 }

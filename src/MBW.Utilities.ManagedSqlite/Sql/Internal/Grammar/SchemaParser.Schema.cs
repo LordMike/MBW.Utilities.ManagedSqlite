@@ -51,6 +51,16 @@ internal sealed partial class SchemaParser
     /// </summary>
     private string? _newVirtualTable;
 
+    /// <summary>
+    /// The statement made a view: the name was new, and it went into the schema
+    /// </summary>
+    private bool _newView;
+
+    /// <summary>
+    /// The statement made an index: the name was new, and it went into the schema
+    /// </summary>
+    private bool _newIndex;
+
     private int _virtualTableArguments;
     private bool _virtualTableArgumentPending;
 
@@ -77,9 +87,9 @@ internal sealed partial class SchemaParser
 
     /// <summary>
     /// Parses the CREATE statement of a schema row and adds what it makes to <paramref name="catalog"/>, checking it
-    /// against the rows before it, as sqlite3InitCallback does for each row. The row learns what the statement made:
-    /// a table, with its <see cref="ParsedTable"/>, or a virtual table. A statement that fails still marks the row as
-    /// a table when it got as far as starting one.
+    /// against the rows before it, as sqlite3InitCallback does for each row. The row learns what the statement made
+    /// (its <see cref="Sqlite3SchemaRow.Kind"/>), and a table's <see cref="ParsedTable"/>. A statement that fails throws
+    /// before the row learns its kind.
     /// </summary>
     /// <exception cref="SqliteCorruptException">SQLite would find the schema malformed</exception>
     public static void ParseSchemaRow(Sqlite3SchemaRow row, Sqlite3Settings settings, SchemaCatalog catalog)
@@ -92,16 +102,16 @@ internal sealed partial class SchemaParser
             _rowTableName = row.TableName
         };
 
-        try
-        {
-            parser.Run();
-        }
-        finally
-        {
-            row.IsVirtual = parser._newVirtualTable != null;
-            row.IsTable = parser._newTable != null || row.IsVirtual;
-            row.Table = parser._tableEnded ? parser._newTable : null;
-        }
+        parser.Run();
+
+        // A CREATE ... IF NOT EXISTS of a name that is taken started nothing, and made nothing
+        row.Kind = parser._newVirtualTable != null ? Sqlite3SchemaKind.VirtualTable
+            : parser._newTable != null ? Sqlite3SchemaKind.Table
+            : parser._newView ? Sqlite3SchemaKind.View
+            : parser._newIndex ? Sqlite3SchemaKind.Index
+            : parser._newTrigger != null ? Sqlite3SchemaKind.Trigger
+            : Sqlite3SchemaKind.None;
+        row.Table = parser._tableEnded ? parser._newTable : null;
     }
 
     /// <summary>
@@ -131,6 +141,8 @@ internal sealed partial class SchemaParser
         index.RootPage = row.RootPage;
         if (SchemaCatalog.HasDuplicateRootPage(index))
             Checks.Fail("SCHEMA-15", $"malformed database schema ({row.Name}) - invalid rootpage", structure: "schema");
+
+        row.Kind = Sqlite3SchemaKind.Index;
     }
 
     /// <summary>
@@ -243,6 +255,7 @@ internal sealed partial class SchemaParser
             Fail("DDL-58", "");
         if (_catalog != null)
             _catalog.Tables[viewName] = new SchemaCatalog.CatalogTable(viewName, null, true, false);
+        _newView = true;
     }
 
     /// <summary>
@@ -388,6 +401,7 @@ internal sealed partial class SchemaParser
             Fail("DDL-72", "invalid rootpage");
 
         _catalog.AddIndex(index);
+        _newIndex = true;
     }
 
     /// <summary>

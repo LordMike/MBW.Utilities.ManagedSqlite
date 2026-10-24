@@ -7,7 +7,7 @@ using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
-internal class Sqlite3MasterTable
+internal sealed class Sqlite3MasterTable
 {
     public List<Sqlite3SchemaRow> Tables { get; }
 
@@ -66,6 +66,7 @@ internal class Sqlite3MasterTable
         catch (SqliteCorruptException e) when (settings.Validation == SqliteValidation.Lenient)
         {
             row.Error = e;
+            row.Kind = Sqlite3SchemaKind.None;
             // Every error here comes from a check (Checks.Fail, Strict or Relaxable), so it has an ID
             settings.OnValidationIssue?.Invoke(new SqliteValidationIssue(e.Check!, e.Detail, e.Page, e.Structure));
         }
