@@ -15,7 +15,7 @@ public sealed class Sqlite3Table
     internal ReaderBase Reader => _reader;
 
     /// <summary>
-    /// The table's definition, kept once <see cref="Sql.SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
+    /// The table's definition, kept once <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
     /// without error, so reading values by name does not look it up for each value
     /// </summary>
     internal Sql.SqlTableDefinition? SqlDefinition { get; set; }
