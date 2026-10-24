@@ -410,7 +410,12 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         if (validation == SqliteValidation.Strict)
         {
             using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(patch(Base)), settings);
-            Assert.Equal("INTEG-14", Assert.Throws<SqliteCorruptException>(() => ReadTable(db, "Deep")).Check);
+            SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Deep")));
+            Assert.Equal("INTEG-14", corrupt.Check);
+
+            // The first repeated row is the first one of the shared subtree, met again
+            Assert.Equal(DeepFirstLeaf, corrupt.Page);
+            Assert.Empty(issues);
         }
         else
         {
