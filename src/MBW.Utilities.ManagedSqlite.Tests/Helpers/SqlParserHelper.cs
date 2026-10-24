@@ -8,13 +8,14 @@ namespace MBW.Utilities.ManagedSqlite.Tests.Helpers;
 public static class SqlParserHelper
 {
     /// <summary>
-    /// Parses a CREATE TABLE statement in <see cref="SqliteValidation.Strict"/>, false when SQLite would refuse it
+    /// Parses a CREATE TABLE statement as in a UTF-8 database, in <see cref="SqliteValidation.Strict"/>; false when SQLite
+    /// would refuse it
     /// </summary>
     internal static bool TryParse(string sql, out SqlTableDefinition tableDefinition)
     {
         try
         {
-            tableDefinition = SqlParser.Build(SchemaParser.ParseCreateTable(sql, "", new Sqlite3Settings()));
+            tableDefinition = SqlParser.Build(SchemaParser.ParseCreateTable(sql, "", new Sqlite3Settings()), SqliteEncoding.UTF8);
             return true;
         }
         catch (SqliteCorruptException)
