@@ -88,8 +88,8 @@ internal sealed partial class SchemaParser
     /// <summary>
     /// Parses the CREATE statement of a schema row and adds what it makes to <paramref name="catalog"/>, checking it
     /// against the rows before it, as sqlite3InitCallback does for each row. The row learns what the statement made
-    /// (its <see cref="Sqlite3SchemaRow.Kind"/>), and a table's <see cref="ParsedTable"/>. A statement that fails made
-    /// nothing, and the row keeps <see cref="Sqlite3SchemaKind.None"/>.
+    /// (its <see cref="Sqlite3SchemaRow.Kind"/>), and a table's <see cref="ParsedTable"/>. A statement that fails throws
+    /// before the row learns its kind.
     /// </summary>
     /// <exception cref="SqliteCorruptException">SQLite would find the schema malformed</exception>
     public static void ParseSchemaRow(Sqlite3SchemaRow row, Sqlite3Settings settings, SchemaCatalog catalog)
