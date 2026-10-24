@@ -53,7 +53,7 @@ Any release's source is at `https://raw.githubusercontent.com/sqlite/sqlite/vers
 - **Errors:** damaged files surface as `SqliteCorruptException`, raised through `Checks` (next section). Damage to the
   tree (pages, cells, a payload's size and local bytes) fails the row enumerator. A record is decoded lazily, as
   SQLite's OP_Column does: damage in its header or values fails the accessor that reads that field (`TryGetOrdinal`,
-  `TryGetBlob`, `TryGetValueByName`, `ColumnData`), and only once the header is parsed that far. Overflow pages are
+  `TryGetBlob`, the typed reads, `TryGetValueByName`, `ColumnData`), and only once the header is parsed that far. Overflow pages are
   read the same way, only for the header or a value past the cell's local bytes, so damage to an overflow chain fails
   the accessor that needs the page, as SQLite fails the column read. A caller bug (`null` argument, an invalid
   `FallbackEncoding`) is not corruption and is never converted.

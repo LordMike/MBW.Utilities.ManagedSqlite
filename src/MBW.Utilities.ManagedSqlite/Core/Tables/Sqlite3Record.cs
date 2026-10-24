@@ -391,11 +391,10 @@ internal struct Sqlite3Record
             // and no further: a serial type that runs past the header is corrupt (zHdr>zEndHdr) whatever follows it.
             if (_overflow != null && _overflow.Header == null && headerSize > _overflow.Local)
             {
-                _overflow.Header = new byte[Math.Min(_length, headerSize)];
+                _overflow.Header = new byte[headerSize];
                 CopyPayload(0, _overflow.Header, row);
             }
 
-            // Each serial type takes at least one byte of the header, after the header size itself
             // Sized once for the whole record: each serial type takes at least one byte of the header, after the header
             // size itself, so the parse never names more fields than this. The first parse reads one serial type even
             // when there is no room for one, so the table holds at least one.
@@ -551,21 +550,18 @@ internal struct Sqlite3Record
         int size = (int)SerialTypeSize(serialType);
         if (serialType >= 12 && offset + size > Local)
         {
-            if (serialType >= 12 && (serialType & 0x01) == 0x00)
+            if ((serialType & 0x01) == 0x00)
                 return ReadPayload(offset, size, row);
 
-            if (serialType >= 12)
+            byte[] text = ArrayPool<byte>.Shared.Rent(size);
+            try
             {
-                byte[] text = ArrayPool<byte>.Shared.Rent(size);
-                try
-                {
-                    CopyPayload(offset, new Span<byte>(text, 0, size), row);
-                    return reader.DecodeString(text, 0, size);
-                }
-                finally
-                {
-                    ArrayPool<byte>.Shared.Return(text);
-                }
+                CopyPayload(offset, new Span<byte>(text, 0, size), row);
+                return reader.DecodeString(text, 0, size);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(text);
             }
         }
 
@@ -705,7 +701,7 @@ internal struct Sqlite3Record
         private byte[]? _readData;
 
         /// <summary>
-        /// The header, with up to 8 bytes after it, when it runs past the local bytes
+        /// The header, when it runs past the local bytes, read from the overflow pages to its end
         /// </summary>
         public byte[]? Header;
 
