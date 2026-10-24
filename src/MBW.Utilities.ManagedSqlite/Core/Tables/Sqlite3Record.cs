@@ -366,8 +366,8 @@ internal struct Sqlite3Record
                 return double.IsNaN(real) ? null : real;
             }
             case 8:
-                // Serial types 8 and 9: integer constants 0 and 1, no payload bytes. SQLite (file format 4) stores every 0 and 1 this
-                // way, so they come from shared boxes instead of a new box for each value
+                // Serial types 8 and 9: integer constants 0 and 1, no payload bytes. SQLite (file format 4) stores
+                // every 0 and 1 this way, so they come from shared boxes instead of a new box for each value
                 return BoxedZero;
             case 9:
                 return BoxedOne;
