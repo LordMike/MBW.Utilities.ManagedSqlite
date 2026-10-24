@@ -121,7 +121,8 @@ public sealed class Sqlite3Row
     /// The value of field <paramref name="index"/> of the record when it is stored as a REAL or an INTEGER, without
     /// boxing it. An INTEGER is read too because SQLite stores a REAL without a fractional part as an INTEGER in a
     /// column of REAL affinity. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up
-    /// to that field. False when the record has fewer fields, or the field holds NULL, TEXT or a BLOB.
+    /// to that field. False when the record has fewer fields, or the field holds NULL, TEXT or a BLOB. A stored NaN
+    /// reads as NULL, as in SQLite.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetDouble(ushort index, out double value)

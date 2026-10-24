@@ -175,7 +175,8 @@ internal struct Sqlite3Record
             if (serialType == 7)
             {
                 value = DecodeReal(_fields[2 * index + 1]);
-                return !double.IsNaN(value);
+                if (!double.IsNaN(value))
+                    return true;
             }
 
             // SQLite writes a REAL without a fractional part, in a column of REAL affinity, as an INTEGER, so a REAL
@@ -441,7 +442,6 @@ internal struct Sqlite3Record
     private readonly object? Decode(ReaderBase reader, long serialType, int offset)
     {
         byte[] payload = _data;
-        int length = _start + _length;
         int pos = _start + offset;
 
         switch (serialType)
