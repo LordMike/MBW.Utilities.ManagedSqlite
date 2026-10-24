@@ -302,4 +302,55 @@ INSERT INTO tbl VALUES (1, 'one'), (2, 'two');")));
 
         Assert.Equal(2, rows);
     }
+
+    /// <summary>
+    /// A row reads its overflow pages only when a value on them is read, through the reader's shared page buffer, so a
+    /// row kept after the enumeration moved on still reads its own values, after other rows read theirs. The text ends,
+    /// and the number after it is, on the last overflow page, which ColumnData reads for both.
+    /// </summary>
+    [Fact]
+    public void KeptRowsReadTheirOwnOverflowPages()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+PRAGMA page_size = 512;
+CREATE TABLE tbl (Id INTEGER PRIMARY KEY, Value TEXT, Number INTEGER);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 20)
+INSERT INTO tbl SELECT x, printf('%.*c%d', 1500, 'v', x), 1000 + x FROM seq;")));
+
+        List<Sqlite3Row> rows = db.GetTable("tbl").EnumerateRows().ToList();
+        rows.Reverse();
+
+        Assert.Equal(Enumerable.Range(1, 20).Reverse().Select(x => new object[] { null, new string('v', 1500) + x, 1000L + x }),
+            rows.Select(row => row.ColumnData));
+    }
+
+    /// <summary>
+    /// The typed reads read values on overflow pages too: a TEXT that runs onto them, and the INTEGER and REAL after it
+    /// on the last one, with and without shared row buffers
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void TypedReadsReadOverflowPages(bool shareRowBuffers)
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+PRAGMA page_size = 512;
+CREATE TABLE tbl (Id INTEGER PRIMARY KEY, Value TEXT, Number INTEGER, Real REAL);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 5)
+INSERT INTO tbl SELECT x, printf('%.*c%d', 1500, 'v', x), 1000 + x, x + 0.5 FROM seq;")));
+
+        int x = 0;
+        foreach (Sqlite3Row row in db.GetTable("tbl").EnumerateRows(shareRowBuffers))
+        {
+            x++;
+            Assert.True(row.TryGetString(1, out string text));
+            Assert.Equal(new string('v', 1500) + x, text);
+            Assert.True(row.TryGetInt64(2, out long number));
+            Assert.Equal(1000 + x, number);
+            Assert.True(row.TryGetDouble(3, out double real));
+            Assert.Equal(x + 0.5, real);
+        }
+
+        Assert.Equal(5, x);
+    }
 }

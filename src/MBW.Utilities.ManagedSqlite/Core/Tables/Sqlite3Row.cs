@@ -41,11 +41,13 @@ public sealed class Sqlite3Row
     /// same values.
     ///
     /// The row reads its record from its b-tree page's bytes, so a row that is kept keeps its page in memory until
-    /// this is read. Then the row has every value, and lets go of the page.
+    /// this is read. Then the row has every value, and lets go of the page. A record too large for its page continues
+    /// on overflow pages, which are read from the database only when a value on them is read, so the database must
+    /// still be open then.
     ///
     /// The list is the row's own, which its other accessors read from, so it is read-only.
     /// </summary>
-    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed</exception>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed, or its overflow chain is</exception>
     public IReadOnlyList<object?> ColumnData
     {
         get
@@ -74,7 +76,7 @@ public sealed class Sqlite3Row
     /// <see cref="SqlTableColumn.Ordinal"/> in a WITHOUT ROWID table, or after a VIRTUAL generated column; to read a
     /// column, use <see cref="TryGetOrdinal(SqlTableColumn, out object?)"/>. Like SQLite, this decodes the record only
     /// up to that field, so damage after it, or fields past the table's columns, do not fail the read. False when the
-    /// record has fewer fields.
+    /// record has fewer fields. A value on overflow pages is read from the database, which must still be open then.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetOrdinal(ushort index, out object? value) => TryGetField(index, out value);
@@ -167,10 +169,12 @@ public sealed class Sqlite3Row
     }
 
     /// <summary>
-    /// The bytes of field <paramref name="index"/> of the record when it holds a BLOB, without copying them: the memory
-    /// is a slice of the page or payload the row was read from, which it keeps alive. Once <see cref="ColumnData"/> is
-    /// read, it is that value's array instead. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the
-    /// record only up to that field. False when the record has fewer fields, or the field holds another type.
+    /// The bytes of field <paramref name="index"/> of the record when it holds a BLOB, without copying them when they
+    /// are on the row's b-tree page: the memory is then a slice of the page, which the row keeps alive. A BLOB that
+    /// reaches onto overflow pages is read from them into a new array on each call, so the database must still be open
+    /// then. Once <see cref="ColumnData"/> is read, it is that value's array instead. Like
+    /// <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up to that field. False when the
+    /// record has fewer fields, or the field holds another type.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetBlob(ushort index, out ReadOnlyMemory<byte> value)
@@ -187,7 +191,7 @@ public sealed class Sqlite3Row
     /// The value of field <paramref name="index"/> of the record when it is stored as an INTEGER, without boxing it as
     /// <see cref="TryGetOrdinal(ushort, out object?)"/> does. Like that method, this decodes the record only up to
     /// that field. False when the record has fewer fields, or the field holds NULL or another type: nothing is
-    /// converted.
+    /// converted. A value on overflow pages is read from the database, which must still be open then.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetInt64(ushort index, out long value)
@@ -205,7 +209,7 @@ public sealed class Sqlite3Row
     /// boxing it. An INTEGER is read too because SQLite stores a REAL without a fractional part as an INTEGER in a
     /// column of REAL affinity. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up
     /// to that field. False when the record has fewer fields, or the field holds NULL, TEXT or a BLOB. A stored NaN
-    /// reads as NULL, as in SQLite.
+    /// reads as NULL, as in SQLite. A value on overflow pages is read from the database, which must still be open then.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetDouble(ushort index, out double value)
@@ -221,7 +225,8 @@ public sealed class Sqlite3Row
     /// <summary>
     /// The value of field <paramref name="index"/> of the record when it is stored as TEXT, decoded in the database's
     /// encoding. Like <see cref="TryGetOrdinal(ushort, out object?)"/>, this decodes the record only up to that field.
-    /// False when the record has fewer fields, or the field holds NULL or another type: nothing is converted.
+    /// False when the record has fewer fields, or the field holds NULL or another type: nothing is converted. Text on
+    /// overflow pages is read from the database, which must still be open then.
     /// </summary>
     /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
     public bool TryGetString(ushort index, [NotNullWhen(true)] out string? value)
