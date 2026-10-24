@@ -99,6 +99,7 @@ The goal is to read a database file exactly as SQLite itself reads it. These are
 * **Hot journals are played back, not refused.** See [Journal modes](#journal-modes).
 * **Super-journals are ignored.** The library reads one database at a time. A hot journal from a transaction across attached databases is always played back, where SQLite plays it back only while the super-journal file still exists. If that transaction did commit, the library reads the database as it was just before it.
 * **A WAL with a different page size than the database fails in Strict.** It can only belong to another database. SQLite reads it without an error, leaving part of each page undefined; Lenient ignores the WAL.
+* **Rowids out of order fail in Strict.** In a sound table they always increase. SQLite returns the rows as they lie and finds the damage only in `PRAGMA integrity_check`; Strict throws `SqliteCorruptException` (check `INTEG-14`) at the first rowid that does not increase, also in `sqlite_schema` when the database is opened, and Lenient reports it and reads on. In Strict this also stops a corrupt b-tree whose pages share a subtree at its first repeated row; Lenient walks the shared subtree once for each pointer to it, as SQLite does, and reports each repetition.
 * **No recovery from corruption.** Reading a damaged table throws, and there is no mode that skips the damaged part and continues.
 
 ## SQLite3 Docs

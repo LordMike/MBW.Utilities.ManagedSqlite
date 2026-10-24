@@ -3,7 +3,6 @@ using System.IO;
 using BenchmarkDotNet.Attributes;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
-using MBW.Utilities.ManagedSqlite.Sql;
 using Microsoft.Data.Sqlite;
 using SQLitePCL;
 

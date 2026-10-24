@@ -19,8 +19,6 @@ internal sealed class DatabaseHeader
     /// </summary>
     public uint PageSize { get; }
 
-    public FileWriteVersion WriteVersion { get; }
-
     public FileReadVersion ReadVersion { get; }
 
     public byte ReservedSpaceAtEndOfPage { get; }
@@ -35,29 +33,11 @@ internal sealed class DatabaseHeader
 
     public uint DatabaseSizeInPages { get; }
 
-    public uint FirstFreelistTrunkPage { get; }
-
-    public uint FreeListPages { get; }
-
-    public uint SchemaCookie { get; }
-
     public uint SchemaFormat { get; }
-
-    public uint DefaultPageCacheSize { get; }
-
-    public uint Value7 { get; }
 
     public SqliteEncoding TextEncoding { get; }
 
-    public uint UserVersion { get; }
-
-    public uint IncrementalVacuumMode { get; }
-
-    public uint ApplicationId { get; }
-
     public uint VersionValidFor { get; }
-
-    public uint Version { get; }
 
     /// <summary>
     /// Parses the first <see cref="HeaderSize"/> bytes of the database file. <paramref name="length"/> is how many
@@ -84,7 +64,7 @@ internal sealed class DatabaseHeader
         // The page size is stored as a big-endian 2-byte value, where 1 means 65536
         ushort rawPageSize = ByteArrayReader.ReadUInt16(data, length, ref pos);
         PageSize = rawPageSize == 1 ? 65536u : rawPageSize;
-        WriteVersion = (FileWriteVersion)ByteArrayReader.ReadByte(data, length, ref pos);
+        pos += 1; // write version
         ReadVersion = (FileReadVersion)ByteArrayReader.ReadByte(data, length, ref pos);
         ReservedSpaceAtEndOfPage = ByteArrayReader.ReadByte(data, length, ref pos);
         MaximumEmbeddedPayloadFraction = ByteArrayReader.ReadByte(data, length, ref pos);
@@ -93,21 +73,13 @@ internal sealed class DatabaseHeader
         ChangeCounter = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
         DatabaseSizeInPages = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        FirstFreelistTrunkPage = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        FreeListPages = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        SchemaCookie = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        pos += 12; // first freelist trunk page, freelist page count, schema cookie
         SchemaFormat = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        DefaultPageCacheSize = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        Value7 = ByteArrayReader.ReadUInt32(data, length, ref pos);
+        pos += 8; // default page cache size, largest root b-tree page (auto-vacuum)
         TextEncoding = (SqliteEncoding)ByteArrayReader.ReadUInt32(data, length, ref pos);
-        UserVersion = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        IncrementalVacuumMode = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        ApplicationId = ByteArrayReader.ReadUInt32(data, length, ref pos);
-
-        pos += 20;
+        pos += 32; // user version, incremental vacuum mode, application id, 20 reserved bytes
 
         VersionValidFor = ByteArrayReader.ReadUInt32(data, length, ref pos);
-        Version = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
         Validate(settings);
     }
