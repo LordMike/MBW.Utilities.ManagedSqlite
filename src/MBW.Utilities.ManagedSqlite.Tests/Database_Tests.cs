@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Linq;
 using MBW.Utilities.ManagedSqlite.Core;
@@ -65,6 +65,7 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     {
         using Sqlite3Database db = Open();
 
+        Assert.True(db.GetTables().Single(s => s.Name == "docs").IsVirtual);
         Assert.Throws<NotSupportedException>(() => db.GetTable("docs"));
     }
 
