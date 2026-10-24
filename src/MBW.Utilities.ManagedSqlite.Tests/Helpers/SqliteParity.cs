@@ -260,12 +260,12 @@ internal static class SqliteParity
 
     /// <summary>
     /// Asserts that real SQLite loads the schema of the database file <paramref name="data"/> and reads the rows of
-    /// <paramref name="table"/>
+    /// <paramref name="table"/>, or only their <paramref name="columns"/>
     /// </summary>
-    public static void AssertSqliteReads(byte[] data, string table)
+    public static void AssertSqliteReads(byte[] data, string table, string columns = "*")
     {
         using SqliteConnection connection = Open(data);
-        Query(connection, $"SELECT * FROM {Name(table)}");
+        Query(connection, $"SELECT {columns} FROM {Name(table)}");
     }
 
     /// <summary>
