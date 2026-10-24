@@ -52,6 +52,15 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     }
 
     [Fact]
+    public void TableLookupNullNameThrows()
+    {
+        using Sqlite3Database db = Open();
+
+        Assert.Equal("name", Assert.Throws<ArgumentNullException>(() => db.GetTable(null!)).ParamName);
+        Assert.Equal("name", Assert.Throws<ArgumentNullException>(() => db.TryGetTable(null!, out _)).ParamName);
+    }
+
+    [Fact]
     public void VirtualTableIsListedButNotRead()
     {
         using Sqlite3Database db = Open();

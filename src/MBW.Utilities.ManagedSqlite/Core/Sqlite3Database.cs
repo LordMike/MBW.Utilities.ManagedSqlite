@@ -26,6 +26,11 @@ public sealed class Sqlite3Database : IDisposable
     private readonly Sqlite3MasterTable _masterTable;
     private readonly Sqlite3SchemaRow _masterSchemaRow;
 
+    // What FindTable resolves a name to, built once at open: the first row per name that made a table, and the first
+    // error per name. Never changed after, so lookups need no lock.
+    private readonly Dictionary<string, Sqlite3SchemaRow> _tablesByName;
+    private readonly Dictionary<string, SqliteCorruptException>? _errorsByName;
+
     internal DatabaseHeader Header => _reader.Header;
 
     /// <summary>
@@ -60,6 +65,7 @@ public sealed class Sqlite3Database : IDisposable
         try
         {
             _masterTable = OpenMasterTable(out _masterSchemaRow);
+            _tablesByName = IndexTables(_masterTable.Tables, out _errorsByName);
         }
         catch
         {
@@ -295,6 +301,7 @@ public sealed class Sqlite3Database : IDisposable
     /// and <c>sqlite_master</c> / <c>sqlite_schema</c> resolve to the schema table itself.
     /// Virtual tables cannot be read and are not returned; see <see cref="Sqlite3SchemaRow.IsVirtual"/>.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
     /// page is malformed, or is a b-tree page of the other kind than its SQL declares (PAGE-18)</exception>
     public bool TryGetTable(string name, [NotNullWhen(true)] out Sqlite3Table? table)
@@ -314,6 +321,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <summary>
     /// Gets a table by name, see <see cref="TryGetTable"/>.
     /// </summary>
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     /// <exception cref="KeyNotFoundException">No table with that name exists</exception>
     /// <exception cref="NotSupportedException">The table is a virtual table</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load; or the table's root
@@ -334,6 +342,8 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="SqliteCorruptException">In Lenient, the row by that name failed to load</exception>
     private Sqlite3SchemaRow? FindTable(string name)
     {
+        ArgumentNullException.ThrowIfNull(name);
+
         // Names match as in SQLite, ignoring the case of ASCII letters only (sqlite3StrICmp in util.c), so tables named
         // "é" and "É" are two tables
         AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
@@ -341,23 +351,35 @@ public sealed class Sqlite3Database : IDisposable
         if (names.Equals(name, "sqlite_master") || names.Equals(name, "sqlite_schema"))
             return _masterSchemaRow;
 
+        if (_tablesByName.TryGetValue(name, out Sqlite3SchemaRow? tbl))
+            return tbl;
+
         // In Lenient, a row that failed to load made nothing in the schema, as with writable_schema in SQLite, so a
         // later row may still make a table of its name. The error is thrown only when no table has the name.
-        SqliteCorruptException? error = null;
-        foreach (Sqlite3SchemaRow tbl in GetTables())
+        return _errorsByName != null && _errorsByName.TryGetValue(name, out SqliteCorruptException? error) ? throw error : null;
+    }
+
+    private static Dictionary<string, Sqlite3SchemaRow> IndexTables(List<Sqlite3SchemaRow> rows, out Dictionary<string, SqliteCorruptException>? errors)
+    {
+        AsciiCaseInsensitiveComparer names = AsciiCaseInsensitiveComparer.Instance;
+        Dictionary<string, Sqlite3SchemaRow> tables = new Dictionary<string, Sqlite3SchemaRow>(names);
+        errors = null;
+
+        foreach (Sqlite3SchemaRow row in rows)
         {
             // A table is known by what its statement made, as in SQLite. The type column must agree in Strict
             // (SCHEMA-26), in any case, so "TABLE" is a table too.
-            if (!names.Equals(tbl.Name, name))
-                continue;
-
-            if (tbl.Error != null)
-                error ??= tbl.Error;
-            else if (tbl.IsTable)
-                return tbl;
+            if (row.Error != null)
+            {
+                errors ??= new Dictionary<string, SqliteCorruptException>(names);
+                if (!errors.ContainsKey(row.Name))
+                    errors.Add(row.Name, row.Error);
+            }
+            else if (row.IsTable && !tables.ContainsKey(row.Name))
+                tables.Add(row.Name, row);
         }
 
-        return error == null ? null : throw error;
+        return tables;
     }
 
     private Sqlite3Table OpenTable(Sqlite3SchemaRow tbl)
