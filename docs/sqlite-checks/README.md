@@ -35,7 +35,7 @@ The code for each of these carries its ID in a comment.
 | PAGE-03, INTEG-05 | At most (pageSize-8)/6 cells a page, in either mode |
 | PAGE-11, PAGE-12, PAGE-13, CELL-04, CELL-08, CELL-09 | Cells are parsed when they are reached, and not checked against the content area (SQLite does that only with `cell_size_check`) |
 | PAGE-01, PAGE-22, PAGE-24 | An unknown page type, a child page of the other b-tree kind, and a tree deeper than 20 levels fail as in SQLite, with their IDs |
-| PAGE-18 | Page 1 must be a table b-tree page |
+| PAGE-18 | Page 1 must be a table b-tree page, and a table's root page the b-tree kind its SQL declares (checked when the table is opened) |
 | PAGE-19, PAGE-21 | Empty interior roots and empty child pages are corrupt; Lenient reports and walks on |
 | CELL-01, CELL-02 | Payload sizes keep their low 32 bits |
 | CELL-10, CELL-11 | A payload must stay in its page's usable area when read through accessPayload; one that is all on its page may run into the reserved bytes |
