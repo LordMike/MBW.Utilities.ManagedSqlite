@@ -108,7 +108,7 @@ public class SchemaBenchmarks
     {
         int count = 0;
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(_image, false));
-        foreach (Sqlite3SchemaRow _ in db.GetTables())
+        foreach (Sqlite3SchemaRow _ in db.GetSchema())
             count++;
 
         return count;

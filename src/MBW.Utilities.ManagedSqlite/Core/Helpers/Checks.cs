@@ -4,8 +4,9 @@ using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 namespace MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 /// <summary>
-/// The consistency checks the reader makes on the database file, each named by its ID in the SQLite check survey
-/// (issue #58), such as "PAGE-21". Every check fails where SQLite fails; see <see cref="SqliteValidation"/>.
+/// The consistency checks the reader makes on the database file, each named by its ID in the
+/// <see href="https://github.com/LordMike/MBW.Utilities.ManagedSqlite/blob/master/docs/sqlite-checks/README.md">SQLite check survey</see>, such as "PAGE-21".
+/// Every check fails where SQLite fails; see <see cref="SqliteValidation"/>.
 /// </summary>
 internal static class Checks
 {

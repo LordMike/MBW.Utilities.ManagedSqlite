@@ -44,69 +44,69 @@ internal sealed partial class SchemaParser
         Select S(int i) => (Select)_stack[lhs + i].Value!;
         Window W(int i) => (Window)_stack[lhs + i].Value!;
 
-        switch (SqliteGrammar.RuleNames[rule])
+        switch (rule)
         {
             // ///////////////////// The CREATE TABLE statement
 
-            case "cmdx ::= cmd":
+            case SqliteGrammar.Rule.cmdx__cmd:
                 // sqlite3FinishCoding: at init this ends the parse (SQLITE_DONE), so nothing after the first
                 // statement is read (DDL-11)
                 _done = true;
                 break;
 
-            case "create_table ::= createkw temp TABLE ifnotexists nm dbnm":
+            case SqliteGrammar.Rule.create_table__createkw_temp_TABLE_ifnotexists_nm_dbnm:
                 StartTable(T(4), T(5), I(3) != 0);
                 break;
 
             // ///////////////////// The other CREATE statements of the schema
 
-            case "cmd ::= createkw uniqueflag INDEX ifnotexists nm dbnm ON nm LP sortlist RP where_opt":
+            case SqliteGrammar.Rule.cmd__createkw_uniqueflag_INDEX_ifnotexists_nm_dbnm_ON_nm_LP_sortlist_RP_where_opt:
                 CreateIndexStatement(T(4), T(5), T(7), L(9)!, OE(11), I(3) != 0);
                 break;
-            case "cmd ::= createkw temp VIEW ifnotexists nm dbnm eidlist_opt AS select":
+            case SqliteGrammar.Rule.cmd__createkw_temp_VIEW_ifnotexists_nm_dbnm_eidlist_opt_AS_select:
                 CreateView(T(4), T(5), I(3) != 0);
                 break;
 
-            case "trigger_decl ::= temp TRIGGER ifnotexists nm dbnm trigger_time trigger_event ON fullname foreach_clause when_clause":
+            case SqliteGrammar.Rule.trigger_decl__temp_TRIGGER_ifnotexists_nm_dbnm_trigger_time_trigger_event_ON_fullname_foreach_clause_when_clause:
                 BeginTrigger(T(3), T(4), I(5), T(8), I(2) != 0);
                 break;
-            case "cmd ::= createkw trigger_decl BEGIN trigger_cmd_list END":
+            case SqliteGrammar.Rule.cmd__createkw_trigger_decl_BEGIN_trigger_cmd_list_END:
                 FinishTrigger();
                 break;
-            case "trigger_time ::= BEFORE|AFTER":
+            case SqliteGrammar.Rule.trigger_time__BEFORE_or_AFTER:
                 a.Int = M(0);
                 break;
-            case "trigger_time ::= INSTEAD OF":
+            case SqliteGrammar.Rule.trigger_time__INSTEAD_OF:
                 a.Int = TK.INSTEAD;
                 break;
-            case "trigger_time ::=":
+            case SqliteGrammar.Rule.trigger_time__empty:
                 a.Int = TK.BEFORE;
                 break;
 
             // The table of a FROM, DROP, ALTER or trigger: the token is its name, and the int says it names a database
-            case "fullname ::= nm":
-            case "xfullname ::= nm":
-            case "xfullname ::= nm AS nm":
+            case SqliteGrammar.Rule.fullname__nm:
+            case SqliteGrammar.Rule.xfullname__nm:
+            case SqliteGrammar.Rule.xfullname__nm_AS_nm:
                 a.Int = 0;
                 break;
-            case "fullname ::= nm DOT nm":
-            case "xfullname ::= nm DOT nm":
-            case "xfullname ::= nm DOT nm AS nm":
+            case SqliteGrammar.Rule.fullname__nm_DOT_nm:
+            case SqliteGrammar.Rule.xfullname__nm_DOT_nm:
+            case SqliteGrammar.Rule.xfullname__nm_DOT_nm_AS_nm:
                 a.Token = T(2);
                 a.Int = 1;
                 break;
 
-            case "tridxby ::= INDEXED BY nm":
+            case SqliteGrammar.Rule.tridxby__INDEXED_BY_nm:
                 Fail("DDL-82", "the INDEXED BY clause is not allowed on UPDATE or DELETE statements within triggers");
                 break;
-            case "tridxby ::= NOT INDEXED":
+            case SqliteGrammar.Rule.tridxby__NOT_INDEXED:
                 Fail("DDL-82", "the NOT INDEXED clause is not allowed on UPDATE or DELETE statements within triggers");
                 break;
-            case "trigger_cmd ::= UPDATE orconf xfullname tridxby SET setlist from where_opt scanpt":
-            case "trigger_cmd ::= DELETE FROM xfullname tridxby where_opt scanpt":
+            case SqliteGrammar.Rule.trigger_cmd__UPDATE_orconf_xfullname_tridxby_SET_setlist_from_where_opt_scanpt:
+            case SqliteGrammar.Rule.trigger_cmd__DELETE_FROM_xfullname_tridxby_where_opt_scanpt:
                 TriggerStep(I(2) != 0);
                 break;
-            case "trigger_cmd ::= scanpt insert_cmd INTO xfullname idlist_opt select upsert scanpt":
+            case SqliteGrammar.Rule.trigger_cmd__scanpt_insert_cmd_INTO_xfullname_idlist_opt_select_upsert_scanpt:
                 TriggerStep(I(3) != 0);
 
                 // sqlite3TriggerInsertStep in trigger.c: the first ON CONFLICT target may not have NULLS
@@ -117,12 +117,12 @@ internal sealed partial class SchemaParser
                 break;
 
             // An upsert's value is the ON CONFLICT target of its first clause, which comes first in the chain
-            case "upsert ::= ON CONFLICT LP sortlist RP where_opt DO UPDATE SET setlist where_opt upsert":
-            case "upsert ::= ON CONFLICT LP sortlist RP where_opt DO NOTHING upsert":
+            case SqliteGrammar.Rule.upsert__ON_CONFLICT_LP_sortlist_RP_where_opt_DO_UPDATE_SET_setlist_where_opt_upsert:
+            case SqliteGrammar.Rule.upsert__ON_CONFLICT_LP_sortlist_RP_where_opt_DO_NOTHING_upsert:
                 a.Value = _stack[lhs + 3].Value;
                 break;
-            case "upsert ::= ON CONFLICT DO NOTHING returning":
-            case "upsert ::= ON CONFLICT DO UPDATE SET setlist where_opt returning":
+            case SqliteGrammar.Rule.upsert__ON_CONFLICT_DO_NOTHING_returning:
+            case SqliteGrammar.Rule.upsert__ON_CONFLICT_DO_UPDATE_SET_setlist_where_opt_returning:
                 a.Value = null;
                 break;
 
@@ -131,16 +131,16 @@ internal sealed partial class SchemaParser
             //   if( pExpr->op!=TK_SELECT && pColumns->nId!=(n=sqlite3ExprVectorSize(pExpr)) ){
             //     sqlite3ErrorMsg(pParse, "%d columns assigned %d values",
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/expr.c#L2113 (sqlite3ExprListAppendVector)
-            case "setlist ::= setlist COMMA LP idlist RP EQ expr":
+            case SqliteGrammar.Rule.setlist__setlist_COMMA_LP_idlist_RP_EQ_expr:
                 AppendVector(I(3), E(6));
                 break;
-            case "setlist ::= LP idlist RP EQ expr":
+            case SqliteGrammar.Rule.setlist__LP_idlist_RP_EQ_expr:
                 AppendVector(I(1), E(4));
                 break;
-            case "idlist ::= nm":
+            case SqliteGrammar.Rule.idlist__nm:
                 a.Int = 1;
                 break;
-            case "idlist ::= idlist COMMA nm":
+            case SqliteGrammar.Rule.idlist__idlist_COMMA_nm:
                 a.Int = I(0) + 1;
                 break;
 
@@ -148,181 +148,181 @@ internal sealed partial class SchemaParser
             //   if( pParse->pNewTrigger ){
             //     sqlite3ErrorMsg(pParse, "cannot use RETURNING in a trigger");
             // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1439 (sqlite3AddReturning)
-            case "returning ::= RETURNING selcollist":
-            case "upsert ::= RETURNING selcollist":
+            case SqliteGrammar.Rule.returning__RETURNING_selcollist:
+            case SqliteGrammar.Rule.upsert__RETURNING_selcollist:
                 a.Value = null;
-                goto case "where_opt_ret ::= RETURNING selcollist";
-            case "where_opt_ret ::= RETURNING selcollist":
-            case "where_opt_ret ::= WHERE expr RETURNING selcollist":
+                goto case SqliteGrammar.Rule.where_opt_ret__RETURNING_selcollist;
+            case SqliteGrammar.Rule.where_opt_ret__RETURNING_selcollist:
+            case SqliteGrammar.Rule.where_opt_ret__WHERE_expr_RETURNING_selcollist:
                 if (_newTrigger != null)
                     Fail("DDL-82", "cannot use RETURNING in a trigger");
                 break;
 
-            case "create_vtab ::= createkw VIRTUAL TABLE ifnotexists nm dbnm USING nm":
+            case SqliteGrammar.Rule.create_vtab__createkw_VIRTUAL_TABLE_ifnotexists_nm_dbnm_USING_nm:
                 BeginVirtualTable(T(4), T(5), I(3) != 0);
                 break;
-            case "cmd ::= create_vtab":
-            case "cmd ::= create_vtab LP vtabarglist RP":
+            case SqliteGrammar.Rule.cmd__create_vtab:
+            case SqliteGrammar.Rule.cmd__create_vtab_LP_vtabarglist_RP:
                 FinishVirtualTable();
                 break;
-            case "vtabarg ::=":
+            case SqliteGrammar.Rule.vtabarg__empty:
                 VirtualTableArgument(false);
                 break;
-            case "vtabargtoken ::= ANY":
-            case "vtabargtoken ::= lp anylist RP":
-            case "lp ::= LP":
+            case SqliteGrammar.Rule.vtabargtoken__ANY:
+            case SqliteGrammar.Rule.vtabargtoken__lp_anylist_RP:
+            case SqliteGrammar.Rule.lp__LP:
                 VirtualTableArgument(true);
                 break;
-            case "ifnotexists ::= IF NOT EXISTS":
+            case SqliteGrammar.Rule.ifnotexists__IF_NOT_EXISTS:
                 a.Int = 1;
                 break;
-            case "temp ::= TEMP":
+            case SqliteGrammar.Rule.temp__TEMP:
                 // A = pParse->db->init.busy==0: TEMP is ignored while the schema is read (SCHEMA-29)
                 a.Int = 0;
                 break;
-            case "create_table_args ::= LP columnlist conslist_opt RP table_option_set":
+            case SqliteGrammar.Rule.create_table_args__LP_columnlist_conslist_opt_RP_table_option_set:
                 EndTable(false, I(4));
                 break;
-            case "create_table_args ::= AS select":
+            case SqliteGrammar.Rule.create_table_args__AS_select:
                 EndTable(true, 0);
                 break;
-            case "table_option_set ::= table_option_set COMMA table_option":
+            case SqliteGrammar.Rule.table_option_set__table_option_set_COMMA_table_option:
                 a.Int = I(0) | I(2);
                 break;
-            case "table_option ::= WITHOUT nm":
+            case SqliteGrammar.Rule.table_option__WITHOUT_nm:
                 // The raw token, so a quoted "rowid" is not the option
                 if (T(1).Length == 5 && AsciiCaseInsensitiveComparer.Instance.Equals(Text(T(1)), "rowid"))
                     a.Int = ParsedTable.TF_WithoutRowid;
                 else
                     Fail("DDL-29", $"unknown table option: {Text(T(1))}");
                 break;
-            case "table_option ::= nm":
+            case SqliteGrammar.Rule.table_option__nm:
                 if (T(0).Length == 6 && AsciiCaseInsensitiveComparer.Instance.Equals(Text(T(0)), "strict"))
                     a.Int = ParsedTable.TF_Strict;
                 else
                     Fail("DDL-29", $"unknown table option: {Text(T(0))}");
                 break;
-            case "columnname ::= nm typetoken":
+            case SqliteGrammar.Rule.columnname__nm_typetoken:
                 AddColumn(T(0), T(1));
                 break;
 
-            case "typetoken ::= typename LP signed RP":
+            case SqliteGrammar.Rule.typetoken__typename_LP_signed_RP:
                 a.Token = new Token(T(0).Start, T(3).End - T(0).Start);
                 break;
-            case "typetoken ::= typename LP signed COMMA signed RP":
+            case SqliteGrammar.Rule.typetoken__typename_LP_signed_COMMA_signed_RP:
                 a.Token = new Token(T(0).Start, T(5).End - T(0).Start);
                 break;
-            case "typename ::= typename ID|STRING":
+            case SqliteGrammar.Rule.typename__typename_ID_or_STRING:
                 a.Token = new Token(T(0).Start, T(1).End - T(0).Start);
                 break;
-            case "scanpt ::=":
+            case SqliteGrammar.Rule.scanpt__empty:
                 a.Int = _lookahead.Start;
                 break;
-            case "scantok ::=":
+            case SqliteGrammar.Rule.scantok__empty:
                 a.Token = _lookahead;
                 break;
 
-            case "ccons ::= DEFAULT scantok term":
+            case SqliteGrammar.Rule.ccons__DEFAULT_scantok_term:
                 AddDefaultValue(E(2), T(1).Start, T(1).End);
                 break;
-            case "ccons ::= DEFAULT LP expr RP":
+            case SqliteGrammar.Rule.ccons__DEFAULT_LP_expr_RP:
                 AddDefaultValue(E(2), T(1).Start + 1, T(3).Start);
                 break;
-            case "ccons ::= DEFAULT PLUS scantok term":
+            case SqliteGrammar.Rule.ccons__DEFAULT_PLUS_scantok_term:
                 AddDefaultValue(E(3), T(1).Start, T(2).End);
                 break;
-            case "ccons ::= DEFAULT MINUS scantok term":
+            case SqliteGrammar.Rule.ccons__DEFAULT_MINUS_scantok_term:
                 AddDefaultValue(PExpr(TK.UMINUS, E(3), null), T(1).Start, T(2).End);
                 break;
-            case "ccons ::= DEFAULT scantok ID|INDEXED":
+            case SqliteGrammar.Rule.ccons__DEFAULT_scantok_ID_or_INDEXED:
             {
                 Expr p = TokenExpr(TK.STRING, T(2));
                 IdToTrueFalse(p);
                 AddDefaultValue(p, T(2).Start, T(2).End);
                 break;
             }
-            case "ccons ::= NOT NULL onconf":
+            case SqliteGrammar.Rule.ccons__NOT_NULL_onconf:
                 AddNotNull(I(2));
                 break;
-            case "ccons ::= PRIMARY KEY sortorder onconf autoinc":
+            case SqliteGrammar.Rule.ccons__PRIMARY_KEY_sortorder_onconf_autoinc:
                 AddPrimaryKey(null, I(3), I(4), I(2));
                 break;
-            case "ccons ::= UNIQUE onconf":
+            case SqliteGrammar.Rule.ccons__UNIQUE_onconf:
                 CreateIndex(null, I(1), SO_ASC, false);
                 break;
-            case "ccons ::= CHECK LP expr RP":
-            case "tcons ::= CHECK LP expr RP onconf":
+            case SqliteGrammar.Rule.ccons__CHECK_LP_expr_RP:
+            case SqliteGrammar.Rule.tcons__CHECK_LP_expr_RP_onconf:
                 // sqlite3AddCheckConstraint: dropped, as SQLite drops a CHECK when the database is read-only (DDL-46,
                 // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/build.c#L1911), so a CHECK naming no such
                 // column is accepted, as by a database opened with SQLITE_OPEN_READONLY. The tests' SQLite can not
                 // show this: a database it deserializes is read-only to writes only, and so resolves the CHECK.
                 break;
-            case "ccons ::= REFERENCES nm eidlist_opt refargs":
+            case SqliteGrammar.Rule.ccons__REFERENCES_nm_eidlist_opt_refargs:
                 CreateForeignKey(null, T(1), L(2));
                 break;
-            case "ccons ::= COLLATE ID|STRING":
+            case SqliteGrammar.Rule.ccons__COLLATE_ID_or_STRING:
                 AddCollateType(T(1));
                 break;
-            case "generated ::= LP expr RP":
+            case SqliteGrammar.Rule.generated__LP_expr_RP:
                 AddGenerated(E(1), null);
                 break;
-            case "generated ::= LP expr RP ID":
+            case SqliteGrammar.Rule.generated__LP_expr_RP_ID:
                 AddGenerated(E(1), T(3));
                 break;
-            case "autoinc ::= AUTOINCR":
+            case SqliteGrammar.Rule.autoinc__AUTOINCR:
                 a.Int = 1;
                 break;
 
-            case "tcons ::= PRIMARY KEY LP sortlist autoinc RP onconf":
+            case SqliteGrammar.Rule.tcons__PRIMARY_KEY_LP_sortlist_autoinc_RP_onconf:
                 AddPrimaryKey(L(3), I(6), I(4), SO_ASC);
                 break;
-            case "tcons ::= UNIQUE LP sortlist RP onconf":
+            case SqliteGrammar.Rule.tcons__UNIQUE_LP_sortlist_RP_onconf:
                 CreateIndex(L(2), I(4), SO_ASC, false);
                 break;
-            case "tcons ::= FOREIGN KEY LP eidlist RP REFERENCES nm eidlist_opt refargs defer_subclause_opt":
+            case SqliteGrammar.Rule.tcons__FOREIGN_KEY_LP_eidlist_RP_REFERENCES_nm_eidlist_opt_refargs_defer_subclause_opt:
                 CreateForeignKey(L(3), T(6), L(7));
                 break;
 
-            case "onconf ::=":
-            case "orconf ::=":
+            case SqliteGrammar.Rule.onconf__empty:
+            case SqliteGrammar.Rule.orconf__empty:
                 a.Int = OE_Default;
                 break;
-            case "onconf ::= ON CONFLICT resolvetype":
+            case SqliteGrammar.Rule.onconf__ON_CONFLICT_resolvetype:
                 a.Int = I(2);
                 break;
-            case "orconf ::= OR resolvetype":
+            case SqliteGrammar.Rule.orconf__OR_resolvetype:
                 a.Int = I(1);
                 break;
-            case "resolvetype ::= IGNORE":
+            case SqliteGrammar.Rule.resolvetype__IGNORE:
                 a.Int = OE_Ignore;
                 break;
-            case "resolvetype ::= REPLACE":
+            case SqliteGrammar.Rule.resolvetype__REPLACE:
                 a.Int = OE_Replace;
                 break;
-            case "raisetype ::= ROLLBACK":
+            case SqliteGrammar.Rule.raisetype__ROLLBACK:
                 a.Int = OE_Rollback;
                 break;
-            case "raisetype ::= ABORT":
+            case SqliteGrammar.Rule.raisetype__ABORT:
                 a.Int = OE_Abort;
                 break;
-            case "raisetype ::= FAIL":
+            case SqliteGrammar.Rule.raisetype__FAIL:
                 a.Int = OE_Fail;
                 break;
 
             // ///////////////////// The SELECT statement, for subqueries
 
-            case "select ::= WITH wqlist selectnowith":
+            case SqliteGrammar.Rule.select__WITH_wqlist_selectnowith:
                 DoubleLinkSelect(S(2));
                 a.Value = S(2);
                 break;
-            case "select ::= WITH RECURSIVE wqlist selectnowith":
+            case SqliteGrammar.Rule.select__WITH_RECURSIVE_wqlist_selectnowith:
                 DoubleLinkSelect(S(3));
                 a.Value = S(3);
                 break;
-            case "select ::= selectnowith":
+            case SqliteGrammar.Rule.select__selectnowith:
                 DoubleLinkSelect(S(0));
                 break;
-            case "selectnowith ::= selectnowith multiselect_op oneselect":
+            case SqliteGrammar.Rule.selectnowith__selectnowith_multiselect_op_oneselect:
             {
                 Select left = S(0);
                 Select right = S(2);
@@ -340,170 +340,170 @@ internal sealed partial class SchemaParser
                 a.Value = right;
                 break;
             }
-            case "multiselect_op ::= UNION":
-            case "multiselect_op ::= EXCEPT|INTERSECT":
+            case SqliteGrammar.Rule.multiselect_op__UNION:
+            case SqliteGrammar.Rule.multiselect_op__EXCEPT_or_INTERSECT:
                 a.Int = M(0);
                 break;
-            case "multiselect_op ::= UNION ALL":
+            case SqliteGrammar.Rule.multiselect_op__UNION_ALL:
                 a.Int = TK.ALL;
                 break;
-            case "oneselect ::= SELECT distinct selcollist from where_opt groupby_opt having_opt orderby_opt limit_opt":
+            case SqliteGrammar.Rule.oneselect__SELECT_distinct_selcollist_from_where_opt_groupby_opt_having_opt_orderby_opt_limit_opt:
                 a.Value = NewSelect(L(2), OE(4), L(5), OE(6), L(7), OE(8));
                 break;
-            case "oneselect ::= SELECT distinct selcollist from where_opt groupby_opt having_opt window_clause orderby_opt limit_opt":
+            case SqliteGrammar.Rule.oneselect__SELECT_distinct_selcollist_from_where_opt_groupby_opt_having_opt_window_clause_orderby_opt_limit_opt:
                 a.Value = NewSelect(L(2), OE(4), L(5), OE(6), L(8), OE(9));
                 break;
-            case "values ::= VALUES LP nexprlist RP":
+            case SqliteGrammar.Rule.values__VALUES_LP_nexprlist_RP:
             {
                 Select values = NewSelect(L(2), null, null, null, null, null);
                 values.IsValues = true;
                 a.Value = values;
                 break;
             }
-            case "mvalues ::= values COMMA LP nexprlist RP":
-            case "mvalues ::= mvalues COMMA LP nexprlist RP":
+            case SqliteGrammar.Rule.mvalues__values_COMMA_LP_nexprlist_RP:
+            case SqliteGrammar.Rule.mvalues__mvalues_COMMA_LP_nexprlist_RP:
                 a.Value = MultiValues(S(0), L(3)!);
                 break;
-            case "distinct ::= DISTINCT":
+            case SqliteGrammar.Rule.distinct__DISTINCT:
                 a.Int = SF_Distinct;
                 break;
-            case "distinct ::= ALL":
+            case SqliteGrammar.Rule.distinct__ALL:
                 a.Int = SF_All;
                 break;
 
-            case "selcollist ::= sclp scanpt expr scanpt as":
+            case SqliteGrammar.Rule.selcollist__sclp_scanpt_expr_scanpt_as:
                 a.Value = ListAppend(L(0), E(2));
                 break;
-            case "selcollist ::= sclp scanpt STAR":
+            case SqliteGrammar.Rule.selcollist__sclp_scanpt_STAR:
                 a.Value = ListAppend(L(0), new Expr(TK.ASTERISK));
                 break;
-            case "selcollist ::= sclp scanpt nm DOT STAR":
+            case SqliteGrammar.Rule.selcollist__sclp_scanpt_nm_DOT_STAR:
                 a.Value = ListAppend(L(0), PExpr(TK.DOT, TokenExpr(TK.ID, T(2)), new Expr(TK.ASTERISK)));
                 break;
-            case "as ::= AS nm":
+            case SqliteGrammar.Rule.as__AS_nm:
                 a.Token = T(1);
                 break;
-            case "from ::= FROM seltablist":
+            case SqliteGrammar.Rule.from__FROM_seltablist:
                 a.Value = _stack[lhs + 1].Value;
                 break;
-            case "seltablist ::= stl_prefix nm dbnm as on_using":
+            case SqliteGrammar.Rule.seltablist__stl_prefix_nm_dbnm_as_on_using:
                 FromDatabase(T(1), T(2));
                 a.Value = AppendFromTerm((SrcList?)a.Value, I(4));
                 break;
-            case "seltablist ::= stl_prefix nm dbnm as indexed_by on_using":
+            case SqliteGrammar.Rule.seltablist__stl_prefix_nm_dbnm_as_indexed_by_on_using:
                 FromDatabase(T(1), T(2));
                 a.Value = AppendFromTerm((SrcList?)a.Value, I(5));
                 break;
-            case "seltablist ::= stl_prefix nm dbnm LP exprlist RP as on_using":
+            case SqliteGrammar.Rule.seltablist__stl_prefix_nm_dbnm_LP_exprlist_RP_as_on_using:
                 FromDatabase(T(1), T(2));
                 a.Value = AppendFromTerm((SrcList?)a.Value, I(7));
                 break;
-            case "seltablist ::= stl_prefix LP select RP as on_using":
+            case SqliteGrammar.Rule.seltablist__stl_prefix_LP_select_RP_as_on_using:
                 a.Value = AppendFromTerm((SrcList?)a.Value, I(5));
                 break;
-            case "seltablist ::= stl_prefix LP seltablist RP as on_using":
+            case SqliteGrammar.Rule.seltablist__stl_prefix_LP_seltablist_RP_as_on_using:
                 if (a.Value == null && T(4).Length == 0 && I(5) == 0)
                     a.Value = _stack[lhs + 2].Value;
                 else
                     a.Value = AppendFromTerm((SrcList?)a.Value, I(5));
                 break;
-            case "dbnm ::= DOT nm":
+            case SqliteGrammar.Rule.dbnm__DOT_nm:
                 a.Token = T(1);
                 break;
-            case "joinop ::= JOIN_KW JOIN":
+            case SqliteGrammar.Rule.joinop__JOIN_KW_JOIN:
                 JoinType(T(0), null, null);
                 break;
-            case "joinop ::= JOIN_KW nm JOIN":
+            case SqliteGrammar.Rule.joinop__JOIN_KW_nm_JOIN:
                 JoinType(T(0), T(1), null);
                 break;
-            case "joinop ::= JOIN_KW nm nm JOIN":
+            case SqliteGrammar.Rule.joinop__JOIN_KW_nm_nm_JOIN:
                 JoinType(T(0), T(1), T(2));
                 break;
-            case "on_using ::= ON expr":
+            case SqliteGrammar.Rule.on_using__ON_expr:
                 a.Int = 1;
                 break;
-            case "on_using ::= USING LP idlist RP":
+            case SqliteGrammar.Rule.on_using__USING_LP_idlist_RP:
                 a.Int = 2;
                 break;
 
-            case "orderby_opt ::= ORDER BY sortlist":
-            case "groupby_opt ::= GROUP BY nexprlist":
+            case SqliteGrammar.Rule.orderby_opt__ORDER_BY_sortlist:
+            case SqliteGrammar.Rule.groupby_opt__GROUP_BY_nexprlist:
                 a.Value = _stack[lhs + 2].Value;
                 break;
-            case "sortlist ::= sortlist COMMA expr sortorder nulls":
+            case SqliteGrammar.Rule.sortlist__sortlist_COMMA_expr_sortorder_nulls:
                 a.Value = ListAppend(L(0), E(2));
                 SetSortOrder(L(0)!, I(3), I(4));
                 break;
-            case "sortlist ::= expr sortorder nulls":
+            case SqliteGrammar.Rule.sortlist__expr_sortorder_nulls:
             {
                 ExprList list = ListAppend(null, E(0));
                 SetSortOrder(list, I(1), I(2));
                 a.Value = list;
                 break;
             }
-            case "sortorder ::= ASC":
-            case "nulls ::= NULLS FIRST":
+            case SqliteGrammar.Rule.sortorder__ASC:
+            case SqliteGrammar.Rule.nulls__NULLS_FIRST:
                 a.Int = SO_ASC;
                 break;
-            case "sortorder ::= DESC":
-            case "nulls ::= NULLS LAST":
+            case SqliteGrammar.Rule.sortorder__DESC:
+            case SqliteGrammar.Rule.nulls__NULLS_LAST:
                 a.Int = SO_DESC;
                 break;
-            case "sortorder ::=":
-            case "nulls ::=":
+            case SqliteGrammar.Rule.sortorder__empty:
+            case SqliteGrammar.Rule.nulls__empty:
                 a.Int = SO_UNDEFINED;
                 break;
-            case "having_opt ::= HAVING expr":
-            case "where_opt ::= WHERE expr":
+            case SqliteGrammar.Rule.having_opt__HAVING_expr:
+            case SqliteGrammar.Rule.where_opt__WHERE_expr:
                 a.Value = _stack[lhs + 1].Value;
                 break;
-            case "limit_opt ::= LIMIT expr":
+            case SqliteGrammar.Rule.limit_opt__LIMIT_expr:
                 a.Value = PExpr(TK.LIMIT, E(1), null);
                 break;
-            case "limit_opt ::= LIMIT expr OFFSET expr":
+            case SqliteGrammar.Rule.limit_opt__LIMIT_expr_OFFSET_expr:
                 a.Value = PExpr(TK.LIMIT, E(1), E(3));
                 break;
-            case "limit_opt ::= LIMIT expr COMMA expr":
+            case SqliteGrammar.Rule.limit_opt__LIMIT_expr_COMMA_expr:
                 a.Value = PExpr(TK.LIMIT, E(3), E(1));
                 break;
 
             // ///////////////////// Expressions
 
-            case "expr ::= LP expr RP":
+            case SqliteGrammar.Rule.expr__LP_expr_RP:
                 a.Value = _stack[lhs + 1].Value;
                 break;
-            case "expr ::= ID|INDEXED|JOIN_KW":
+            case SqliteGrammar.Rule.expr__ID_or_INDEXED_or_JOIN_KW:
                 a.Value = TokenExpr(TK.ID, T(0));
                 break;
-            case "expr ::= nm DOT nm":
+            case SqliteGrammar.Rule.expr__nm_DOT_nm:
                 a.Value = PExpr(TK.DOT, TokenExpr(TK.ID, T(0)), TokenExpr(TK.ID, T(2)));
                 break;
-            case "expr ::= nm DOT nm DOT nm":
+            case SqliteGrammar.Rule.expr__nm_DOT_nm_DOT_nm:
             {
                 Expr first = TokenExpr(TK.ID, T(0));
                 Expr rest = PExpr(TK.DOT, TokenExpr(TK.ID, T(2)), TokenExpr(TK.ID, T(4)));
                 a.Value = PExpr(TK.DOT, first, rest);
                 break;
             }
-            case "term ::= NULL|FLOAT|BLOB":
+            case SqliteGrammar.Rule.term__NULL_or_FLOAT_or_BLOB:
                 a.Value = TokenExpr(M(0), T(0));
                 break;
-            case "term ::= STRING":
+            case SqliteGrammar.Rule.term__STRING:
                 a.Value = TokenExpr(TK.STRING, T(0));
                 break;
-            case "term ::= INTEGER":
+            case SqliteGrammar.Rule.term__INTEGER:
                 a.Value = IntegerTerm(T(0));
                 break;
-            case "term ::= QNUMBER":
+            case SqliteGrammar.Rule.term__QNUMBER:
                 a.Value = NumberTerm(T(0));
                 break;
-            case "expr ::= VARIABLE":
+            case SqliteGrammar.Rule.expr__VARIABLE:
                 a.Value = Variable(T(0));
                 break;
-            case "expr ::= expr COLLATE ID|STRING":
+            case SqliteGrammar.Rule.expr__expr_COLLATE_ID_or_STRING:
                 a.Value = AddCollate(E(0), T(2));
                 break;
-            case "expr ::= CAST LP expr AS typetoken RP":
+            case SqliteGrammar.Rule.expr__CAST_LP_expr_AS_typetoken_RP:
             {
                 // sqlite3ExprAttachSubtrees, which takes the operand's height without checking it
                 Expr operand = E(2);
@@ -516,27 +516,27 @@ internal sealed partial class SchemaParser
                 };
                 break;
             }
-            case "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist RP":
+            case SqliteGrammar.Rule.expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_RP:
                 a.Value = Function(L(3), T(0), I(2) == SF_Distinct);
                 break;
-            case "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist ORDER BY sortlist RP":
+            case SqliteGrammar.Rule.expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_ORDER_BY_sortlist_RP:
             {
                 Expr function = Function(L(3), T(0), I(2) == SF_Distinct);
                 AddFunctionOrderBy(function, L(6)!);
                 a.Value = function;
                 break;
             }
-            case "expr ::= ID|INDEXED|JOIN_KW LP STAR RP":
+            case SqliteGrammar.Rule.expr__ID_or_INDEXED_or_JOIN_KW_LP_STAR_RP:
                 a.Value = Function(null, T(0), false);
                 break;
-            case "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist RP filter_over":
+            case SqliteGrammar.Rule.expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_RP_filter_over:
             {
                 Expr function = Function(L(3), T(0), I(2) == SF_Distinct);
                 WindowAttach(function, W(5));
                 a.Value = function;
                 break;
             }
-            case "expr ::= ID|INDEXED|JOIN_KW LP distinct exprlist ORDER BY sortlist RP filter_over":
+            case SqliteGrammar.Rule.expr__ID_or_INDEXED_or_JOIN_KW_LP_distinct_exprlist_ORDER_BY_sortlist_RP_filter_over:
             {
                 Expr function = Function(L(3), T(0), I(2) == SF_Distinct);
                 WindowAttach(function, W(8));
@@ -544,17 +544,17 @@ internal sealed partial class SchemaParser
                 a.Value = function;
                 break;
             }
-            case "expr ::= ID|INDEXED|JOIN_KW LP STAR RP filter_over":
+            case SqliteGrammar.Rule.expr__ID_or_INDEXED_or_JOIN_KW_LP_STAR_RP_filter_over:
             {
                 Expr function = Function(null, T(0), false);
                 WindowAttach(function, W(4));
                 a.Value = function;
                 break;
             }
-            case "term ::= CTIME_KW":
+            case SqliteGrammar.Rule.term__CTIME_KW:
                 a.Value = Function(null, T(0), false);
                 break;
-            case "expr ::= LP nexprlist COMMA expr RP":
+            case SqliteGrammar.Rule.expr__LP_nexprlist_COMMA_expr_RP:
             {
                 // A row value. Its height stays 1, as SQLite does not set it from the list.
                 ExprList list = ListAppend(L(1), E(3));
@@ -565,24 +565,24 @@ internal sealed partial class SchemaParser
                 a.Value = vector;
                 break;
             }
-            case "expr ::= expr AND expr":
+            case SqliteGrammar.Rule.expr__expr_AND_expr:
                 a.Value = ExprAnd(E(0), E(2));
                 break;
-            case "expr ::= expr OR expr":
-            case "expr ::= expr LT|GT|GE|LE expr":
-            case "expr ::= expr EQ|NE expr":
-            case "expr ::= expr BITAND|BITOR|LSHIFT|RSHIFT expr":
-            case "expr ::= expr PLUS|MINUS expr":
-            case "expr ::= expr STAR|SLASH|REM expr":
-            case "expr ::= expr CONCAT expr":
+            case SqliteGrammar.Rule.expr__expr_OR_expr:
+            case SqliteGrammar.Rule.expr__expr_LT_or_GT_or_GE_or_LE_expr:
+            case SqliteGrammar.Rule.expr__expr_EQ_or_NE_expr:
+            case SqliteGrammar.Rule.expr__expr_BITAND_or_BITOR_or_LSHIFT_or_RSHIFT_expr:
+            case SqliteGrammar.Rule.expr__expr_PLUS_or_MINUS_expr:
+            case SqliteGrammar.Rule.expr__expr_STAR_or_SLASH_or_REM_expr:
+            case SqliteGrammar.Rule.expr__expr_CONCAT_expr:
                 a.Value = PExpr(M(1), E(0), E(2));
                 break;
-            case "likeop ::= NOT LIKE_KW|MATCH":
+            case SqliteGrammar.Rule.likeop__NOT_LIKE_KW_or_MATCH:
                 a.Token = T(1);
                 a.Int = 1;
                 break;
-            case "expr ::= expr likeop expr":
-            case "expr ::= expr likeop expr ESCAPE expr":
+            case SqliteGrammar.Rule.expr__expr_likeop_expr:
+            case SqliteGrammar.Rule.expr__expr_likeop_expr_ESCAPE_expr:
             {
                 // x LIKE y is like(y, x), and x LIKE y ESCAPE z is like(y, x, z)
                 ExprList list = ListAppend(null, E(2));
@@ -596,29 +596,29 @@ internal sealed partial class SchemaParser
                 a.Value = p;
                 break;
             }
-            case "expr ::= expr ISNULL|NOTNULL":
+            case SqliteGrammar.Rule.expr__expr_ISNULL_or_NOTNULL:
                 a.Value = PExprIsNull(M(1), E(0));
                 break;
-            case "expr ::= expr NOT NULL":
+            case SqliteGrammar.Rule.expr__expr_NOT_NULL:
                 a.Value = PExprIsNull(TK.NOTNULL, E(0));
                 break;
-            case "expr ::= expr IS expr":
+            case SqliteGrammar.Rule.expr__expr_IS_expr:
                 a.Value = PExprIs(TK.IS, E(0), E(2));
                 break;
-            case "expr ::= expr IS NOT expr":
+            case SqliteGrammar.Rule.expr__expr_IS_NOT_expr:
                 a.Value = PExprIs(TK.ISNOT, E(0), E(3));
                 break;
-            case "expr ::= expr IS NOT DISTINCT FROM expr":
+            case SqliteGrammar.Rule.expr__expr_IS_NOT_DISTINCT_FROM_expr:
                 a.Value = PExprIs(TK.IS, E(0), E(5));
                 break;
-            case "expr ::= expr IS DISTINCT FROM expr":
+            case SqliteGrammar.Rule.expr__expr_IS_DISTINCT_FROM_expr:
                 a.Value = PExprIs(TK.ISNOT, E(0), E(4));
                 break;
-            case "expr ::= NOT expr":
-            case "expr ::= BITNOT expr":
+            case SqliteGrammar.Rule.expr__NOT_expr:
+            case SqliteGrammar.Rule.expr__BITNOT_expr:
                 a.Value = PExpr(M(0), E(1), null);
                 break;
-            case "expr ::= PLUS|MINUS expr":
+            case SqliteGrammar.Rule.expr__PLUS_or_MINUS_expr:
             {
                 int op = M(0) + (TK.UPLUS - TK.PLUS);
                 Expr operand = E(1);
@@ -634,18 +634,18 @@ internal sealed partial class SchemaParser
 
                 break;
             }
-            case "expr ::= expr PTR expr":
+            case SqliteGrammar.Rule.expr__expr_PTR_expr:
             {
                 ExprList list = ListAppend(null, E(0));
                 ListAppend(list, E(2));
                 a.Value = Function(list, T(1), false);
                 break;
             }
-            case "between_op ::= NOT BETWEEN":
-            case "in_op ::= NOT IN":
+            case SqliteGrammar.Rule.between_op__NOT_BETWEEN:
+            case SqliteGrammar.Rule.in_op__NOT_IN:
                 a.Int = 1;
                 break;
-            case "expr ::= expr between_op expr AND expr":
+            case SqliteGrammar.Rule.expr__expr_between_op_expr_AND_expr:
             {
                 ExprList list = ListAppend(null, E(2));
                 ListAppend(list, E(4));
@@ -657,24 +657,24 @@ internal sealed partial class SchemaParser
                 a.Value = p;
                 break;
             }
-            case "expr ::= expr in_op LP exprlist RP":
+            case SqliteGrammar.Rule.expr__expr_in_op_LP_exprlist_RP:
                 a.Value = InList(E(0), I(1) != 0, L(3));
                 break;
-            case "expr ::= LP select RP":
+            case SqliteGrammar.Rule.expr__LP_select_RP:
             {
                 Expr p = PExpr(TK.SELECT, null, null);
                 AddSelect(p, S(1));
                 a.Value = p;
                 break;
             }
-            case "expr ::= expr in_op LP select RP":
+            case SqliteGrammar.Rule.expr__expr_in_op_LP_select_RP:
             {
                 Expr p = PExpr(TK.IN, E(0), null);
                 AddSelect(p, S(3));
                 a.Value = I(1) != 0 ? PExpr(TK.NOT, p, null) : p;
                 break;
             }
-            case "expr ::= expr in_op nm dbnm paren_exprlist":
+            case SqliteGrammar.Rule.expr__expr_in_op_nm_dbnm_paren_exprlist:
             {
                 // "x IN table" or "x IN function(args)", a SELECT * FROM it
                 Expr p = PExpr(TK.IN, E(0), null);
@@ -682,14 +682,14 @@ internal sealed partial class SchemaParser
                 a.Value = I(1) != 0 ? PExpr(TK.NOT, p, null) : p;
                 break;
             }
-            case "expr ::= EXISTS LP select RP":
+            case SqliteGrammar.Rule.expr__EXISTS_LP_select_RP:
             {
                 Expr p = PExpr(TK.EXISTS, null, null);
                 AddSelect(p, S(2));
                 a.Value = p;
                 break;
             }
-            case "expr ::= CASE case_operand case_exprlist case_else END":
+            case SqliteGrammar.Rule.expr__CASE_case_operand_case_exprlist_case_else_END:
             {
                 Expr p = PExpr(TK.CASE, OE(1), null);
                 p.List = OE(3) != null ? ListAppend(L(2), OE(3)) : L(2);
@@ -697,57 +697,57 @@ internal sealed partial class SchemaParser
                 a.Value = p;
                 break;
             }
-            case "case_exprlist ::= case_exprlist WHEN expr THEN expr":
+            case SqliteGrammar.Rule.case_exprlist__case_exprlist_WHEN_expr_THEN_expr:
                 ListAppend(L(0), E(2));
                 ListAppend(L(0), E(4));
                 break;
-            case "case_exprlist ::= WHEN expr THEN expr":
+            case SqliteGrammar.Rule.case_exprlist__WHEN_expr_THEN_expr:
             {
                 ExprList list = ListAppend(null, E(1));
                 ListAppend(list, E(3));
                 a.Value = list;
                 break;
             }
-            case "case_else ::= ELSE expr":
+            case SqliteGrammar.Rule.case_else__ELSE_expr:
                 a.Value = _stack[lhs + 1].Value;
                 break;
-            case "nexprlist ::= nexprlist COMMA expr":
+            case SqliteGrammar.Rule.nexprlist__nexprlist_COMMA_expr:
                 ListAppend(L(0), E(2));
                 break;
-            case "nexprlist ::= expr":
+            case SqliteGrammar.Rule.nexprlist__expr:
                 a.Value = ListAppend(null, E(0));
                 break;
-            case "paren_exprlist ::= LP exprlist RP":
-            case "eidlist_opt ::= LP eidlist RP":
+            case SqliteGrammar.Rule.paren_exprlist__LP_exprlist_RP:
+            case SqliteGrammar.Rule.eidlist_opt__LP_eidlist_RP:
                 a.Value = _stack[lhs + 1].Value;
                 break;
-            case "eidlist ::= eidlist COMMA nm collate sortorder":
+            case SqliteGrammar.Rule.eidlist__eidlist_COMMA_nm_collate_sortorder:
                 // parserAddExprIdListTerm: COLLATE and ASC or DESC are ignored in a legacy schema
                 ListAppend(L(0), null)[L(0)!.Count - 1].Name = SqliteTokenizer.Dequote(Text(T(2)));
                 break;
-            case "eidlist ::= nm collate sortorder":
+            case SqliteGrammar.Rule.eidlist__nm_collate_sortorder:
             {
                 ExprList list = ListAppend(null, null);
                 list[0].Name = SqliteTokenizer.Dequote(Text(T(0)));
                 a.Value = list;
                 break;
             }
-            case "collate ::= COLLATE ID|STRING":
+            case SqliteGrammar.Rule.collate__COLLATE_ID_or_STRING:
                 a.Int = 1;
                 break;
-            case "expr ::= RAISE LP IGNORE RP":
+            case SqliteGrammar.Rule.expr__RAISE_LP_IGNORE_RP:
                 a.Value = PExpr(TK.RAISE, null, null);
                 break;
-            case "expr ::= RAISE LP raisetype COMMA expr RP":
+            case SqliteGrammar.Rule.expr__RAISE_LP_raisetype_COMMA_expr_RP:
                 a.Value = PExpr(TK.RAISE, E(4), null);
                 break;
 
             // ///////////////////// WITH and window definitions, for subqueries
 
-            case "wqlist ::= wqitem":
+            case SqliteGrammar.Rule.wqlist__wqitem:
                 a.Value = new List<string> { SqliteTokenizer.Dequote(Text(T(0))) };
                 break;
-            case "wqlist ::= wqlist COMMA wqitem":
+            case SqliteGrammar.Rule.wqlist__wqlist_COMMA_wqitem:
             {
                 // sqlite3WithAdd in build.c
                 List<string> names = (List<string>)a.Value!;
@@ -757,7 +757,7 @@ internal sealed partial class SchemaParser
                 names.Add(name);
                 break;
             }
-            case "windowdefn_list ::= windowdefn_list COMMA windowdefn":
+            case SqliteGrammar.Rule.windowdefn_list__windowdefn_list_COMMA_windowdefn:
             {
                 Window window = W(2);
                 WindowChain(window, W(0));
@@ -765,64 +765,64 @@ internal sealed partial class SchemaParser
                 a.Value = window;
                 break;
             }
-            case "windowdefn ::= nm AS LP window RP":
+            case SqliteGrammar.Rule.windowdefn__nm_AS_LP_window_RP:
             {
                 Window window = W(3);
                 window.Name = Text(T(0));
                 a.Value = window;
                 break;
             }
-            case "window ::= PARTITION BY nexprlist orderby_opt frame_opt":
+            case SqliteGrammar.Rule.window__PARTITION_BY_nexprlist_orderby_opt_frame_opt:
                 a.Value = WindowAssemble(W(4), true, L(3) != null, null);
                 break;
-            case "window ::= nm PARTITION BY nexprlist orderby_opt frame_opt":
+            case SqliteGrammar.Rule.window__nm_PARTITION_BY_nexprlist_orderby_opt_frame_opt:
                 a.Value = WindowAssemble(W(5), true, L(4) != null, T(0));
                 break;
-            case "window ::= ORDER BY sortlist frame_opt":
+            case SqliteGrammar.Rule.window__ORDER_BY_sortlist_frame_opt:
                 a.Value = WindowAssemble(W(3), false, true, null);
                 break;
-            case "window ::= nm ORDER BY sortlist frame_opt":
+            case SqliteGrammar.Rule.window__nm_ORDER_BY_sortlist_frame_opt:
                 a.Value = WindowAssemble(W(4), false, true, T(0));
                 break;
-            case "window ::= nm frame_opt":
+            case SqliteGrammar.Rule.window__nm_frame_opt:
                 a.Value = WindowAssemble(W(1), false, false, T(0));
                 break;
-            case "frame_opt ::=":
+            case SqliteGrammar.Rule.frame_opt__empty:
                 a.Value = WindowAlloc(0, TK.UNBOUNDED, TK.CURRENT);
                 break;
-            case "frame_opt ::= range_or_rows frame_bound_s frame_exclude_opt":
+            case SqliteGrammar.Rule.frame_opt__range_or_rows_frame_bound_s_frame_exclude_opt:
                 a.Value = WindowAlloc(I(0), I(1), TK.CURRENT);
                 break;
-            case "frame_opt ::= range_or_rows BETWEEN frame_bound_s AND frame_bound_e frame_exclude_opt":
+            case SqliteGrammar.Rule.frame_opt__range_or_rows_BETWEEN_frame_bound_s_AND_frame_bound_e_frame_exclude_opt:
                 a.Value = WindowAlloc(I(0), I(2), I(4));
                 break;
-            case "range_or_rows ::= RANGE|ROWS|GROUPS":
+            case SqliteGrammar.Rule.range_or_rows__RANGE_or_ROWS_or_GROUPS:
                 a.Int = M(0);
                 break;
-            case "frame_bound_s ::= UNBOUNDED PRECEDING":
-            case "frame_bound_e ::= UNBOUNDED FOLLOWING":
+            case SqliteGrammar.Rule.frame_bound_s__UNBOUNDED_PRECEDING:
+            case SqliteGrammar.Rule.frame_bound_e__UNBOUNDED_FOLLOWING:
                 a.Int = TK.UNBOUNDED;
                 break;
-            case "frame_bound ::= expr PRECEDING|FOLLOWING":
+            case SqliteGrammar.Rule.frame_bound__expr_PRECEDING_or_FOLLOWING:
                 a.Int = M(1);
                 break;
-            case "frame_bound ::= CURRENT ROW":
+            case SqliteGrammar.Rule.frame_bound__CURRENT_ROW:
                 a.Int = TK.CURRENT;
                 break;
-            case "window_clause ::= WINDOW windowdefn_list":
-            case "filter_over ::= filter_clause over_clause":
+            case SqliteGrammar.Rule.window_clause__WINDOW_windowdefn_list:
+            case SqliteGrammar.Rule.filter_over__filter_clause_over_clause:
                 a.Value = _stack[lhs + 1].Value;
                 break;
-            case "filter_over ::= filter_clause":
+            case SqliteGrammar.Rule.filter_over__filter_clause:
                 a.Value = new Window { FilterOnly = true };
                 break;
-            case "over_clause ::= OVER LP window RP":
+            case SqliteGrammar.Rule.over_clause__OVER_LP_window_RP:
                 a.Value = W(2);
                 break;
-            case "over_clause ::= OVER nm":
+            case SqliteGrammar.Rule.over_clause__OVER_nm:
                 a.Value = new Window { Name = Text(T(1)) };
                 break;
-            case "filter_clause ::= FILTER LP WHERE expr RP":
+            case SqliteGrammar.Rule.filter_clause__FILTER_LP_WHERE_expr_RP:
                 a.Value = _stack[lhs + 3].Value;
                 break;
         }

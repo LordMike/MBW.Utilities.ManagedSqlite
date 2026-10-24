@@ -182,7 +182,10 @@ Each check gets parity tests in the corruption suite (`Tests/Corruption_Tests.cs
   `writable_schema` edit asserts how many rows it changed (`SqliteParity.Build(script, edit, rows)`).
 - **Tests in one file look alike.** Each theory fixes the statement shape (e.g.
   `CREATE TABLE t ({columns}) WITHOUT ROWID; INSERT INTO t VALUES {values}`), and its `[InlineData]` rows give only what
-  varies. All CREATE syntax lives in `Tests/SqlCreateTable_Tests.cs`.
+  varies. CREATE TABLE syntax that SQLite accepts lives in `Tests/SqlCreateTable_Tests.cs`; the checks SQLite makes
+  on a CREATE TABLE in `Tests/SqlCreateTableChecks_Tests.cs`, and those on the schema as a whole in
+  `Tests/SqlSchemaChecks_Tests.cs`; whole schemas taken from real applications in
+  `Tests/SqlRealWorldSchemas_Tests.cs`.
 - **A test must add a new syntax or code path.** Don't add rows like "N columns" unless something special happens at N.
 - **One API path per assertion.** Don't test `TryGetX` and `GetX` for the same lookup; keep `Try*` only where its false
   result is the behaviour under test.

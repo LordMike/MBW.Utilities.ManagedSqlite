@@ -39,7 +39,7 @@ class Program
         {
             db = Sqlite3Database.FromPath(path);
 
-            tables = db.GetTables().ToList();
+            tables = db.GetSchema().ToList();
         }
         catch (Exception e)
         {
@@ -74,7 +74,7 @@ class Program
 
         foreach (Sqlite3SchemaRow row in tables)
         {
-            if (row.Type != "table")
+            if (row.Kind is not (Sqlite3SchemaKind.Table or Sqlite3SchemaKind.VirtualTable))
                 continue;
 
             Console.WriteLine($"{row.Type} {row.Name}");
@@ -96,7 +96,7 @@ class Program
                 Console.WriteLine("  Error: Unable to parse SQL");
             }
 
-            List<Sqlite3SchemaRow> indexes = tables.Where(s => s.Type == "index" && s.TableName == row.TableName).ToList();
+            List<Sqlite3SchemaRow> indexes = tables.Where(s => s.Kind == Sqlite3SchemaKind.Index && s.TableName == row.TableName).ToList();
 
             Console.WriteLine($"  Indexes ({indexes.Count})");
             foreach (Sqlite3SchemaRow index in indexes)
