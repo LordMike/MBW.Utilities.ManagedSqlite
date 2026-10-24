@@ -70,6 +70,31 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
     }
 
     /// <summary>
+    /// A schema row's kind is what its statement made as SQLite loads it, and GetTables lists only the tables. The
+    /// last row repeats a name with IF NOT EXISTS, which makes nothing, in SQLite too.
+    /// </summary>
+    [Theory]
+    [InlineData("table", "t", "t", "CREATE TABLE IF NOT EXISTS t (b)")]
+    [InlineData("table", "docs", "docs", "CREATE VIRTUAL TABLE IF NOT EXISTS docs USING fts5(b)")]
+    [InlineData("view", "v", "v", "CREATE VIEW IF NOT EXISTS v AS SELECT 1")]
+    [InlineData("index", "i", "t", "CREATE INDEX IF NOT EXISTS i ON t (a)")]
+    [InlineData("trigger", "tr", "t", "CREATE TRIGGER IF NOT EXISTS tr AFTER INSERT ON t BEGIN SELECT 1; END")]
+    public void SchemaKindIsWhatTheStatementMade(string type, string name, string tableName, string sql)
+    {
+        byte[] data = SqliteParity.Build(@"
+CREATE TABLE t (a UNIQUE);
+CREATE INDEX i ON t (a);
+CREATE VIEW v AS SELECT a FROM t;
+CREATE TRIGGER tr AFTER INSERT ON t BEGIN SELECT 1; END;
+CREATE VIRTUAL TABLE docs USING fts5(a);",
+            $"INSERT INTO sqlite_schema VALUES ('{type}', '{name}', '{tableName}', 0, '{sql}')");
+        SqliteParity.AssertSchemaKindsSameAsSqlite(data);
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+        Assert.Equal(Sqlite3SchemaKind.None, db.GetSchema().Last().Kind);
+    }
+
+    /// <summary>
     /// HDR-30: SQLite never rejects the encoding field. A non-zero field is read by its low two bits, where 0 means
     /// UTF-8, and a field of 0 means the default, UTF-8.
     /// </summary>

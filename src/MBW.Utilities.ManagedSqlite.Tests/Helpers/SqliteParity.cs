@@ -89,7 +89,7 @@ internal static class SqliteParity
 
     private static string DumpWithLibrary(Sqlite3Database db)
     {
-        List<Sqlite3SchemaRow> schema = db.GetTables().ToList();
+        List<Sqlite3SchemaRow> schema = db.GetSchema().ToList();
         return Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
             schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
             schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
@@ -276,6 +276,35 @@ internal static class SqliteParity
     {
         using SqliteConnection connection = Open(data);
         Assert.Throws<SqliteException>(() => Query(connection, $"SELECT * FROM {Name(table)}"));
+    }
+
+    /// <summary>
+    /// Asserts that the schema objects SQLite loads from the database file <paramref name="data"/> are those whose rows
+    /// this library gives a <see cref="Sqlite3SchemaRow.Kind"/>, by name and kind, and its tables those
+    /// <see cref="Sqlite3Database.GetTables"/> lists. SQLite knows tables, virtual tables and views by
+    /// <c>PRAGMA table_list</c> (a shadow table is a table), indexes by <c>PRAGMA index_list</c>, and triggers by their
+    /// sqlite_schema rows, which it rejects when it cannot load them.
+    /// </summary>
+    public static void AssertSchemaKindsSameAsSqlite(byte[] data)
+    {
+        using SqliteConnection connection = Open(data);
+        List<string> objects = Query(connection, @"
+SELECT name, CASE type WHEN 'virtual' THEN 'VirtualTable' WHEN 'view' THEN 'View' ELSE 'Table' END FROM pragma_table_list
+WHERE schema = 'main' AND name <> 'sqlite_schema'
+UNION
+SELECT il.name, 'Index' FROM pragma_table_list tl, pragma_index_list(tl.name) il
+WHERE tl.schema = 'main' AND tl.type IN ('table', 'shadow') AND NOT (tl.wr AND il.origin = 'pk')
+UNION
+SELECT name, 'Trigger' FROM sqlite_schema WHERE type = 'trigger'").Select(o => $"{o[1]} {o[0]}").ToList();
+
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+        List<string> actual = db.GetSchema().Where(s => s.Kind != Sqlite3SchemaKind.None).Select(s => $"{s.Kind} {s.Name}").ToList();
+
+        Assert.Equal(Sorted(objects), Sorted(actual));
+        Assert.Equal(Sorted(objects.Where(o => o.StartsWith("Table ") || o.StartsWith("VirtualTable "))),
+            Sorted(db.GetTables().Select(s => $"{s.Kind} {s.Name}")));
+
+        static string Sorted(IEnumerable<string> lines) => string.Join("\n", lines.OrderBy(s => s, StringComparer.Ordinal));
     }
 
     /// <summary>
