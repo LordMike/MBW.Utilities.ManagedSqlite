@@ -6,7 +6,12 @@
     <Nullable>enable</Nullable>
     <Description>SQLite3 library in managed C# that can read sqlite db files: the binary database, its tables and rows, and the table definitions from the schema's CREATE statements.</Description>
     <PackageTags>sqlite;sqlite3;database;db;reader;read-only;managed;parser;file-format</PackageTags>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
   </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" Visible="false" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Memory" Version="4.6.3" />
