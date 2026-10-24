@@ -7,6 +7,11 @@
     <Description>SQLite3 library in managed C# that can read sqlite db files: the binary database, its tables and rows, and the table definitions from the schema's CREATE statements.</Description>
     <PackageTags>sqlite;sqlite3;database;db;reader;read-only;managed;parser;file-format</PackageTags>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+
+    <!-- Every public type and member needs an XML comment. Directory.Build.props and .editorconfig silence CS1591
+         repo-wide; making it an error here overrides both for this project only. -->
+    <NoWarn>$(NoWarn.Replace('CS1591', ''))</NoWarn>
+    <WarningsAsErrors>$(WarningsAsErrors);CS1591</WarningsAsErrors>
   </PropertyGroup>
 
   <ItemGroup>

@@ -8,6 +8,11 @@ using MBW.Utilities.ManagedSqlite.Core.Objects;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
+/// <summary>
+/// A table of the database, opened with <see cref="Sqlite3Database.GetTable"/> or
+/// <see cref="Sqlite3Database.TryGetTable"/>. Its rows are read with <see cref="EnumerateRows()"/>, and its columns with
+/// <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/>.
+/// </summary>
 public sealed class Sqlite3Table
 {
     private readonly ReaderBase _reader;
@@ -22,6 +27,9 @@ public sealed class Sqlite3Table
 
     private BTreePage? _rootPage;
 
+    /// <summary>
+    /// The table's row in the schema table, <c>sqlite_master</c>
+    /// </summary>
     public Sqlite3SchemaRow SchemaDefinition { get; }
 
     /// <summary>

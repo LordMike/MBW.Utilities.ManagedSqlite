@@ -3,8 +3,16 @@ using System.Diagnostics.CodeAnalysis;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
+/// <summary>
+/// A row of a table, from <see cref="Sqlite3Table.EnumerateRows()"/>. Values are read by their position in the stored
+/// record with <see cref="TryGetOrdinal(ushort, out object?)"/> and <see cref="ColumnData"/>, or by column name with
+/// <see cref="SqlExtensions.TryGetValueByName(Sqlite3Row, string, out object?)"/>.
+/// </summary>
 public sealed class Sqlite3Row
 {
+    /// <summary>
+    /// The table the row was read from
+    /// </summary>
     public Sqlite3Table Table { get; }
 
     /// <summary>
@@ -150,6 +158,15 @@ public sealed class Sqlite3Row
         return value != null;
     }
 
+    /// <summary>
+    /// The value of field <paramref name="index"/> of the record, as <see cref="TryGetOrdinal(ushort, out object?)"/>
+    /// reads it, converted to <typeparamref name="T"/> with <see cref="Convert.ChangeType(object, Type)"/>. False when
+    /// the record has fewer fields, or the value is NULL.
+    /// </summary>
+    /// <exception cref="Exceptions.SqliteCorruptException">The record is malformed up to that field</exception>
+    /// <exception cref="InvalidCastException">The value cannot be converted to <typeparamref name="T"/></exception>
+    /// <exception cref="FormatException">The value is text that does not parse as <typeparamref name="T"/></exception>
+    /// <exception cref="OverflowException">The value is out of the range of <typeparamref name="T"/></exception>
     public bool TryGetOrdinal<T>(ushort index, [MaybeNullWhen(false)] out T value)
     {
         value = default;
