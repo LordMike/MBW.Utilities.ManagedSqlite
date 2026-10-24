@@ -102,6 +102,15 @@ CREATE VIRTUAL TABLE docs USING fts5(title, body);")));
         Assert.Throws<SqliteInvalidEncodingException>(() => Sqlite3Database.FromStreamWithNoJournal(_stream, new Sqlite3Settings { FallbackEncoding = (SqliteEncoding)7 }));
     }
 
+    // So is a Validation that is neither Strict nor Lenient
+    [Fact]
+    public void Validation_UndefinedValueFails()
+    {
+        using Stream stream = new MemoryStream(SqliteParity.Build("CREATE TABLE t (a INTEGER);"));
+        ArgumentOutOfRangeException e = Assert.Throws<ArgumentOutOfRangeException>(() => Sqlite3Database.FromStreamWithNoJournal(stream, new Sqlite3Settings { Validation = (SqliteValidation)7 }));
+        Assert.Equal("settings", e.ParamName);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
