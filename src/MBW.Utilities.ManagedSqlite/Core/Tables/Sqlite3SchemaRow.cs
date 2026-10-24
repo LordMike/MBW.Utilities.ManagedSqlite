@@ -3,6 +3,10 @@ using MBW.Utilities.ManagedSqlite.Sql.Internal.Grammar;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 
+/// <summary>
+/// A row of the schema table, <c>sqlite_master</c>: a table, index, view or trigger, and the statement that created it.
+/// A table's columns are read from its statement with <see cref="SqlExtensions.GetTableDefinition(Sqlite3SchemaRow)"/>.
+/// </summary>
 public sealed class Sqlite3SchemaRow
 {
     internal Sqlite3SchemaRow(Sqlite3Database database, string? type, string name, string? tableName, uint rootPage, string? sql)
@@ -15,6 +19,9 @@ public sealed class Sqlite3SchemaRow
         Sql = sql;
     }
 
+    /// <summary>
+    /// The database the row was read from
+    /// </summary>
     public Sqlite3Database Database { get; }
 
     /// <summary>
@@ -23,6 +30,9 @@ public sealed class Sqlite3SchemaRow
     /// </summary>
     public string? Type { get; }
 
+    /// <summary>
+    /// The name of the table, index, view or trigger, as stored
+    /// </summary>
     public string Name { get; }
 
     /// <summary>
@@ -31,8 +41,15 @@ public sealed class Sqlite3SchemaRow
     /// </summary>
     public string? TableName { get; }
 
+    /// <summary>
+    /// The page number of the root page of the row's b-tree, as stored. It is 0 for a view, a trigger and, usually, a
+    /// virtual table, which have no b-tree.
+    /// </summary>
     public uint RootPage { get; }
 
+    /// <summary>
+    /// The CREATE statement, as stored. It is NULL for an index that a PRIMARY KEY or UNIQUE constraint created.
+    /// </summary>
     public string? Sql { get; }
 
     /// <summary>

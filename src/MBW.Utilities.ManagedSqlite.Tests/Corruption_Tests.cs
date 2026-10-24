@@ -8,7 +8,6 @@ using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Objects.Enums;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
 using MBW.Utilities.ManagedSqlite.Tests.Helpers;
-using MBW.Utilities.ManagedSqlite.Sql;
 using Xunit;
 
 namespace MBW.Utilities.ManagedSqlite.Tests;
@@ -86,7 +85,8 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     }
 
     /// <summary>
-    /// Runs the action with a timeout, and returns the exception it threw, if any
+    /// Runs the action with a timeout, and returns the exception it threw, if any. A
+    /// <see cref="SqliteCorruptException"/> must name the check that failed.
     /// </summary>
     private static Exception RunBounded(Action action)
     {
@@ -99,6 +99,9 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
         }
         catch (AggregateException e)
         {
+            if (e.InnerException is SqliteCorruptException corrupt)
+                Assert.NotNull(corrupt.Check);
+
             return e.InnerException;
         }
 
@@ -345,18 +348,22 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
 
     /// <summary>
     /// Small is a rowid table whose root becomes a leaf index page, and Keyed a WITHOUT ROWID table whose root becomes
-    /// an interior table page. The root page alone can't tell, so GetTableDefinition, which knows the SQL, checks it.
+    /// an interior table page. Opening the table compares the root page with the SQL, in either mode.
     /// </summary>
     [Theory]
-    [InlineData("Small", 0x0A)]
-    [InlineData("Keyed", 0x05)]
-    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType)
+    [InlineData("Small", 0x0A, SqliteValidation.Strict)]
+    [InlineData("Keyed", 0x05, SqliteValidation.Strict)]
+    [InlineData("Small", 0x0A, SqliteValidation.Lenient)]
+    [InlineData("Keyed", 0x05, SqliteValidation.Lenient)]
+    public void PageType_RootDisagreesWithSchemaSql(string table, byte rootType, SqliteValidation validation)
     {
         byte[] data = new DbPatcher(Base).SetPageType(RootPage(table), rootType).Data;
         SqliteParity.AssertSqliteReportsCorrupt(data, table);
 
-        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
-        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table).GetTableDefinition()).Check);
+        List<string> issues = new();
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data), new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) });
+        Assert.Equal("PAGE-18", Assert.Throws<SqliteCorruptException>(() => db.GetTable(table)).Check);
+        Assert.Empty(issues);
     }
 
     // PAGE-03: 249 cells is more than the (512 - 8) / 6 = 84 a page can hold, in either mode. Their pointers would
@@ -385,6 +392,38 @@ INSERT INTO Keyed SELECT printf('key%03d', i), printf('%50d', i) FROM n;";
     // Every interior page has a right-most child
     [Fact]
     public void RightMostPointer_Zero() => AssertCorrupt("right-most pointer", p => p.SetRightMostPointer(DeepRoot, 0), "PAGE-15");
+
+    /// <summary>
+    /// INTEG-14: both of Deep's root pointers lead to its left interior page, so a scan reaches that page's rows twice.
+    /// SQLite returns them twice and finds the damage only in integrity_check. Strict fails at the first repeated rowid.
+    /// Lenient reports it and reads as SQLite does.
+    /// </summary>
+    [Theory]
+    [InlineData(SqliteValidation.Strict)]
+    [InlineData(SqliteValidation.Lenient)]
+    public void SharedSubtree_RowIdsOutOfOrder(SqliteValidation validation)
+    {
+        Func<byte[], byte[]> patch = data => new DbPatcher(data).SetRightMostPointer(DeepRoot, DeepLeft).Data;
+
+        List<string> issues = new List<string>();
+        Sqlite3Settings settings = new Sqlite3Settings { Validation = validation, OnValidationIssue = i => issues.Add(i.Check) };
+        if (validation == SqliteValidation.Strict)
+        {
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(patch(Base)), settings);
+            SqliteCorruptException corrupt = Assert.IsType<SqliteCorruptException>(RunBounded(() => ReadTable(db, "Deep")));
+            Assert.Equal("INTEG-14", corrupt.Check);
+
+            // The first repeated row is the first one of the shared subtree, met again
+            Assert.Equal(DeepFirstLeaf, corrupt.Page);
+            Assert.Empty(issues);
+        }
+        else
+        {
+            SqliteParity.AssertSameAsSqlite(Script, patch, settings);
+            Assert.Contains("INTEG-14", issues);
+            Assert.All(issues, check => Assert.Equal("INTEG-14", check));
+        }
+    }
 
     // SCHEMA-18: SQLite loads a table with rootpage 0, and fails when it is read
     [Fact]
@@ -772,13 +811,13 @@ CREATE VIRTUAL TABLE f USING fts5(c);
     }
 
     /// <summary>
-    /// Deep's left interior page points back to the root. As in SQLite, the depth limit is what stops the cycle: root
-    /// and left page alternate, so the walk gives up at the root's first child pointer.
+    /// Deep's left interior page's first child pointer leads back to the root. As in SQLite, the depth limit is what
+    /// stops the cycle: root and left page alternate before any leaf, so the walk gives up after 20 levels.
     /// </summary>
     [Fact]
     public void Corruption_OtherTablesStillReadLikeSqlite()
     {
-        byte[] data = new DbPatcher(Base).SetRightMostPointer(DeepLeft, DeepRoot).Data;
+        byte[] data = new DbPatcher(Base).SetChildPointer(DeepLeft, 0, DeepRoot).Data;
 
         Exception ex = RunBounded(() =>
         {

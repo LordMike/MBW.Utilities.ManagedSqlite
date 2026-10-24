@@ -22,7 +22,7 @@ Before reading, the pager also handles the side files:
 - A hot rollback journal makes a read-only connection fail with SQLITE_READONLY_ROLLBACK.
 - A `-wal` file, if one exists, is always opened, whatever the header says, and its committed frames override pages of the main file.
 
-Our library takes a `Stream`, so it cannot see `-journal`/`-wal` files at all. It also does not look at the header's WAL flag.
+The reader reads both: `FromPath` opens a `-journal` and a `-wal` file next to the database, and `FromStreamWithJournal` and `FromStreamWithWal` take them as streams (see [WALJ.md](WALJ.md)).
 
 ## 2. Checks
 
@@ -80,19 +80,9 @@ Reactions: NOTADB = SQLITE_NOTADB "file is not a database"; CORRUPT = SQLITE_COR
 - `assert(0==PTRMAP_ISPAGE(pBt, PENDING_BYTE_PAGE(pBt)))` at btree.c:1071.
 - `assert(offset <= usableSize-5)` in ptrmapGet at 1140.
 
-## 3. Most important gaps
+## 3. Open gaps
 
 **SQLite rejects, we accept:**
-1. **WAL content is ignored silently (HDR-37/07).** A database with an uncheckpointed `-wal` reads as stale or empty. Verified: 0 rows where SQLite returns 100. The `Stream` API cannot fix this, but when header bytes 18/19 == 2 we could at least report it, or offer an opt-in "WAL ignored" mode.
-2. **In-header page count (HDR-13/14/15).** `PageCount = Max(file, header)` skips SQLite's rule (trust the header only when the change counter equals version-valid-for; CORRUPT if it exceeds the file; pages above it are out of range). Verified both directions: header > file and header < file are both CORRUPT in SQLite, and we accept both.
-3. **Read version > 2 (HDR-05) and payload fractions ≠ 64/32/32 (HDR-08)** are NOTADB in SQLite; we do not check them.
-4. **Schema format > 4 (HDR-24):** "unsupported file format" in SQLite, accepted by us. Use the `(u8)` truncation; 0 → 1.
-5. **Autovacuum ptrmap entry type (HDR-28):** CORRUPT in SQLite when skipping overflow pages; we never read the ptrmap.
-6. **Lock-byte page (HDR-20):** CORRUPT in SQLite for files over 1 GiB; we do not check it.
-
-**We reject, SQLite accepts:**
-1. **Text encoding outside 1..3 (HDR-30).** SQLite uses `enc & 3`, with 0 → UTF-8; it never errors. We throw `SqliteInvalidEncodingException` for 0, 4, 5, 257 and others. Encoding 0 is plausible in practice.
-2. **0-byte file (HDR-01).** An empty database in SQLite (empty schema); corrupt for us. There is a test asserting our current behaviour.
-3. **Partial last page (HDR-17).** SQLite zero-fills it and reads on; we throw "file length". This is a policy question, because SQLite returns silently damaged data here.
-
-**Not applicable to a `Stream` reader, but worth documenting:** a hot journal makes SQLite refuse a read-only open (SQLITE_READONLY_ROLLBACK, HDR-36). We read the possibly half-written file.
+1. **Autovacuum ptrmap entry type (HDR-28).** SQLite fails a column read that skips whole overflow pages when the
+   ptrmap entry it looks up has a type outside 1..5. The reader follows each overflow page's own next pointer and never
+   reads the ptrmap, so it reads such a file.
