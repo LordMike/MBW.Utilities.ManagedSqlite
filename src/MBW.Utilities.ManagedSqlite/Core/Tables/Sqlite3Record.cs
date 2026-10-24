@@ -117,21 +117,31 @@ internal struct Sqlite3Record
     }
 
     /// <summary>
-    /// A record of <paramref name="length"/> bytes, whose first bytes are <paramref name="local"/> and whose rest is on
-    /// the overflow chain that starts at <paramref name="overflowPage"/>
+    /// The array that the rows of one enumeration read their overflow pages into, allocated by the first page read
     /// </summary>
-    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage) : this(page, local)
+    internal sealed class OverflowBuffer
+    {
+        public byte[]? Data;
+    }
+
+    /// <summary>
+    /// A record of <paramref name="length"/> bytes, whose first bytes are <paramref name="local"/> and whose rest is on
+    /// the overflow chain that starts at <paramref name="overflowPage"/>, read into <paramref name="buffer"/>
+    /// </summary>
+    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage, OverflowBuffer buffer)
+        : this(page, local)
     {
         _length = length;
-        _overflow = new OverflowChain(local.Count, overflowPage);
+        _overflow = new OverflowChain(local.Count, overflowPage, buffer);
     }
 
     /// <summary>
     /// A record of <paramref name="length"/> bytes that overflows, as above, whose field table is
     /// <paramref name="shared"/>'s, which this record now owns
     /// </summary>
-    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage, SharedFields shared)
-        : this(page, local, length, overflowPage)
+    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage, OverflowBuffer buffer,
+        SharedFields shared)
+        : this(page, local, length, overflowPage, buffer)
     {
         _shared = shared;
         _sharedRow = ++shared.Row;
@@ -716,8 +726,8 @@ internal struct Sqlite3Record
         private int _known;
 
         /// <summary>
-        /// The last page read, and its index in the chain. It is in the reader's page buffer, so it is valid only until
-        /// the next page read, and is forgotten by <see cref="BeginRead"/>.
+        /// The last page read, and its index in the chain. It is in the enumeration's overflow buffer, so it is valid only
+        /// until the next page read, and is forgotten by <see cref="BeginRead"/>.
         /// </summary>
         private int _readIndex = -1;
 
@@ -733,20 +743,24 @@ internal struct Sqlite3Record
         /// </summary>
         public byte[]? Scratch;
 
-        public OverflowChain(int local, uint first)
+        private readonly OverflowBuffer _buffer;
+
+        public OverflowChain(int local, uint first, OverflowBuffer buffer)
         {
             Local = local;
             _first = first;
+            _buffer = buffer;
         }
 
         /// <summary>
-        /// Called as a value is read: pages may have been read into the reader's page buffer since the last one
+        /// Called as a value is read: other rows of the enumeration may have read pages into its overflow buffer since the
+        /// last one
         /// </summary>
         public void BeginRead() => _readIndex = -1;
 
         /// <summary>
-        /// Page <paramref name="index"/> of the chain, read into the reader's page buffer, following the next pointers
-        /// of the pages before it that are not yet known
+        /// Page <paramref name="index"/> of the chain, read into the enumeration's overflow buffer, following the next
+        /// pointers of the pages before it that are not yet known
         /// </summary>
         public byte[] ReadPage(int index, Sqlite3Row row, in Sqlite3Record record)
         {
@@ -784,7 +798,9 @@ internal struct Sqlite3Record
                 index == 0 ? record._page : _pages[index - 1], "overflow chain");
 
             // Each page is read through the reader, so a page the WAL or a journal holds is read from there
-            byte[] data = row.Table.Reader.ReadPage(page);
+            ReaderBase reader = row.Table.Reader;
+            byte[] data = _buffer.Data ??= new byte[reader.PageSize];
+            reader.ReadPage(page, data);
             _readIndex = index;
             _readData = data;
 

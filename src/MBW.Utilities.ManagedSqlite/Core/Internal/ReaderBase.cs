@@ -31,11 +31,6 @@ internal sealed class ReaderBase : IDisposable
     private readonly Encoding _encoding;
 
     /// <summary>
-    /// The buffer <see cref="ReadPage(uint)"/> reads into, for pages that are done with before the next is read
-    /// </summary>
-    private byte[]? _pageBuffer;
-
-    /// <summary>
     /// Set once Lenient has reported the partial last page (HDR-17), so it is reported once, not on every read of it
     /// </summary>
     private bool _partialPageReported;
@@ -401,27 +396,6 @@ internal sealed class ReaderBase : IDisposable
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/pager.c#L3858 (lckPgno = PENDING_BYTE/pageSize + 1)
         Checks.Strict(page != _lockBytePage, "HDR-20", $"page {page} is the lock-byte page, which holds no data", page, "page number");
     }
-
-    /// <summary>
-    /// Reads a whole page into a buffer owned by this reader. The buffer is overwritten by the next call, so callers
-    /// must be done with it before reading another page.
-    /// </summary>
-    internal byte[] ReadPage(uint page)
-    {
-        ReadPage(page, PageBuffer);
-        return PageBuffer;
-    }
-
-    /// <summary>
-    /// The buffer <see cref="ReadPage(uint)"/> reads into. Other readers of short-lived pages may read into it too, on
-    /// the same terms.
-    /// </summary>
-    internal byte[] PageBuffer => _pageBuffer ??= new byte[PageSize];
-
-    /// <summary>
-    /// True when <paramref name="data"/> is <see cref="PageBuffer"/>, which is then overwritten by the next page read
-    /// </summary>
-    internal bool IsPageBuffer(byte[] data) => data == _pageBuffer;
 
     /// <summary>
     /// Reads a whole page into <paramref name="buffer"/>, which holds at least <see cref="PageSize"/> bytes
