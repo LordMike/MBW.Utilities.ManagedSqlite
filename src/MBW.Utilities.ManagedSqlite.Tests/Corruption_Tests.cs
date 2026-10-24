@@ -826,7 +826,7 @@ INSERT INTO t (c0, c33) VALUES (1, printf('%.*c', 500, 'v'));"));
         SqliteParity.AssertSqliteReportsCorrupt(p.Data, "t");
 
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(p.Data));
-        Assert.Equal(2u, db.GetTable("t").SchemaDefinition.RootPage);
+        Assert.Equal(2u, db.GetTable("t").SchemaRow.RootPage);
         Sqlite3Row row = db.GetTable("t").EnumerateRows().Single();
 
         long before = GC.GetAllocatedBytesForCurrentThread();
