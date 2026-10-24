@@ -80,12 +80,12 @@ internal sealed partial class SchemaParser
         // the end of the type; they are dropped from a type of 16 or more characters
         int typeStart = type.Start;
         int typeLength = type.Length;
-        if (typeLength >= 16 && AsciiCaseInsensitiveComparer.Instance.Equals(_sql.Substring(typeStart + typeLength - 6, 6), "always"))
+        if (typeLength >= 16 && AsciiCaseInsensitiveComparer.Equals(_sql, typeStart + typeLength - 6, 6, "always"))
         {
             typeLength -= 6;
             while (typeLength > 0 && IsSpace(_sql[typeStart + typeLength - 1]))
                 typeLength--;
-            if (typeLength >= 9 && AsciiCaseInsensitiveComparer.Instance.Equals(_sql.Substring(typeStart + typeLength - 9, 9), "generated"))
+            if (typeLength >= 9 && AsciiCaseInsensitiveComparer.Equals(_sql, typeStart + typeLength - 9, 9, "generated"))
             {
                 typeLength -= 9;
                 while (typeLength > 0 && IsSpace(_sql[typeStart + typeLength - 1]))
@@ -101,8 +101,7 @@ internal sealed partial class SchemaParser
             DequoteToken(ref typeStart, ref typeLength);
             for (int i = 0; i < StandardTypes.Length; i++)
             {
-                if (typeLength == StandardTypes[i].Name.Length &&
-                    AsciiCaseInsensitiveComparer.Instance.Equals(_sql.Substring(typeStart, typeLength), StandardTypes[i].Name))
+                if (AsciiCaseInsensitiveComparer.Equals(_sql, typeStart, typeLength, StandardTypes[i].Name))
                 {
                     typeLength = 0;
                     standardType = i + 1;
