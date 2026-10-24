@@ -1,4 +1,5 @@
 using System.IO;
+using System.Threading;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;
@@ -11,7 +12,7 @@ internal sealed class StreamFileView : IFileView
 {
     private readonly Stream _stream;
     private readonly bool _leaveOpen;
-    private readonly object _lock = new object();
+    private readonly Lock _lock = new Lock();
 
     public long Length { get; }
 
