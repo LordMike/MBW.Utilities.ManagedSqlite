@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using MBW.Utilities.ManagedSqlite.Core;
-using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Sql;
