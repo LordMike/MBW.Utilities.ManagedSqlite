@@ -416,6 +416,7 @@ internal static class SqliteParity
         int index = 0;
         foreach (Sqlite3Row row in table.EnumerateRows(shareRowBuffers: true))
         {
+            Assert.True(index < rows.Count, "the rows that share a field table outnumber the others");
             Assert.Equal(rows[index++].Item2, stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray());
             AssertTypedReadsSameAsValues(row, stored, definition.RowIdColumn?.Name);
         }

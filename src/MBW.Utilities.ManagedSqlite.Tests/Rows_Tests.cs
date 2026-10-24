@@ -157,6 +157,7 @@ INSERT INTO tbl VALUES (1, 'one'), (2, 'two'), (3, 'three');")));
             rows.Add(row);
         }
 
+        Assert.Throws<InvalidOperationException>(() => rows[0].TryGetInt64(0, out _));
         Assert.Throws<InvalidOperationException>(() => rows[0].TryGetOrdinal(1, out _));
         Assert.Throws<InvalidOperationException>(() => rows[0].ColumnData);
         Assert.Equal(new object[] { 2L, "two" }, rows[1].ColumnData);

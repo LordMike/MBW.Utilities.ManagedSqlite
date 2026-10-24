@@ -71,9 +71,10 @@ public sealed class Sqlite3Table
     /// <remarks>
     /// <para>
     /// A row finds its values through a table of the record's fields, which it builds on its first read. Normally each
-    /// row allocates its own: 8 bytes for each column, about 100 bytes per row for a 10 column table. With
-    /// <paramref name="shareRowBuffers"/> the rows of one enumeration take turns with a single table, which each new
-    /// row takes over. The table grows to the widest record, and is not freed until the enumeration is.
+    /// row allocates its own: at least 8 bytes for each column (16 for a long TEXT or BLOB), about 100 bytes per row
+    /// for a 10 column table. With <paramref name="shareRowBuffers"/> the rows of one enumeration take turns with a
+    /// single table, which each new row takes over. The table grows to the widest record, and lives as long as the
+    /// enumeration, or any row that read a field from it.
     /// </para>
     /// <para>
     /// The cost is that a row is only readable while it is the latest one. Once the enumeration moves on, every read of
