@@ -12,11 +12,15 @@ public static class SqlExtensions
 {
     private const string SqlCacheKey = "SqlCache";
 
+    /// <exception cref="ArgumentNullException"><paramref name="schema"/> is null</exception>
     /// <exception cref="InvalidOperationException">The row is not a table (a view, index or trigger)</exception>
     /// <exception cref="NotSupportedException">The row is a virtual table</exception>
     /// <exception cref="SqliteCorruptException">In Lenient, the row failed to load</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3SchemaRow schema)
     {
+        if (schema == null)
+            throw new ArgumentNullException(nameof(schema));
+
         // Only a table has a table definition, so asking for one elsewhere is the caller's error, not damage. The row's
         // statement decides, as in SQLite; Strict has made sure the type agrees (SCHEMA-26).
         if (schema.Error != null)
@@ -38,10 +42,14 @@ public static class SqlExtensions
         return definition;
     }
 
+    /// <exception cref="ArgumentNullException"><paramref name="table"/> is null</exception>
     /// <exception cref="SqliteCorruptException">The SQL declares the table WITHOUT ROWID and its root page is a table
     /// b-tree page, or the other way around</exception>
     public static SqlTableDefinition GetTableDefinition(this Sqlite3Table table)
     {
+        if (table == null)
+            throw new ArgumentNullException(nameof(table));
+
         // A definition that was read without error reads the same again: the schema and the checks below don't change
         if (table.SqlDefinition != null)
             return table.SqlDefinition;
@@ -61,8 +69,14 @@ public static class SqlExtensions
         return definition;
     }
 
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> or <paramref name="columnName"/> is null</exception>
     public static bool TryGetValueByName(this Sqlite3Row row, string columnName, out object? value)
     {
+        if (row == null)
+            throw new ArgumentNullException(nameof(row));
+        if (columnName == null)
+            throw new ArgumentNullException(nameof(columnName));
+
         value = null;
 
         SqlTableDefinition tableDefinition = row.Table.GetTableDefinition();
@@ -106,8 +120,14 @@ public static class SqlExtensions
         return true;
     }
 
+    /// <exception cref="ArgumentNullException"><paramref name="row"/> or <paramref name="columnName"/> is null</exception>
     public static bool TryGetValueByName<T>(this Sqlite3Row row, string columnName, [MaybeNullWhen(false)] out T value)
     {
+        if (row == null)
+            throw new ArgumentNullException(nameof(row));
+        if (columnName == null)
+            throw new ArgumentNullException(nameof(columnName));
+
         value = default;
 
         if (!row.TryGetValueByName(columnName, out object? tmp))

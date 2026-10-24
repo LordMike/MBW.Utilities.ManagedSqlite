@@ -84,6 +84,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentException"><paramref name="database"/> is not readable, or is not seekable</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithNoJournal(Stream database, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
         return FromStreams(database, null, null, settings, leaveOpen);
@@ -109,6 +110,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentException">A stream is not readable, or is not seekable</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt, the WAL has an unknown format version, or (in Strict) its page size differs from the database's</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithWal(Stream database, Stream wal, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
         if (wal == null)
@@ -140,6 +142,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="ArgumentException">A stream is not readable, or is not seekable</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromStreamWithJournal(Stream database, Stream journal, Sqlite3Settings? settings = null, bool leaveOpen = false)
     {
         if (journal == null)
@@ -164,6 +167,7 @@ public sealed class Sqlite3Database : IDisposable
     /// <exception cref="IOException">A file could not be opened</exception>
     /// <exception cref="SqliteCorruptException">The database is corrupt, the WAL has an unknown format version, or (in Strict) its page size differs from the database's</exception>
     /// <exception cref="SqliteInvalidEncodingException">The settings' fallback encoding is not a text encoding</exception>
+    /// <exception cref="ArgumentOutOfRangeException">The settings' validation is not Strict or Lenient</exception>
     public static Sqlite3Database FromPath(string path, Sqlite3Settings? settings = null)
     {
         if (path == null)
@@ -215,6 +219,10 @@ public sealed class Sqlite3Database : IDisposable
                 CheckStream(journal, nameof(journal));
             if (wal != null)
                 CheckStream(wal, nameof(wal));
+
+            // A caller error, checked here so the open does not report it as damage
+            if (settings != null && settings.Validation is not (SqliteValidation.Strict or SqliteValidation.Lenient))
+                throw new ArgumentOutOfRangeException(nameof(settings), settings.Validation, "Validation must be Strict or Lenient");
 
             main = new StreamFileView(database, leaveOpen);
             journalView = journal != null ? new StreamFileView(journal, leaveOpen) : null;

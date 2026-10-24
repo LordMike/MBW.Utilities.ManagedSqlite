@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics.CodeAnalysis;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
@@ -43,8 +44,12 @@ public sealed class SqlTableDefinition
         RowIdColumn = column;
     }
 
+    /// <exception cref="ArgumentNullException"><paramref name="name"/> is null</exception>
     public bool TryGetColumn(string name, [NotNullWhen(true)] out SqlTableColumn? column)
     {
+        if (name == null)
+            throw new ArgumentNullException(nameof(name));
+
         return _columnIndex.TryGetValue(name, out column);
     }
 }
