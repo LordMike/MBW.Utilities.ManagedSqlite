@@ -453,7 +453,7 @@ SELECT name, 'Trigger' FROM sqlite_schema WHERE type = 'trigger'").Select(o => $
             {
                 object[] values = stored.Select(c => row.TryGetValueByName(c, out object value) ? value : null).ToArray();
                 AssertTypedReadsSameAsValues(row, stored, definition.RowIdColumn?.Name);
-                return (table.IsWithoutRowId ? null : (long?)row.RowId, values);
+                return (row.HasRowId ? row.RowId : (long?)null, values);
             })
             .ToList();
 
