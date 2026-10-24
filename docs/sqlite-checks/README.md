@@ -12,7 +12,7 @@ a stable ID (such as `PAGE-21`) that the code, its comments, `SqliteCorruptExcep
 | REC | [REC.md](REC.md) | Records: header, serial types, values |
 | SCHEMA | [SCHEMA.md](SCHEMA.md) | `sqlite_schema` rows |
 | DDL | [DDL.md](DDL.md) | CREATE statements in the schema |
-| INTEG | [INTEG.md](INTEG.md) | Checks only `PRAGMA integrity_check` makes, which do not belong on the read path |
+| INTEG | [INTEG.md](INTEG.md) | Checks only `PRAGMA integrity_check` makes, which do not belong on the read path, except INTEG-14 |
 | WALJ | [WALJ.md](WALJ.md) | WAL and rollback journal checks, for the WAL and journal work |
 
 The area tables list SQLite 3.53.4's checks. Their *Ours* column is not kept current: the tables below say what the
