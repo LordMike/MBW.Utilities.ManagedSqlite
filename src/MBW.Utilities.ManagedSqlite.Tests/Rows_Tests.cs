@@ -352,4 +352,28 @@ INSERT INTO tbl SELECT x, printf('%.*c%d', 1500, 'v', x), 1000 + x, x + 0.5 FROM
 
         Assert.Equal(5, x);
     }
+
+    /// <summary>
+    /// A row keeps the overflow page it read last, for its next value on that page, only while no other page was read
+    /// into the reader's shared page buffer: two kept rows that take turns reading the INTEGER and REAL on their last
+    /// overflow pages each read their own
+    /// </summary>
+    [Fact]
+    public void InterleavedReadsOfKeptRowsReadTheirOwnOverflowPages()
+    {
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(SqliteParity.Build(@"
+PRAGMA page_size = 512;
+CREATE TABLE tbl (Id INTEGER PRIMARY KEY, Value TEXT, Number INTEGER, Real REAL);
+WITH RECURSIVE seq(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM seq WHERE x < 2)
+INSERT INTO tbl SELECT x, printf('%.*c%d', 1500, 'v', x), 1000 + x, x + 0.5 FROM seq;")));
+
+        List<Sqlite3Row> rows = db.GetTable("tbl").EnumerateRows().ToList();
+
+        Assert.True(rows[0].TryGetInt64(2, out long first));
+        Assert.True(rows[1].TryGetInt64(2, out long second));
+        Assert.True(rows[0].TryGetDouble(3, out double firstReal));
+        Assert.True(rows[1].TryGetDouble(3, out double secondReal));
+
+        Assert.Equal(new object[] { 1001L, 1002L, 1.5, 2.5 }, new object[] { first, second, firstReal, secondReal });
+    }
 }
