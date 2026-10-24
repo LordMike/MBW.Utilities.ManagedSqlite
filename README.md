@@ -105,6 +105,7 @@ The library assumes nothing else uses the files while a database is open:
 ## Notes
 
 * `GetTableDefinition()` also works on a `Sqlite3SchemaRow` from `GetTables()`, so a table's columns can be read without opening the table. It throws as described under [Errors](#errors).
+* Threads: an open database can be used from several threads at once. Each stream is read under a lock, so nothing else may read or move the streams while the database is open. An enumeration, and the rows it returns, belong to the thread that runs it. In Lenient, `OnValidationIssue` is called on the reading thread.
 
 ## Known limitations
 

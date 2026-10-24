@@ -18,7 +18,7 @@ internal sealed partial class SchemaParser
     /// A parser stack entry, yyStackEntry in parse.c. A symbol's value is its token, an object (an Expr, ExprList,
     /// Select or Window) or an int, as its %type in parse.y says.
     /// </summary>
-    private struct StackEntry
+    internal struct StackEntry
     {
         public int State;
         public int Major;
@@ -38,16 +38,10 @@ internal sealed partial class SchemaParser
     private readonly Sqlite3Settings _settings;
 
     /// <summary>
-    /// The parser stack, taken from <see cref="_spareStack"/> for the length of <see cref="Run"/>
+    /// The parser stack, taken from the catalog's <see cref="SchemaCatalog.ParserStack"/> for the length of
+    /// <see cref="Run"/>
     /// </summary>
     private StackEntry[] _stack = null!;
-
-    /// <summary>
-    /// The stack of the last parse on this thread, cleared, so parsing a schema's statements one after the other does
-    /// not allocate a stack for each. A parse inside a parse finds none and makes its own.
-    /// </summary>
-    [ThreadStatic]
-    private static StackEntry[]? _spareStack;
     private int _top;
 
     /// <summary>
@@ -132,8 +126,10 @@ internal sealed partial class SchemaParser
     /// </summary>
     private void Run()
     {
-        _stack = _spareStack ?? new StackEntry[50];
-        _spareStack = null;
+        _stack = _catalog?.ParserStack ?? new StackEntry[50];
+        if (_catalog != null)
+            _catalog.ParserStack = null;
+
         try
         {
             RunParser();
@@ -142,7 +138,8 @@ internal sealed partial class SchemaParser
         {
             // Drop the values the stack refers to, so the spare keeps nothing alive
             Array.Clear(_stack, 0, _stack.Length);
-            _spareStack = _stack;
+            if (_catalog != null)
+                _catalog.ParserStack = _stack;
         }
     }
 

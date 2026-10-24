@@ -1,5 +1,5 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Threading;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 using MBW.Utilities.ManagedSqlite.Sql;
@@ -15,8 +15,6 @@ namespace MBW.Utilities.ManagedSqlite.Core.Tables;
 /// </summary>
 public static class SqlExtensions
 {
-    private const string SqlCacheKey = "SqlCache";
-
     /// <summary>
     /// The columns of the table that the row's CREATE TABLE statement made. The statement was parsed when the database
     /// was opened.
@@ -42,12 +40,14 @@ public static class SqlExtensions
         if (schema.IsVirtual)
             throw new NotSupportedException($"'{schema.Name}' is a virtual table, whose columns its module declares");
 
-        // The table was parsed when the schema was loaded
-        Dictionary<Sqlite3SchemaRow, SqlTableDefinition> definitionCache = schema.Database.GetProperty(SqlCacheKey, () => new Dictionary<Sqlite3SchemaRow, SqlTableDefinition>());
-        if (!definitionCache.TryGetValue(schema, out SqlTableDefinition? definition))
-            definitionCache[schema] = definition = SqlParser.Build(schema.Table!, schema.Database.TextEncoding);
+        // The table was parsed when the schema was loaded, and its definition is built on first use. Threads that ask at
+        // once may each build one; the first stored is the one they all return.
+        SqlTableDefinition? definition = Volatile.Read(ref schema.Definition);
+        if (definition != null)
+            return definition;
 
-        return definition;
+        definition = SqlParser.Build(schema.Table!, schema.Database.TextEncoding);
+        return Interlocked.CompareExchange(ref schema.Definition, definition, null) ?? definition;
     }
 
     /// <summary>
@@ -59,14 +59,9 @@ public static class SqlExtensions
     {
         ArgumentNullException.ThrowIfNull(table);
 
-        // The table's root page was checked against its SQL (PAGE-18) when the table was opened
-        if (table.SqlDefinition != null)
-            return table.SqlDefinition;
-
-        SqlTableDefinition definition = table.SchemaRow.GetTableDefinition();
-
-        table.SqlDefinition = definition;
-        return definition;
+        // The table's root page was checked against its SQL (PAGE-18) when the table was opened. A definition is stored
+        // only once the row's checks passed, so reading values by name takes the stored one without checking again.
+        return Volatile.Read(ref table.SchemaRow.Definition) ?? table.SchemaRow.GetTableDefinition();
     }
 
     /// <summary>

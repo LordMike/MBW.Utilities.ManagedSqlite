@@ -20,12 +20,10 @@ public sealed class Sqlite3Table
     internal ReaderBase Reader => _reader;
 
     /// <summary>
-    /// The table's definition, kept once <see cref="SqlExtensions.GetTableDefinition(Sqlite3Table)"/> read it
-    /// without error, so reading values by name does not look it up for each value
+    /// The root page, read when the table is opened into an array that the table keeps, so a table that fits on its root
+    /// page reads its rows without reading or allocating a page again
     /// </summary>
-    internal Sql.SqlTableDefinition? SqlDefinition { get; set; }
-
-    private BTreePage? _rootPage;
+    private readonly BTreePage _rootPage;
 
     /// <summary>
     /// The table's row in the schema table, <c>sqlite_master</c>
@@ -40,24 +38,15 @@ public sealed class Sqlite3Table
     public bool IsWithoutRowId { get; }
 
     /// <param name="reader"></param>
-    /// <param name="rootPage">The root page, parsed when the table is opened, so it can be checked then. When it is in the
-    /// reader's page buffer, the table reads it again, into an array of its own, when its rows are first read.</param>
+    /// <param name="rootPage">The root page, parsed when the table is opened, so it can be checked then</param>
     /// <param name="table"></param>
     internal Sqlite3Table(ReaderBase reader, BTreePage rootPage, Sqlite3SchemaRow table)
     {
         SchemaRow = table;
         _reader = reader;
         IsWithoutRowId = rootPage is BTreeIndexPage;
-
-        if (!reader.IsPageBuffer(rootPage.Data))
-            _rootPage = rootPage;
+        _rootPage = rootPage;
     }
-
-    /// <summary>
-    /// The root page, read once into an array that the table keeps, so a table that fits on its root page reads its
-    /// rows without reading or allocating a page again
-    /// </summary>
-    private BTreePage RootPage => _rootPage ??= BTreePage.Parse(_reader, SchemaRow.RootPage);
 
     /// <summary>
     /// Enumerates the table's rows in the order SQLite stores them: rowid order, or primary key order for a WITHOUT
@@ -109,11 +98,12 @@ public sealed class Sqlite3Table
     {
         // Created inside the iterator, so each enumeration has its own field table
         Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+        Sqlite3Record.OverflowBuffer? overflow = null;
 
         bool first = true;
         long previous = 0;
 
-        foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(RootPage))
+        foreach (BTreeLeafTablePage leaf in BTreeTools.WalkTableBTreeLeaves(_rootPage))
         {
             for (int i = 0; i < leaf.CellCount; i++)
             {
@@ -133,7 +123,7 @@ public sealed class Sqlite3Table
                 first = false;
                 previous = rowId;
 
-                yield return new Sqlite3Row(this, rowId, ReadRecord(leaf, rowId, cell, shared));
+                yield return new Sqlite3Row(this, rowId, ReadRecord(leaf, rowId, cell, shared, ref overflow));
             }
         }
     }
@@ -147,14 +137,15 @@ public sealed class Sqlite3Table
     {
         // Created inside the iterator, so each enumeration has its own field table
         Sqlite3Record.SharedFields? shared = shareRowBuffers ? new Sqlite3Record.SharedFields() : null;
+        Sqlite3Record.OverflowBuffer? overflow = null;
 
-        foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)RootPage))
+        foreach (KeyValuePair<BTreeIndexPage, int> entry in BTreeTools.WalkIndexBTreeCells((BTreeIndexPage)_rootPage))
         {
             BTreeIndexPage page = entry.Key;
             BTreePage.PayloadCell cell = page.GetCell(entry.Value);
 
             // There is no rowid
-            yield return new Sqlite3Row(this, 0, ReadRecord(page, null, cell, shared));
+            yield return new Sqlite3Row(this, 0, ReadRecord(page, null, cell, shared, ref overflow));
         }
     }
 
@@ -168,8 +159,10 @@ public sealed class Sqlite3Table
     /// which the row then keeps alive. A payload that overflows keeps the first overflow page's number, and the record
     /// reads the overflow pages only for a value, or a header, that lies past the local bytes, as SQLite does.
     /// <paramref name="rowId"/> names the row in error messages, and is null in a WITHOUT ROWID table.
+    /// <paramref name="overflow"/> is the enumeration's array for overflow pages, created for its first overflowing row.
     /// </summary>
-    private Sqlite3Record ReadRecord(BTreePage page, long? rowId, BTreePage.PayloadCell cell, Sqlite3Record.SharedFields? shared)
+    private Sqlite3Record ReadRecord(BTreePage page, long? rowId, BTreePage.PayloadCell cell, Sqlite3Record.SharedFields? shared,
+        ref Sqlite3Record.OverflowBuffer? overflow)
     {
         string structure = page is BTreeIndexPage { IsLeaf: false } ? "b-tree interior cell" : "b-tree leaf cell";
         long usableSize = (long)_reader.PageSize - _reader.ReservedSpace;
@@ -225,9 +218,10 @@ public sealed class Sqlite3Table
         uint overflowPage = ByteArrayReader.ReadUInt32(page.Data, (int)_reader.PageSize, ref pointerPos);
 
         ArraySegment<byte> local = new ArraySegment<byte>(page.Data, (int)cell.PayloadOffset, (int)cell.DataSizeInCell);
+        overflow ??= new Sqlite3Record.OverflowBuffer();
         return shared == null
-            ? new Sqlite3Record(page.Page, local, payloadSize, overflowPage)
-            : new Sqlite3Record(page.Page, local, payloadSize, overflowPage, shared);
+            ? new Sqlite3Record(page.Page, local, payloadSize, overflowPage, overflow)
+            : new Sqlite3Record(page.Page, local, payloadSize, overflowPage, overflow, shared);
     }
 
     private static string RowName(long? rowId) => rowId.HasValue ? $"row {rowId.Value}" : "a WITHOUT ROWID row";
