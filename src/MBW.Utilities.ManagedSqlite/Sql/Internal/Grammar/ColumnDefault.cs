@@ -284,7 +284,7 @@ internal static class ColumnDefault
             return ix;
 
         ix = RealToI64(real);
-        return RealSameAsInt(real, ix) ? ix : real;
+        return RealSameAsInt(real, ix) ? (object)ix : real;
     }
 
     /// <summary>
