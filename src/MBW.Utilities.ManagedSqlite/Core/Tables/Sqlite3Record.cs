@@ -117,21 +117,37 @@ internal struct Sqlite3Record
     }
 
     /// <summary>
-    /// A record of <paramref name="length"/> bytes, whose first bytes are <paramref name="local"/> and whose rest is on
-    /// the overflow chain that starts at <paramref name="overflowPage"/>
+    /// The array that the rows of one enumeration read their overflow pages into, allocated by the first page read
     /// </summary>
-    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage) : this(page, local)
+    internal sealed class OverflowBuffer
+    {
+        public byte[]? Data;
+
+        /// <summary>
+        /// Counts the reads into <see cref="Data"/>, so a row that read a page into it can tell whether it still holds
+        /// that page: it does while the count is the one it saw after its read
+        /// </summary>
+        public long Generation;
+    }
+
+    /// <summary>
+    /// A record of <paramref name="length"/> bytes, whose first bytes are <paramref name="local"/> and whose rest is on
+    /// the overflow chain that starts at <paramref name="overflowPage"/>, read into <paramref name="buffer"/>
+    /// </summary>
+    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage, OverflowBuffer buffer)
+        : this(page, local)
     {
         _length = length;
-        _overflow = new OverflowChain(local.Count, overflowPage);
+        _overflow = new OverflowChain(local.Count, overflowPage, buffer);
     }
 
     /// <summary>
     /// A record of <paramref name="length"/> bytes that overflows, as above, whose field table is
     /// <paramref name="shared"/>'s, which this record now owns
     /// </summary>
-    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage, SharedFields shared)
-        : this(page, local, length, overflowPage)
+    public Sqlite3Record(uint page, ArraySegment<byte> local, int length, uint overflowPage, OverflowBuffer buffer,
+        SharedFields shared)
+        : this(page, local, length, overflowPage, buffer)
     {
         _shared = shared;
         _sharedRow = ++shared.Row;
@@ -709,8 +725,8 @@ internal struct Sqlite3Record
         private int _known;
 
         /// <summary>
-        /// The last page read, and its index in the chain. It is in the reader's page buffer, so it is valid only while
-        /// the buffer's <see cref="ReaderBase.PageBufferGeneration"/> is still <see cref="_readGeneration"/>: reads of
+        /// The last page read, and its index in the chain. It is in the enumeration's overflow buffer, so it is valid only
+        /// while the buffer's <see cref="OverflowBuffer.Generation"/> is still <see cref="_readGeneration"/>: reads of
         /// several values of a row that lie on one overflow page then read that page once.
         /// </summary>
         private int _readIndex = -1;
@@ -729,15 +745,18 @@ internal struct Sqlite3Record
         /// </summary>
         public byte[]? Scratch;
 
-        public OverflowChain(int local, uint first)
+        private readonly OverflowBuffer _buffer;
+
+        public OverflowChain(int local, uint first, OverflowBuffer buffer)
         {
             Local = local;
             _first = first;
+            _buffer = buffer;
         }
 
         /// <summary>
-        /// Page <paramref name="index"/> of the chain, read into the reader's page buffer, following the next pointers
-        /// of the pages before it that are not yet known
+        /// Page <paramref name="index"/> of the chain, read into the enumeration's overflow buffer, following the next
+        /// pointers of the pages before it that are not yet known
         /// </summary>
         public byte[] ReadPage(int index, Sqlite3Row row, in Sqlite3Record record)
         {
@@ -758,9 +777,8 @@ internal struct Sqlite3Record
 
         private byte[] Read(int index, Sqlite3Row row, in Sqlite3Record record, int pageData)
         {
-            // Another page may have been read into the page buffer since, by this row or any other
-            ReaderBase reader = row.Table.Reader;
-            if (index == _readIndex && _readGeneration == reader.PageBufferGeneration)
+            // Another row of the enumeration may have read a page into the buffer since
+            if (index == _readIndex && _readGeneration == _buffer.Generation)
                 return _readData!;
 
             uint page = _pages![index];
@@ -777,10 +795,15 @@ internal struct Sqlite3Record
                 index == 0 ? record._page : _pages[index - 1], "overflow chain");
 
             // Each page is read through the reader, so a page the WAL or a journal holds is read from there
-            byte[] data = reader.ReadPage(page);
+            ReaderBase reader = row.Table.Reader;
+            byte[] data = _buffer.Data ??= new byte[reader.PageSize];
+
+            // Counted before the read, so a read that fails part way also makes the buffer's previous page stale
+            _buffer.Generation++;
+            reader.ReadPage(page, data);
             _readIndex = index;
             _readData = data;
-            _readGeneration = reader.PageBufferGeneration;
+            _readGeneration = _buffer.Generation;
 
             // CELL-16: the next pointer is followed only while payload remains, so the last overflow page's pointer is
             // never read, whatever it holds. accessPayload in btree.c stops as soon as the payload is copied:

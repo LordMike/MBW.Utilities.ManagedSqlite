@@ -1,15 +1,18 @@
 using System.IO;
+using System.Threading;
 using MBW.Utilities.ManagedSqlite.Core.Helpers;
 
 namespace MBW.Utilities.ManagedSqlite.Core.Internal;
 
 /// <summary>
-/// A file read straight from a seekable stream
+/// A file read straight from a seekable stream. Each read seeks and then reads under a lock, so threads that read the
+/// file at once each get their own bytes.
 /// </summary>
 internal sealed class StreamFileView : IFileView
 {
     private readonly Stream _stream;
     private readonly bool _leaveOpen;
+    private readonly Lock _lock = new Lock();
 
     public long Length { get; }
 
@@ -28,11 +31,14 @@ internal sealed class StreamFileView : IFileView
         if (position >= Length)
             return 0;
 
-        // HDR-17: a position past what the stream can seek to is past the end of the file
-        Checks.Strict(_stream.Seek(position, SeekOrigin.Begin) == position, "HDR-17",
-            $"unable to seek to offset {position}, which the file refers to", structure: "file length");
+        lock (_lock)
+        {
+            // HDR-17: a position past what the stream can seek to is past the end of the file
+            Checks.Strict(_stream.Seek(position, SeekOrigin.Begin) == position, "HDR-17",
+                $"unable to seek to offset {position}, which the file refers to", structure: "file length");
 
-        return _stream.ReadFully(buffer, offset, count);
+            return _stream.ReadFully(buffer, offset, count);
+        }
     }
 
     public void Dispose()

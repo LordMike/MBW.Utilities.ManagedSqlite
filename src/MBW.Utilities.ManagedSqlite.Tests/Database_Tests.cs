@@ -1,6 +1,9 @@
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using MBW.Utilities.ManagedSqlite.Core;
 using MBW.Utilities.ManagedSqlite.Core.Exceptions;
 using MBW.Utilities.ManagedSqlite.Core.Tables;
@@ -194,5 +197,64 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(bytes));
 
         Assert.Equal(expected, db.IsWalMode);
+    }
+
+    /// <summary>
+    /// One open database read from several threads at once: lookups, definitions, and enumerations of the same and of
+    /// different tables, across interior pages, overflow chains and a WITHOUT ROWID table, all read what a single
+    /// thread reads, from a MemoryStream and from the file FromPath opens. Each stream is read with a seek and a read, so
+    /// the threads take turns on it.
+    /// </summary>
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void ConcurrentReadsMatchASingleThread(bool fromFile)
+    {
+        byte[] data = SqliteParity.Build(@"
+CREATE TABLE big (id INTEGER PRIMARY KEY, t TEXT);
+WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v + 1 FROM n WHERE v < 1000) INSERT INTO big SELECT v, 'row ' || v FROM n;
+CREATE TABLE blobs (id INTEGER PRIMARY KEY, b BLOB);
+WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v + 1 FROM n WHERE v < 100) INSERT INTO blobs SELECT v, randomblob(9000 + v) FROM n;
+CREATE TABLE keyed (k TEXT PRIMARY KEY, v INTEGER) WITHOUT ROWID;
+WITH RECURSIVE n(v) AS (SELECT 1 UNION ALL SELECT v + 1 FROM n WHERE v < 1000) INSERT INTO keyed SELECT 'key ' || v, v FROM n;");
+        string[] tables = { "big", "blobs", "keyed" };
+
+        Dictionary<string, List<IReadOnlyList<object>>> expected;
+        using (Sqlite3Database single = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data)))
+            expected = tables.ToDictionary(name => name, name => single.GetTable(name).EnumerateRows().Select(row => row.ColumnData).ToList());
+
+        if (!fromFile)
+        {
+            using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+            ReadInParallel(db, tables, expected);
+            return;
+        }
+
+        using SqliteParity.SnapshotDirectory snapshot = new SqliteParity.SnapshotDirectory();
+        File.WriteAllBytes(snapshot.Database, data);
+        using (Sqlite3Database db = Sqlite3Database.FromPath(snapshot.Database))
+            ReadInParallel(db, tables, expected);
+    }
+
+    private static void ReadInParallel(Sqlite3Database db, string[] tables, Dictionary<string, List<IReadOnlyList<object>>> expected)
+    {
+        Parallel.For(0, 600, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(4, Environment.ProcessorCount) }, i =>
+        {
+            string name = tables[i % tables.Length];
+            Sqlite3Table table = db.GetTable(name);
+            string column = table.GetTableDefinition().Columns.ElementAt(1).Name;
+
+            List<IReadOnlyList<object>> rows = expected[name];
+            int index = 0;
+            foreach (Sqlite3Row row in table.EnumerateRows())
+            {
+                Assert.True(row.TryGetValueByName(column, out object value));
+                Assert.True(StructuralComparisons.StructuralEqualityComparer.Equals(rows[index][1], value));
+                Assert.True(StructuralComparisons.StructuralEqualityComparer.Equals(rows[index], row.ColumnData));
+                index++;
+            }
+
+            Assert.Equal(rows.Count, index);
+        });
     }
 }
