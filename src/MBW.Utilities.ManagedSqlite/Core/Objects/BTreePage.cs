@@ -190,6 +190,48 @@ internal abstract class BTreePage
     }
 
     /// <summary>
+    /// The most bytes of a table leaf cell's header: a payload size and a rowid, each a varint of at most 9 bytes. A
+    /// cell that starts at least this far before the end of the page has its header on the page.
+    /// </summary>
+    protected const int MaxCellHeaderSize = 18;
+
+    /// <summary>
+    /// <see cref="ReadPayloadSize"/> for a cell whose header is known to be on the page (see
+    /// <see cref="MaxCellHeaderSize"/>), which skips the check of each byte
+    /// </summary>
+    protected static uint ReadPayloadSizeInPage(byte[] data, ref int pos)
+    {
+        uint value = 0;
+        for (int i = 0; i < 9; i++)
+        {
+            byte b = data[pos++];
+            value = (value << 7) | (uint)(b & 0x7F);
+            if (b < 0x80)
+                break;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// <see cref="ReadCellVarInt"/> for a cell whose header is known to be on the page (see
+    /// <see cref="MaxCellHeaderSize"/>), which skips the check of each byte
+    /// </summary>
+    protected static long ReadCellVarIntInPage(byte[] data, ref int pos)
+    {
+        long value = 0;
+        for (int i = 0; i < 8; i++)
+        {
+            byte b = data[pos++];
+            value = (value << 7) | (long)(b & 0x7F);
+            if (b < 0x80)
+                return value;
+        }
+
+        return (value << 8) | data[pos++];
+    }
+
+    /// <summary>
     /// A standard varint of a cell, such as a rowid
     /// </summary>
     protected long ReadCellVarInt(byte[] data, ref int pos, int cellStart)
@@ -232,15 +274,16 @@ internal abstract class BTreePage
         // M is always ((U-12)*32/255)-23.
         int M = (U - 12) * 32 / 255 - 23;
 
-        // Let K be M+((P-M)%(U-4)).
-        int K = (int)(M + ((P - M) % (U - 4)));
-
-        // If P<=X then all P bytes of payload are stored directly on the btree page without overflow.
-        // If P>X and K<=X then the first K bytes of P are stored on the btree page and the remaining P-K bytes are stored on overflow pages.
-        // If P>X and K>X then the first M bytes of P are stored on the btree page and the remaining P-M bytes are stored on overflow pages.
+        // If P<=X then all P bytes of payload are stored directly on the btree page without overflow. Most cells are, so
+        // this comes before K, whose 64-bit modulo they never need.
         if (P <= X)
             return (uint)P;
 
+        // Let K be M+((P-M)%(U-4)).
+        int K = (int)(M + ((P - M) % (U - 4)));
+
+        // If P>X and K<=X then the first K bytes of P are stored on the btree page and the remaining P-K bytes are stored on overflow pages.
+        // If P>X and K>X then the first M bytes of P are stored on the btree page and the remaining P-M bytes are stored on overflow pages.
         return (uint)(K <= X ? K : M);
     }
 }
