@@ -34,6 +34,7 @@ public class Journal_Tests
     {
         { "rows only in the WAL", Wal + Checkpoint + "INSERT INTO t (b) VALUES ('three');", true },
         { "page 1 only in the WAL", Wal + Checkpoint + "CREATE TABLE u (x); INSERT INTO u VALUES (1);", true },
+        { "a header field only in the WAL", Wal + Checkpoint + "PRAGMA user_version = 7;", true },
         { "the WAL grows the database", Wal + Checkpoint + ManyRows, true },
         { "the WAL shrinks the database", Wal + ManyRows + Checkpoint + "DELETE FROM t WHERE a > 2; VACUUM;", true },
         { "later commits overwrite a page", Wal + Checkpoint + "UPDATE t SET b = 'uno' WHERE a = 1; UPDATE t SET b = 'eins' WHERE a = 1; DELETE FROM t WHERE a = 2;", true },

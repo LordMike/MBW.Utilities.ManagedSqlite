@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -76,13 +76,18 @@ internal static class SqliteParity
         Assert.Equal(expected, actual);
     }
 
+    /// <summary>
+    /// The header fields SQLite reads with a PRAGMA, in the order the dump lists them
+    /// </summary>
+    private static readonly string[] HeaderPragmas = { "page_size", "user_version", "application_id", "schema_version", "freelist_count", "auto_vacuum" };
+
     private static string DumpWithSqlite(SqliteConnection connection)
     {
         // The schema as SQLite's schema loader sees it: every value as text, ending at a NUL (SCHEMA-08, SCHEMA-09)
         List<object[]> schema = Query(connection, "SELECT CAST(type AS TEXT), CAST(name AS TEXT), CAST(tbl_name AS TEXT), CAST(sql AS TEXT) FROM sqlite_master ORDER BY rowid")
             .Select(r => r.Select(v => v is string text && text.IndexOf('\0') >= 0 ? text.Substring(0, text.IndexOf('\0')) : v).ToArray()).ToList();
         return Dump(Query(connection, "PRAGMA encoding")[0][0].ToString().Replace("-", "").ToUpperInvariant(),
-            Query(connection, "PRAGMA page_size")[0][0].ToString(),
+            string.Join(", ", HeaderPragmas.Select(p => FormattableString.Invariant($"{p} {Query(connection, "PRAGMA " + p)[0][0]}"))),
             schema.Select(s => ((string)s[0], (string)s[1], (string)s[2], s[3] as string)),
             schema.Where(s => IsReadableTable((string)s[0], s[3] as string)).Select(s => ReadWithSqlite(connection, (string)s[1])));
     }
@@ -90,7 +95,11 @@ internal static class SqliteParity
     private static string DumpWithLibrary(Sqlite3Database db)
     {
         List<Sqlite3SchemaRow> schema = db.GetSchema().ToList();
-        return Dump(db.TextEncoding.ToString(), db.Header.PageSize.ToString(CultureInfo.InvariantCulture),
+        Sqlite3DatabaseHeader h = db.Header;
+        // PRAGMA auto_vacuum: none without a largest root page, else incremental or full by the incremental-vacuum field
+        int autoVacuum = h.LargestRootPage == 0 ? 0 : h.IncrementalVacuumMode != 0 ? 2 : 1;
+        return Dump(db.TextEncoding.ToString(),
+            FormattableString.Invariant($"page_size {h.PageSize}, user_version {h.UserVersion}, application_id {h.ApplicationId}, schema_version {h.SchemaCookie}, freelist_count {h.FreelistPageCount}, auto_vacuum {autoVacuum}"),
             schema.Select(s => (s.Type, s.Name, s.TableName, s.Sql)),
             schema.Where(s => IsReadableTable(s.Type, s.Sql)).Select(s => ReadWithLibrary(db, s.Name)));
     }
@@ -512,11 +521,11 @@ SELECT name, 'Trigger' FROM sqlite_schema WHERE type = 'trigger'").Select(o => $
     /// <summary>
     /// The schema of every table before any table's rows, so a schema difference is the first difference shown
     /// </summary>
-    private static string Dump(string encoding, string pageSize, IEnumerable<(string type, string name, string tableName, string sql)> schema, IEnumerable<Table> tables)
+    private static string Dump(string encoding, string header, IEnumerable<(string type, string name, string tableName, string sql)> schema, IEnumerable<Table> tables)
     {
         StringBuilder sb = new StringBuilder();
         sb.Append("encoding ").AppendLine(encoding);
-        sb.Append("page size ").AppendLine(pageSize);
+        sb.Append("header ").AppendLine(header);
 
         foreach ((string type, string name, string tableName, string sql) in schema)
             sb.Append("schema ").Append(type).Append(' ').Append(Quote(name)).Append(" on ").Append(Quote(tableName)).Append(": ").AppendLine(Quote(sql));

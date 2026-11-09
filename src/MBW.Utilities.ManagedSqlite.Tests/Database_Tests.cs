@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Buffers.Binary;
 using System.Collections;
 using System.Collections.Generic;
 using System.IO;
@@ -115,6 +116,52 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
             data[59] = (byte)field;
             return data;
         });
+
+    // 20 rows of 3000 bytes, half of them deleted, leave free pages, except in FULL auto-vacuum mode, which gives them
+    // back to the file
+    private const string FreePages = "CREATE TABLE t (a); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO t SELECT zeroblob(3000) FROM n; DELETE FROM t WHERE rowid % 2 = 0;";
+
+    /// <summary>
+    /// The header fields that SQLite reads with a PRAGMA (page_size, user_version, application_id, schema_version,
+    /// freelist_count, auto_vacuum) read the same here; the parity dump compares them
+    /// </summary>
+    [Theory]
+    [InlineData("PRAGMA user_version = -7; PRAGMA application_id = 0x7A3B1C2D;")]
+    [InlineData("PRAGMA page_size = 1024; PRAGMA auto_vacuum = FULL;")]
+    [InlineData("PRAGMA auto_vacuum = INCREMENTAL;")]
+    public void Header_SameAsSqlite(string pragmas) => SqliteParity.AssertSameAsSqlite(pragmas + FreePages);
+
+    /// <summary>
+    /// The header fields that no PRAGMA reads, each from its offset (https://www.sqlite.org/fileformat.html#the_database_header).
+    /// The database is a file, as an in-memory database leaves the change counter and the version number 0.
+    /// </summary>
+    [Fact]
+    public void Header_FieldsWithoutPragma()
+    {
+        byte[] data;
+        using (SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot("PRAGMA auto_vacuum = INCREMENTAL;" + FreePages))
+            data = File.ReadAllBytes(snapshot.Database);
+        using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
+        Sqlite3DatabaseHeader h = db.Header;
+
+        Assert.Equal(data.Take(100), h.GetBytes());
+        Assert.Equal((SqliteFileFormat.Legacy, SqliteFileFormat.Legacy), (h.WriteVersion, h.ReadVersion));
+        Assert.Equal((0, 64, 32, 32), (h.ReservedSpaceAtEndOfPage, h.MaximumEmbeddedPayloadFraction, h.MinimumEmbeddedPayloadFraction, h.LeafPayloadFraction));
+        Assert.NotEqual(0u, h.ChangeCounter);
+        Assert.Equal(BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(24)), h.ChangeCounter);
+        Assert.Equal(h.ChangeCounter, h.VersionValidFor);
+        Assert.Equal((uint)data.Length / h.PageSize, h.DatabaseSizeInPages);
+        Assert.NotEqual(0u, h.FirstFreelistTrunkPage);
+        Assert.Equal(BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(32)), h.FirstFreelistTrunkPage);
+        Assert.Equal(4u, h.SchemaFormat);
+        Assert.Equal(0, h.DefaultPageCacheSize);
+        Assert.Equal(BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(52)), h.LargestRootPage);
+        Assert.Equal(SqliteEncoding.UTF8, h.TextEncoding);
+
+        // SQLITE_VERSION_NUMBER is X*1000000 + Y*1000 + Z for version X.Y.Z
+        int[] version = SqliteParity.ReadFirstValueWithSqlite<string>(data, "SELECT sqlite_version()").Split('.').Select(int.Parse).ToArray();
+        Assert.Equal((uint)(version[0] * 1000000 + version[1] * 1000 + version[2]), h.SqliteVersionNumber);
+    }
 
     [Fact]
     public void TextEncoding_ZeroUsesFallbackEncoding()
