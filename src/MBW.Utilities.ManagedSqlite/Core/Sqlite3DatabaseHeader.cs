@@ -12,6 +12,11 @@ namespace MBW.Utilities.ManagedSqlite.Core;
 /// stored in the file. A field that SQLite reads differently from its stored value says so, and
 /// <see cref="Sqlite3Database"/> has the value as it is used.
 /// </summary>
+/// <remarks>
+/// A 0-byte file is a valid empty database, which has no header. It is read as the database SQLite would create in it:
+/// a page size of 4096, one page, legacy file format versions, the payload fractions 64, 32 and 32, schema format 4,
+/// and 0 in every other field.
+/// </remarks>
 public sealed class Sqlite3DatabaseHeader
 {
     internal const int HeaderSize = 100;
@@ -30,15 +35,17 @@ public sealed class Sqlite3DatabaseHeader
 
     /// <summary>
     /// The file format write version (offset 18): <see cref="SqliteFileFormat.Wal"/> in WAL mode. Another value is
-    /// kept as stored.
+    /// kept as stored; above 2, SQLite opens the database read-only.
     /// </summary>
+    /// <remarks>https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3326 (lockBtree)</remarks>
     public SqliteFileFormat WriteVersion { get; }
 
     /// <summary>
     /// The file format read version (offset 19): <see cref="SqliteFileFormat.Wal"/> in WAL mode, see
-    /// <see cref="Sqlite3Database.IsWalMode"/>. A value above 2 fails the open, unless
-    /// <see cref="SqliteValidation.Lenient"/>, which keeps it as stored.
+    /// <see cref="Sqlite3Database.IsWalMode"/>. Another value is kept as stored: SQLite reads 0 as it reads 1, and a
+    /// value above 2 fails the open, unless <see cref="SqliteValidation.Lenient"/>.
     /// </summary>
+    /// <remarks>https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3329 (lockBtree)</remarks>
     public SqliteFileFormat ReadVersion { get; }
 
     /// <summary>
@@ -79,7 +86,8 @@ public sealed class Sqlite3DatabaseHeader
     public uint FirstFreelistTrunkPage { get; }
 
     /// <summary>
-    /// The number of free pages (offset 36), as <c>PRAGMA freelist_count</c> gives it
+    /// The number of free pages (offset 36). <c>PRAGMA freelist_count</c> gives the same field as a signed 32-bit
+    /// integer, which differs only for a count of 2^31 or more, more pages than a database can have.
     /// </summary>
     public uint FreelistPageCount { get; }
 
@@ -90,8 +98,11 @@ public sealed class Sqlite3DatabaseHeader
     public int SchemaCookie { get; }
 
     /// <summary>
-    /// The schema format number (offset 44), 1 to 4
+    /// The schema format number (offset 44), 1 to 4, or 0 in a database that has never had a schema object, which
+    /// SQLite reads as 1. A value whose low byte is above 4 fails the open, unless
+    /// <see cref="SqliteValidation.Lenient"/>.
     /// </summary>
+    /// <remarks>https://github.com/sqlite/sqlite/blob/version-3.53.4/src/prepare.c#L340 (sqlite3InitOne)</remarks>
     public uint SchemaFormat { get; }
 
     /// <summary>
@@ -181,7 +192,8 @@ public sealed class Sqlite3DatabaseHeader
         FreelistPageCount = ByteArrayReader.ReadUInt32(data, length, ref pos);
 
         // SQLite reads the 4-byte fields that PRAGMAs give (schema_version, default_cache_size, user_version,
-        // application_id) as a signed 32-bit int. OP_ReadCookie in vdbe.c:
+        // application_id) as a signed 32-bit int. OP_ReadCookie in vdbe.c, which PRAGMA freelist_count uses too; the
+        // freelist count stays unsigned here, as a page count, which the b-tree reads it as:
         //   int iMeta;
         //   sqlite3BtreeGetMeta(db->aDb[iDb].pBt, iCookie, (u32 *)&iMeta);
         //   pOut->u.i = iMeta;
@@ -203,7 +215,7 @@ public sealed class Sqlite3DatabaseHeader
 
     /// <summary>
     /// A copy of the header's 100 bytes, as stored, including the 20 bytes reserved for expansion (offset 72) that no
-    /// property has
+    /// property has. For a 0-byte file, the header of the empty database it is read as.
     /// </summary>
     public byte[] GetBytes() => (byte[])_bytes.Clone();
 
