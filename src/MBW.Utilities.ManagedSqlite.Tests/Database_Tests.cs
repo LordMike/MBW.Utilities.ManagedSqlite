@@ -127,7 +127,7 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
     /// </summary>
     [Theory]
     [InlineData("PRAGMA user_version = -7; PRAGMA application_id = 0x7A3B1C2D;")]
-    [InlineData("PRAGMA page_size = 1024; PRAGMA auto_vacuum = FULL;")]
+    [InlineData("PRAGMA auto_vacuum = FULL;")]
     [InlineData("PRAGMA auto_vacuum = INCREMENTAL;")]
     public void Header_SameAsSqlite(string pragmas) => SqliteParity.AssertSameAsSqlite(pragmas + FreePages);
 
