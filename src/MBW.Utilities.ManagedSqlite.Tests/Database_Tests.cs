@@ -117,19 +117,17 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
             return data;
         });
 
-    // 20 rows of 3000 bytes, half of them deleted, leave free pages, except in FULL auto-vacuum mode, which gives them
-    // back to the file
-    private const string FreePages = "CREATE TABLE t (a); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO t SELECT zeroblob(3000) FROM n; DELETE FROM t WHERE rowid % 2 = 0;";
+    // Free pages in incremental auto-vacuum mode give every header field a value other than 0, except the reserved
+    // space, which other tests set. Free pages in FULL mode and without auto-vacuum are in Structure_Tests.BTreeShape.
+    // auto_vacuum comes first, as it only takes effect before the first page is written.
+    private const string HeaderScript = "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA user_version = -7; PRAGMA application_id = -1582119980; PRAGMA default_cache_size = 123; CREATE TABLE t (a); INSERT INTO t VALUES (zeroblob(20000)); DELETE FROM t;";
 
     /// <summary>
     /// The header fields that SQLite reads with a PRAGMA (page_size, user_version, application_id, schema_version,
     /// freelist_count, auto_vacuum) read the same here; the parity dump compares them
     /// </summary>
-    [Theory]
-    [InlineData("PRAGMA user_version = -7; PRAGMA application_id = -1582119980;")]
-    [InlineData("PRAGMA auto_vacuum = FULL;")]
-    [InlineData("PRAGMA auto_vacuum = INCREMENTAL;")]
-    public void Header_SameAsSqlite(string pragmas) => SqliteParity.AssertSameAsSqlite(pragmas + FreePages);
+    [Fact]
+    public void Header_SameAsSqlite() => SqliteParity.AssertSameAsSqlite(HeaderScript);
 
     /// <summary>
     /// The header fields that no PRAGMA reads as stored, and that no check or other test reads, each from its offset
@@ -141,7 +139,7 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
     public void Header_FieldsWithoutPragma()
     {
         byte[] data;
-        using (SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot("PRAGMA auto_vacuum = INCREMENTAL; PRAGMA default_cache_size = 123;" + FreePages))
+        using (SqliteParity.SnapshotDirectory snapshot = SqliteParity.Snapshot(HeaderScript))
             data = File.ReadAllBytes(snapshot.Database);
         Assert.Equal(1, data[18]);
         data[18] = 0;
@@ -149,7 +147,7 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
         using Sqlite3Database db = Sqlite3Database.FromStreamWithNoJournal(new MemoryStream(data));
         Sqlite3DatabaseHeader h = db.Header;
 
-        Assert.Equal(data.Take(100), h.GetBytes());
+        Assert.Equal(data.Take(100), h.Bytes.ToArray());
         Assert.Equal((SqliteFileFormat)0, h.WriteVersion);
         Assert.NotEqual(0u, h.ChangeCounter);
         Assert.Equal(BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(24)), h.ChangeCounter);
