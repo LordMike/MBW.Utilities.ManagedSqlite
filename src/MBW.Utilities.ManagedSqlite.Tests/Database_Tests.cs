@@ -117,10 +117,13 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
             return data;
         });
 
-    // Free pages in incremental auto-vacuum mode give every header field a value other than 0, except the reserved
-    // space, which other tests set. Free pages in FULL mode and without auto-vacuum are in Structure_Tests.BTreeShape.
-    // auto_vacuum comes first, as it only takes effect before the first page is written.
-    private const string HeaderScript = "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA user_version = -7; PRAGMA application_id = -1582119980; PRAGMA default_cache_size = 123; CREATE TABLE t (a); INSERT INTO t VALUES (zeroblob(20000)); DELETE FROM t;";
+    // Gives every header field a value other than 0 (but the reserved space, which other tests set), and the fields
+    // values that differ from each other, but the change counter and version-valid-for, which are equal in a valid
+    // file: three tables bump the schema cookie to 3 and the largest root page to 5, UTF-16le makes the encoding 2, and
+    // the deleted rows leave free pages in incremental auto-vacuum mode. auto_vacuum and encoding come first, as they
+    // only take effect before the first page is written. Free pages in FULL mode and without auto-vacuum are in
+    // Structure_Tests.BTreeShape.
+    private const string HeaderScript = "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA encoding = 'UTF-16le'; PRAGMA user_version = -7; PRAGMA application_id = -1582119980; PRAGMA default_cache_size = 123; CREATE TABLE t (a); CREATE TABLE u (a); CREATE TABLE v (a); WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 20) INSERT INTO t SELECT zeroblob(3000) FROM n; DELETE FROM t WHERE rowid % 2 = 0;";
 
     /// <summary>
     /// The header fields that SQLite reads with a PRAGMA (page_size, user_version, application_id, schema_version,
@@ -160,7 +163,7 @@ CREATE VIRTUAL TABLE docs USING fts5(a);",
         Assert.NotEqual(0u, h.LargestRootPage);
         Assert.Equal(BinaryPrimitives.ReadUInt32BigEndian(data.AsSpan(52)), h.LargestRootPage);
         Assert.Equal(1u, h.IncrementalVacuumMode);
-        Assert.Equal(SqliteEncoding.UTF8, h.TextEncoding);
+        Assert.Equal(SqliteEncoding.UTF16LE, h.TextEncoding);
 
         // SQLITE_VERSION_NUMBER is X*1000000 + Y*1000 + Z for version X.Y.Z
         int[] version = SqliteParity.ReadFirstValueWithSqlite<string>(data, "SELECT sqlite_version()").Split('.').Select(int.Parse).ToArray();
