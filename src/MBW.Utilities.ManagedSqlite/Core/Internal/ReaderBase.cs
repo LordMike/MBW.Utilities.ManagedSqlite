@@ -37,7 +37,7 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     private int _partialPageReported;
 
-    public DatabaseHeader Header { get; }
+    public Sqlite3DatabaseHeader Header { get; }
 
     /// <summary>
     /// The settings the database was opened with, which the consistency checks consult
@@ -68,7 +68,7 @@ internal sealed class ReaderBase : IDisposable
     /// </summary>
     public uint PageCount { get; }
 
-    private ReaderBase(IFileView file, WalIndex? wal, IDisposable[] owned, DatabaseHeader header, Sqlite3Settings settings, SqliteEncoding textEncoding, Encoding encoding)
+    private ReaderBase(IFileView file, WalIndex? wal, IDisposable[] owned, Sqlite3DatabaseHeader header, Sqlite3Settings settings, SqliteEncoding textEncoding, Encoding encoding)
     {
         _file = file;
         _wal = wal;
@@ -219,7 +219,7 @@ internal sealed class ReaderBase : IDisposable
         // and it also gives the page size. The WAL holds that page 1 when a transaction changed it; the main file's page
         // 1 may then be stale. lockBtree reads page 1 through the pager once the WAL is open:
         // https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3341 (lockBtree)
-        byte[] headerData = new byte[DatabaseHeader.HeaderSize];
+        byte[] headerData = new byte[Sqlite3DatabaseHeader.HeaderSize];
 
         int read = wal != null && wal.TryReadPage(1, headerData, headerData.Length)
             ? headerData.Length
@@ -249,7 +249,7 @@ internal sealed class ReaderBase : IDisposable
             read = file.Read(0, headerData, 0, headerData.Length);
         }
 
-        DatabaseHeader header = new DatabaseHeader(headerData, read, settings);
+        Sqlite3DatabaseHeader header = new Sqlite3DatabaseHeader(headerData.AsSpan(0, read), settings);
 
         // WALJ-28 again, on the page size the database is read with: a page 1 in the WAL that gives another page size
         // than the WAL's own leaves SQLite reading part of each page too
@@ -258,7 +258,7 @@ internal sealed class ReaderBase : IDisposable
         {
             wal = null;
             read = file.Read(0, headerData, 0, headerData.Length);
-            header = new DatabaseHeader(headerData, read, settings);
+            header = new Sqlite3DatabaseHeader(headerData.AsSpan(0, read), settings);
         }
 
         // HDR-30, REC-40, SCHEMA-01: SQLite never rejects the text encoding field. A non-zero value is masked to its low

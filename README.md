@@ -56,6 +56,17 @@ Pick the factory that matches the files you have.
 
 The stream factories dispose the streams with the database, unless you pass `leaveOpen: true`. Streams must be readable and seekable.
 
+### The database header
+
+`db.Header` has every field of the file's 100-byte [database header](https://www.sqlite.org/fileformat.html#the_database_header), as read at open, such as the page size, the freelist, the schema cookie and the SQLite version that last wrote the file. `UserVersion` and `ApplicationId` are the values applications set with `PRAGMA user_version` and `PRAGMA application_id` to tell their databases apart:
+
+```csharp
+if (db.Header.ApplicationId != MyAppId || db.Header.UserVersion < 3)
+    throw new InvalidDataException("Not a version 3 MyApp database");
+```
+
+`Header.Bytes` has the raw 100 bytes.
+
 ### Settings and validation
 
 Every factory takes an optional `Sqlite3Settings`:

@@ -64,6 +64,7 @@ class Program
             return 1;
 
         Console.WriteLine($"Database: encoding {db.TextEncoding}, WAL mode {(db.IsWalMode ? "yes" : "no")}, size {new FileInfo(opts.DatabaseFile).Length:N0}B");
+        Console.WriteLine($"Header: page size {db.Header.PageSize}, user version {db.Header.UserVersion}, application id 0x{db.Header.ApplicationId:X8}, written by SQLite {db.Header.SqliteVersionNumber}");
         Console.WriteLine();
 
         if (opts.DoSizeStatistics)

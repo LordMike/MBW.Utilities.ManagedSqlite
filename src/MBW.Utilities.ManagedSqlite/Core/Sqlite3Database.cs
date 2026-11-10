@@ -38,7 +38,11 @@ public sealed class Sqlite3Database : IDisposable
     private readonly Dictionary<string, Sqlite3SchemaRow> _tablesByName;
     private readonly Dictionary<string, SqliteCorruptException>? _errorsByName;
 
-    internal DatabaseHeader Header => _reader.Header;
+    /// <summary>
+    /// The database header, every field of the file's first 100 bytes, such as <see cref="Sqlite3DatabaseHeader.UserVersion"/>
+    /// and <see cref="Sqlite3DatabaseHeader.ApplicationId"/>, as read at open
+    /// </summary>
+    public Sqlite3DatabaseHeader Header => _reader.Header;
 
     /// <summary>
     /// The encoding that text values are read with: the header's text encoding field, read as SQLite reads it (the low
@@ -58,7 +62,7 @@ public sealed class Sqlite3Database : IDisposable
     /// a <c>-wal</c> file exists. SQLite itself looks for one on every open, whatever the flag says.
     /// https://github.com/sqlite/sqlite/blob/version-3.53.4/src/btree.c#L3341 (lockBtree)
     /// </remarks>
-    public bool IsWalMode => _reader.Header.ReadVersion == FileReadVersion.WAL;
+    public bool IsWalMode => _reader.Header.ReadVersion == SqliteFileFormat.Wal;
 
     /// <summary>
     /// Opens the database in <paramref name="main"/>, with its optional rollback journal and WAL. The database owns the

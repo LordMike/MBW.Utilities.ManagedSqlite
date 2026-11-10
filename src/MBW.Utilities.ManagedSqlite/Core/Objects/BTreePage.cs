@@ -49,7 +49,7 @@ internal abstract class BTreePage
         int length = (int)reader.PageSize;
 
         // Page 1 begins with the 100 byte database header
-        int pos = page == 1 ? DatabaseHeader.HeaderSize : 0;
+        int pos = page == 1 ? Sqlite3DatabaseHeader.HeaderSize : 0;
 
         BTreeHeader header = new BTreeHeader(data, length, ref pos);
 
