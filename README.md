@@ -65,7 +65,7 @@ if (db.Header.ApplicationId != MyAppId || db.Header.UserVersion < 3)
     throw new InvalidDataException("Not a version 3 MyApp database");
 ```
 
-`Header.GetBytes()` returns the raw 100 bytes.
+`Header.Bytes` has the raw 100 bytes.
 
 ### Settings and validation
 

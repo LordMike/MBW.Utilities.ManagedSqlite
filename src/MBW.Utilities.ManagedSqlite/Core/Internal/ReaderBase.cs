@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.ExceptionServices;
@@ -249,7 +249,7 @@ internal sealed class ReaderBase : IDisposable
             read = file.Read(0, headerData, 0, headerData.Length);
         }
 
-        Sqlite3DatabaseHeader header = new Sqlite3DatabaseHeader(headerData, read, settings);
+        Sqlite3DatabaseHeader header = new Sqlite3DatabaseHeader(headerData.AsSpan(0, read), settings);
 
         // WALJ-28 again, on the page size the database is read with: a page 1 in the WAL that gives another page size
         // than the WAL's own leaves SQLite reading part of each page too
@@ -258,7 +258,7 @@ internal sealed class ReaderBase : IDisposable
         {
             wal = null;
             read = file.Read(0, headerData, 0, headerData.Length);
-            header = new Sqlite3DatabaseHeader(headerData, read, settings);
+            header = new Sqlite3DatabaseHeader(headerData.AsSpan(0, read), settings);
         }
 
         // HDR-30, REC-40, SCHEMA-01: SQLite never rejects the text encoding field. A non-zero value is masked to its low
